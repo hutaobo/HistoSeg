@@ -24,10 +24,12 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "sphinx_rtd_theme"
+html_theme = "pydata_sphinx_theme"
 
 html_theme_options = {
+    "navbar_end": ["navbar-icon-links"],
     "navigation_depth": 4,
-    "collapse_navigation": False,
-    "sticky_navigation": True,
 }
+
+# 让你能用 “卡片/按钮/徽章” 这种漂亮组件
+extensions += ["sphinx_design"]
