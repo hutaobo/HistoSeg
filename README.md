@@ -1,8 +1,7 @@
 ## 安装
 
 ```python
-pip install git+https://github.com/hutaobo/sfplot.git
-pip install git+https://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@github.com/hutaobo/sfplot.git
+pip install git+https://github.com/hutaobo/HistoSeg.git
 ```
 
 ## 功能
