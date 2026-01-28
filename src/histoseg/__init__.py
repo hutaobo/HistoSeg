@@ -1,4 +1,4 @@
-"""Top-level package for sfplot."""
+"""Top-level package for histoseg."""
 
 __author__ = "Taobo Hu"
 __email__ = "taobo.hu@scilifelab.se"
@@ -24,7 +24,7 @@ from .plotting import (
     generate_cluster_distance_heatmap_from_path,
 )
 from .data_processing import load_xenium_data
-from .sfplot import split_B_by_distance_to_A
+from .histoseg import split_B_by_distance_to_A
 from .tbc_analysis import transcript_by_cell_analysis
 from .tbc_analysis_serial import transcript_by_cell_analysis_serial
 from .binned_analysis import (
@@ -36,7 +36,7 @@ from .binned_analysis import (
 from .xenium_preprocessing import merge_xenium_clusters_into_adata
 from .visium_preprocesssing import read_visium_bin
 
-# ---- expose submodule so `sfplot.circular_dendrogram.*` works ----
+# ---- expose submodule so `histoseg.circular_dendrogram.*` works ----
 from . import circular_dendrogram
 from .circular_dendrogram import plot_circular_dendrogram_pycirclize
 
