@@ -1,0 +1,11 @@
+rich
+numpy
+pandas
+pycirclize
+psutil
+scikit-learn
+matplotlib
+seaborn
+scanpy
+setuptools
+xsdata-pydantic
