@@ -1,27 +1,19 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sfplot"
-version = "0.0.2"
-description = "For plotting the Search and Find Plot (SFplot)."
+name = "histoseg"              # PyPI 上的名字：必须唯一，全小写更稳
+version = "0.1.0"              # 每次发新版都要涨
+description = "..."
 readme = "README.md"
-authors = [
-    { name = "Taobo Hu", email = "taobo.hu@scilifelab.se" },
-    { name = "Mengping Long", email = "mengping.long@scilifelab.se" }
-]
-license = { text = "MIT License" }
-requires-python = ">=3.9"
+requires-python = ">=3.12"
+license = {file = "LICENSE"}
+authors = [{name="Taobo Hu", email="taobo.hu@scilifelab.se"}]
 dependencies = [
-    "pandas",
-    "numpy",
-    "matplotlib",
-    "seaborn",
-    "scanpy",
-    "scikit-learn",
-    "spatialdata_io"
+  # 你的运行依赖（不要把 docs 依赖放这里）
 ]
 
-# 如果你有动态字段，可以在这里声明
-# dynamic = ["some_dynamic_field"]
+[project.urls]
+Homepage = "https://github.com/hutaobo/HistoSeg"
+Documentation = "https://histoseg.readthedocs.io"
