@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sfplot"
+version = "0.0.2"
+description = "For plotting the Search and Find Plot (SFplot)."
+readme = "README.md"
+authors = [
+    { name = "Taobo Hu", email = "taobo.hu@scilifelab.se" },
+    { name = "Mengping Long", email = "mengping.long@scilifelab.se" }
+]
+license = { text = "MIT License" }
+requires-python = ">=3.9"
+dependencies = [
+    "pandas",
+    "numpy",
+    "matplotlib",
+    "seaborn",
+    "scanpy",
+    "scikit-learn",
+    "spatialdata_io"
+]
+
+# 如果你有动态字段，可以在这里声明
+# dynamic = ["some_dynamic_field"]
