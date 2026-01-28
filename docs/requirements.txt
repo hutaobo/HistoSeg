@@ -1,1 +1,13 @@
-
+rich
+numpy
+pandas
+pycirclize
+psutil
+scikit-learn
+matplotlib
+seaborn
+scanpy
+setuptools
+xsdata-pydantic
+myst-parser
+sphinx-rtd-theme
