@@ -11,3 +11,5 @@ setuptools
 xsdata-pydantic
 myst-parser
 sphinx-rtd-theme
+pydata-sphinx-theme
+sphinx-design
