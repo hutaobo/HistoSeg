@@ -1,6 +1,4 @@
-# Workflows
-
 ```{toctree}
 :maxdepth: 1
 
-contour_generation
+../../workflows/contour_generation_pattern1
