@@ -18,6 +18,7 @@ extensions = [
     "myst_parser",
     "myst_nb",
     "sphinx_design",
+    "m:contentReference[oaicite:7]{index=7}design",
 ]
 
 myst_enable_extensions = [
