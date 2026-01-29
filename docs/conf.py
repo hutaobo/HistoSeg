@@ -16,8 +16,15 @@ release = '0.1'
 
 extensions = [
     "myst_parser",
+    "myst_nb",
     "sphinx_design",
 ]
+
+myst_enable_extensions = [
+    "colon_fence",
+]
+
+nb_execution_mode = "off"
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
@@ -33,7 +40,6 @@ html_theme_options = {
 }
 
 # 让你能用 “卡片/按钮/徽章” 这种漂亮组件
-extensions += ["sphinx_design"]
 
 source_suffix = {
     ".rst": "restructuredtext",
