@@ -27,14 +27,6 @@ nb_execution_mode = "off"
 # Sphinx 官方文档：root_doc 默认就是 'index'
 root_doc = "index"
 
-# 源文件后缀
-# 注意：myst_nb 默认会支持 .md / .ipynb，但显式声明更直观
-source_suffix = {
-    ".rst": "restructuredtext",
-    ".md": "markdown",
-    ".ipynb": "myst-nb",
-}
-
 # 模板与排除项
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**/.ipynb_checkpoints"]
