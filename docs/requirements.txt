@@ -1,10 +1,14 @@
+# Sphinx core
 sphinx>=7.3,<9
+
+# Theme used in docs/conf.py
 pydata-sphinx-theme>=0.15
 
-myst-nb>=1.2
-sphinx-design>=0.6
-sphinx-copybutton>=0.5
+# Markdown + notebook parsing
+myst-nb>=1.2,<2
 
-# 可选：如果你文档里有 notebook / 富 markdown 渲染，通常这些会被间接依赖装上；
-# 写在这里更稳（尤其 RTD 的可重复构建场景）
+# UI components used in docs/conf.py
+sphinx-design>=0.6
+
+# Optional: MyST-NB often pulls this in indirectly, but pinning is fine for stability
 ipython
