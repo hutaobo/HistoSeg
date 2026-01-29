@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "histoseg"              # PyPI 上的名字：必须唯一，全小写更稳
-version = "0.1.0"              # 每次发新版都要涨
+dynamic = ["version"]          # 版本号改为由 git tag 自动推导
 description = "..."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -17,3 +17,16 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/hutaobo/HistoSeg"
 Documentation = "https://histoseg.readthedocs.io"
+
+# --- 从 Git tag 推导版本，并写入一个版本文件（推荐） ---
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"
+write_to = "histoseg/_version.py"
+
+# --- 为后续的自动发版（semantic-release）预留配置 ---
+[tool.semantic_release]
+branch = "master"
+tag_format = "v{version}"
+version_toml = ["pyproject.toml:project.version"]
+version_variables = ["histoseg/_version.py:__version__"]
