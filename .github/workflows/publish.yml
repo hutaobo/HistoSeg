@@ -1,4 +1,4 @@
-name: Publish to PyPI (Trusted Publishing)
+name: Publish to PyPI
 
 on:
   push:
@@ -6,50 +6,31 @@ on:
       - "v*"
 
 jobs:
-  build:
-    name: Build distributions
+  build-and-publish:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install build tools
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install build
-
-      - name: Build sdist and wheel
-        run: python -m build
-
-      - name: Store the distribution packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-  publish:
-    name: Publish to PyPI
-    needs: build
-    runs-on: ubuntu-latest
-
-    # 这一段非常重要：它会和 PyPI 里配置的 Environment name 对应
-    environment:
-      name: pypi
-      url: https://pypi.org/p/histoseg
-
     permissions:
-      id-token: write   # 必须：没有它 GitHub 不会给 OIDC token
+      id-token: write   # Trusted Publishing 必需
       contents: read
 
     steps:
-      - name: Download the distributions
-        uses: actions/download-artifact@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          name: dist
-          path: dist/
+          fetch-depth: 0  # 必须拿到 tags，setuptools-scm 才能算版本
 
-      - name: Publish distributions to PyPI
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install -U pip
+          python -m pip install -U build
+
+      - name: Build dist
+        run: |
+          python -m build
+
+      - name: Publish to PyPI (Trusted Publishing)
         uses: pypa/gh-action-pypi-publish@release/v1
