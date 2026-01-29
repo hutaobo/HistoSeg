@@ -14,3 +14,4 @@ myst-parser
 sphinx-rtd-theme
 pydata-sphinx-theme
 sphinx-design
+sphinx<9
