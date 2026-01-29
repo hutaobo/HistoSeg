@@ -3,6 +3,11 @@
 __author__ = "Taobo Hu"
 __email__ = "taobo.hu@scilifelab.se"
 
+try:
+    from ._version import __version__
+except Exception:
+    __version__ = "0.0.0"
+
 # ---- public APIs (functions) ----
 from .circle_heatmap import circle_heatmap
 from .compute_col_dendrogram_scores import compute_col_dendrogram_scores
