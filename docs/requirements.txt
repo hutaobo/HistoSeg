@@ -1,17 +1,14 @@
-rich
-numpy
-pandas
-pycirclize
-psutil
-scikit-learn
-matplotlib
-seaborn
-scanpy
-setuptools
-xsdata-pydantic
-myst-nb
-myst-parser
-sphinx-rtd-theme
-pydata-sphinx-theme
-sphinx-design
-sphinx<9
+# Sphinx core
+sphinx>=7.3,<9
+
+# Theme used in docs/conf.py
+pydata-sphinx-theme>=0.15
+
+# Markdown + notebook parsing
+myst-nb>=1.2,<2
+
+# UI components used in docs/conf.py
+sphinx-design>=0.6
+
+# Optional: MyST-NB often pulls this in indirectly, but pinning is fine for stability
+ipython
