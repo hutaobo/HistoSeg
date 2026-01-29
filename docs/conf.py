@@ -17,7 +17,6 @@ release = '0.1'
 extensions = [
     "myst_nb",
     "sphinx_design",
-    "m:contentReference[oaicite:7]{index=7}design",
 ]
 
 myst_enable_extensions = [
