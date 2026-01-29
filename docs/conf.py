@@ -15,6 +15,7 @@ release = '0.1'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    "myst_parser",
     "myst_nb",
     "sphinx_design",
 ]
@@ -24,6 +25,11 @@ myst_enable_extensions = [
 ]
 
 nb_execution_mode = "off"
+
+source_suffix = {
+    ".rst": "restructuredtext",
+    ".md": "markdown",
+}
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
