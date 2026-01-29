@@ -9,6 +9,7 @@ seaborn
 scanpy
 setuptools
 xsdata-pydantic
+myst-nb
 myst-parser
 sphinx-rtd-theme
 pydata-sphinx-theme
