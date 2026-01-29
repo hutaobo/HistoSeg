@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-and-publish:
-    runs-on:
+    runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write   # Trusted Publishing 必需
