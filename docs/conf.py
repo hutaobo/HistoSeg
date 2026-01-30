@@ -1,39 +1,37 @@
-# Configuration file for the Sphinx documentation builder.
-#
-# Minimal + robust RTD configuration for Markdown + notebooks via MyST-NB.
+import sys
+from pathlib import Path
+
+# 确保可以 import histoseg
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if SRC.exists():
+    sys.path.insert(0, str(SRC))
 
 project = "HistoSeg"
-copyright = "2026, Mengping Long; Taobo Hu; Mats Nilsson"
-author = "Mengping Long; Taobo Hu; Mats Nilsson"
-release = "0.1"
+author = "HistoSeg authors"
 
-# 核心修复：
-# - 只启用 myst_nb
-# - 不要在 extensions 里同时启用 myst_parser（myst_nb 会自动导入它）
 extensions = [
     "myst_nb",
-    "sphinx_design",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
 ]
 
-# MyST 语法扩展（myst_nb 会把 myst_parser 的配置选项一起处理）
-myst_enable_extensions = [
-    "colon_fence",
-]
+html_theme = "sphinx_rtd_theme"
 
-# 如果你不希望 RTD 构建时执行 notebook，保持 off 是最稳妥的
+# 明确声明所有文档类型（避免 RTD / Sphinx 猜错）
+source_suffix = {
+    ".rst": "restructuredtext",
+    ".md": "markdown",
+    ".ipynb": "myst-nb",
+}
+
+# ★ 核心：绝不在 RTD 上执行 notebook
 nb_execution_mode = "off"
 
-# 明确告诉 Sphinx 主入口文档名（默认就是 index，但写出来更清晰）
-# Sphinx 官方文档：root_doc 默认就是 'index'
-root_doc = "index"
+# notebook 中的 markdown 用 myst 渲染
+nb_render_markdown_format = "myst"
 
-# 模板与排除项
-templates_path = ["_templates"]
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**/.ipynb_checkpoints"]
-
-# HTML theme
-html_theme = "pydata_sphinx_theme"
-html_theme_options = {
-    "navbar_end": ["navbar-icon-links"],
-    "navigation_depth": 4,
-}
+exclude_patterns = [
+    "_build",
+    "**/.ipynb_checkpoints",
+]
