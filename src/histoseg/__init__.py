@@ -14,7 +14,7 @@ __all__ = [
     "run_pattern1_isoline_from_hf",
 ]
 
-from .Searcher_Findee_Score import (
+from .sfplot.Searcher_Findee_Score import (
     compute_cophenetic_distances_from_df,
     plot_cophenetic_heatmap,
 )
