@@ -18,10 +18,10 @@ extensions = [
 
 html_theme = "sphinx_rtd_theme"
 
-# 明确声明所有文档类型（避免 RTD / Sphinx 猜错）
+# 关键点：让 .md 和 .ipynb 都交给 myst-nb 解析
 source_suffix = {
     ".rst": "restructuredtext",
-    ".md": "markdown",
+    ".md": "myst-nb",
     ".ipynb": "myst-nb",
 }
 
