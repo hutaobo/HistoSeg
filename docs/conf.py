@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-# 确保可以 import histoseg
+# Ensure we can import histoseg
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if SRC.exists():
@@ -18,20 +18,39 @@ extensions = [
 
 html_theme = "sphinx_rtd_theme"
 
-# 关键点：让 .md 和 .ipynb 都交给 myst-nb 解析
+# Key: let myst-nb parse both .md and .ipynb
 source_suffix = {
     ".rst": "restructuredtext",
     ".md": "myst-nb",
     ".ipynb": "myst-nb",
 }
 
-# ★ 核心：绝不在 RTD 上执行 notebook
+# Core: never execute notebooks on RTD
 nb_execution_mode = "off"
 
-# notebook 中的 markdown 用 myst 渲染
+# Render notebook markdown via MyST
 nb_render_markdown_format = "myst"
 
 exclude_patterns = [
     "_build",
     "**/.ipynb_checkpoints",
 ]
+
+# Remove the default "View page source" link (/_sources/...)
+html_show_sourcelink = False
+
+# Enable GitHub links (e.g., "Edit on GitHub" / "View on GitHub")
+# This should point to:
+# https://github.com/hutaobo/HistoSeg/blob/master/docs/<pagename><suffix>
+html_context = {
+    "display_github": True,
+    "github_user": "hutaobo",
+    "github_repo": "HistoSeg",
+    "github_version": "master",
+    "conf_py_path": "/docs/",
+}
+
+# Ensure GitHub links open file view ("blob") instead of edit/raw
+html_theme_options = {
+    "vcs_pageview_mode": "blob",
+}
