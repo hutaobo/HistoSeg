@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import json
+import os
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
@@ -92,6 +94,31 @@ class Pattern1IsolineResult:
     contours: List[np.ndarray]
     params_json: Optional[Path] = None
     preview_png: Optional[Path] = None
+
+
+def _make_jupyterlab_tree_href(path: Path) -> str:
+    """Build an href that opens `path` in JupyterLab's file browser.
+
+    We intentionally return a *relative* href (e.g. "outputs/xxx/") so it works in:
+      - plain JupyterLab
+      - JupyterHub with base_url prefixes (because the browser resolves it relative to the current notebook URL)
+
+    If reminding: JupyterLab uses the `/lab/tree/<path>` route for file navigation.
+    """
+    try:
+        p = Path(path)
+        if p.is_absolute():
+            # If it can be made relative to current working directory, do so.
+            rel = os.path.relpath(p.as_posix(), start=os.getcwd())
+        else:
+            rel = p.as_posix()
+    except Exception:
+        rel = Path(path).as_posix()
+
+    rel = rel.replace("\\", "/")
+    if not rel.endswith("/"):
+        rel += "/"
+    return quote(rel, safe="/")
 
 
 def make_mesh_from_xy(
@@ -477,6 +504,21 @@ def run_pattern1_isoline(cfg: Pattern1IsolineConfig) -> Pattern1IsolineResult:
         preview_path = out_dir / f"pattern1_isoline_{cfg.isoline_level:g}.png"
         plt.savefig(preview_path, dpi=300)
         plt.close()
+
+    # --- Jupyter-friendly: show clickable output folder link ---
+    try:
+        from IPython import get_ipython  # type: ignore
+
+        if get_ipython() is not None:
+            from IPython.display import HTML, display  # type: ignore
+
+            href = _make_jupyterlab_tree_href(out_dir)
+            display(HTML(f'📁 Outputs: <a href="{href}" target="_blank">{out_dir.as_posix()}</a>'))
+        else:
+            print(f"Outputs: {out_dir}")
+    except Exception:
+        # Keep it safe in non-notebook usage; still show a plain path.
+        print(f"Outputs: {out_dir}")
 
     return Pattern1IsolineResult(
         out_dir=out_dir,
