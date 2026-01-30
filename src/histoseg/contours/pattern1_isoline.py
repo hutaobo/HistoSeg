@@ -456,7 +456,7 @@ def run_pattern1_isoline(cfg: Pattern1IsolineConfig) -> Pattern1IsolineResult:
         )
         params_path = out_dir / "params.json"
         with params_path.open("w", encoding="utf-8") as f:
-            json.dump(params, f, indent=2, ensure_ascii=False)
+            json.dump(params, f, indent=2, ensure_ascii=False, default=str)
 
     if cfg.save_contours_npy:
         for i, v in enumerate(verts_list):
