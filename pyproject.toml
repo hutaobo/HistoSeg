@@ -7,7 +7,7 @@ name = "histoseg"              # PyPI 上的名字：必须唯一，全小写更
 dynamic = ["version"]          # 版本号由 git tag 自动推导
 description = "..."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Taobo Hu", email = "taobo.hu@scilifelab.se" }]
 dependencies = [
