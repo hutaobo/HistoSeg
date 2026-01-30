@@ -16,7 +16,7 @@ extensions = [
     "sphinx.ext.napoleon",
 ]
 
-html_theme = "sphinx_rtd_theme"
+html_theme = "furo"
 
 # Key: let myst-nb parse both .md and .ipynb
 source_suffix = {
@@ -52,5 +52,8 @@ html_context = {
 
 # Ensure GitHub links open file view ("blob") instead of edit/raw
 html_theme_options = {
-    "vcs_pageview_mode": "blob",
+    "source_repository": "https://github.com/hutaobo/HistoSeg/",
+    "source_branch": "master",
+    "source_directory": "docs/",
+    "top_of_page_buttons": ["view", "edit"],
 }
