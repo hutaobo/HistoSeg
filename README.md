@@ -1,31 +1,41 @@
-```markdown
+<div align="center">
+
 # HistoSeg
 
-[![PyPI](https://img.shields.io/pypi/v/histoseg.svg)](https://pypi.org/project/histoseg/)
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/histoseg.svg)](https://pypi.org/project/histoseg/)
-[![Docs](https://readthedocs.org/projects/histoseg/badge/?version=latest)](https://histoseg.readthedocs.io/en/latest/)
-[![Publish to PyPI](https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml/badge.svg)](https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml)
-[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
+<p align="center">
+  <a href="https://pypi.org/project/histoseg/"><img alt="PyPI" src="https://img.shields.io/pypi/v/histoseg.svg"></a>
+  <a href="https://pypi.org/project/histoseg/"><img alt="PyPI - Python Version" src="https://img.shields.io/pypi/pyversions/histoseg.svg"></a>
+  <a href="https://histoseg.readthedocs.io/en/latest/"><img alt="Docs" src="https://readthedocs.org/projects/histoseg/badge/?version=latest"></a>
+  <a href="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml"><img alt="Publish to PyPI" src="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml/badge.svg?branch=master"></a>
+  <a href="https://creativecommons.org/licenses/by-nc/4.0/"><img alt="License: CC BY-NC 4.0" src="https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg"></a>
+</p>
+
+</div>
 
 HistoSeg is a Python toolkit for **spatial transcriptomics segmentation / geometry extraction**.
 
-The current focus is **Pattern1 isoline (0.5)** contour generation from cell clusters (e.g. 10x Xenium GraphClust output):
-- pick a set of “target clusters” (Pattern1)
-- fit a KNN regressor to estimate *P(target)* over space
-- smooth the probability field
-- extract a contour (isoline) at **level = 0.5**
-- save contour vertices and a quick preview plot
+The current focus is **Pattern1 isoline (0.5)** contour generation from cell clusters (e.g., 10x Xenium GraphClust output):
+
+- Pick a set of “target clusters” (Pattern1)
+- Fit a KNN regressor to estimate *P(target)* over space
+- Smooth the probability field
+- Extract a contour (isoline) at **level = 0.5**
+- Save contour vertices and a quick preview plot
+
+---
 
 ## Quick links
 
-- Documentation: https://histoseg.readthedocs.io
-- Source code: https://github.com/hutaobo/HistoSeg
-- Issue tracker: https://github.com/hutaobo/HistoSeg/issues
+- **Documentation:** https://histoseg.readthedocs.io/en/latest/
+- **Source code:** https://github.com/hutaobo/HistoSeg
+- **Issue tracker:** https://github.com/hutaobo/HistoSeg/issues
 
 > ⚠️ **License note**
 >
 > This repository is licensed under **CC BY-NC 4.0** (non-commercial).
 > Commercial use is not permitted without prior permission. See `LICENSE`.
+
+---
 
 ## Installation
 
@@ -47,11 +57,12 @@ pip install -e .
 ### Dependencies
 
 The Pattern1 isoline workflow uses:
+
 - numpy, pandas
 - scipy
 - scikit-learn
 - matplotlib
-- a Parquet engine (pyarrow is recommended)
+- a Parquet engine (**pyarrow is recommended**)
 
 If you run into missing imports, install them explicitly:
 
@@ -60,7 +71,10 @@ pip install -U numpy pandas pyarrow scipy scikit-learn matplotlib
 ```
 
 Optional:
+
 - Hugging Face downloader: `pip install -U huggingface_hub`
+
+---
 
 ## Tutorial: Pattern1 isoline (0.5)
 
@@ -68,11 +82,11 @@ Optional:
 
 The isoline workflow expects the following files:
 
-1. `clusters.csv`  
+1. `clusters.csv`
    - Typically from GraphClust: `analysis/clustering/gene_expression_graphclust/clusters.csv`
    - Must contain columns: `Barcode`, `Cluster`
 
-2. `cells.parquet`  
+2. `cells.parquet`
    - A cell-level table with spatial coordinates (x/y-like columns)
    - Must contain at least:
      - coordinate columns (e.g. `x`/`y` or `x_centroid`/`y_centroid`)
@@ -84,9 +98,14 @@ The isoline workflow expects the following files:
 ### What you get (outputs)
 
 By default, the pipeline writes into `out_dir`:
+
 - `params.json` — all parameters + inferred join columns
 - `pattern1_isoline_<level>_<i>.npy` — contour vertices (Nx2 arrays)
 - `pattern1_isoline_<level>.png` — quick preview plot
+
+---
+
+## Quickstart
 
 ### One-liner (from a Hugging Face dataset repo)
 
@@ -143,7 +162,9 @@ result = run_pattern1_isoline(cfg)
 print(result)
 ```
 
-### How it works (workflow overview)
+---
+
+## How it works (workflow overview)
 
 ```mermaid
 flowchart TD
@@ -163,13 +184,18 @@ flowchart TD
   M --> N[Save params.json\n+ contours .npy\n+ preview .png]
 ```
 
-### Troubleshooting & tuning
+---
+
+## Troubleshooting & tuning
 
 If no contour is found, try:
-- decrease `min_cells_inside` (e.g. 10 → 3)
-- increase `smooth_sigma` (e.g. 5 → 8)
-- increase `knn_k` (e.g. 30 → 50)
-- reduce `grid_n` to speed up (note: `grid_n=1200` can be heavy)
+
+- Decrease `min_cells_inside` (e.g. 10 → 3)
+- Increase `smooth_sigma` (e.g. 5 → 8)
+- Increase `knn_k` (e.g. 30 → 50)
+- Reduce `grid_n` to speed up (note: `grid_n=1200` can be heavy)
+
+---
 
 ## API reference (high-level)
 
@@ -192,8 +218,11 @@ If no contour is found, try:
 ### SFPlot utilities (legacy / optional)
 
 This repository contains a small subset of SFPlot-style utilities and re-exports:
+
 - `compute_cophenetic_distances_from_df(df, ...)`
 - `plot_cophenetic_heatmap(matrix, ...)`
+
+---
 
 ## GUI (experimental)
 
@@ -203,21 +232,26 @@ A GUI entry point is configured as:
 histoseg-gui
 ```
 
-Note:
-- The current GUI code path is still in flux and may require extra dependencies (e.g. Pillow) and/or an external `sfplot` installation.
+Notes:
+
+- The current GUI code path is still in flux and may require extra dependencies (e.g., Pillow) and/or an external `sfplot` installation.
 - For production workflows, prefer the Python API shown above.
+
+---
 
 ## Contributing
 
 Issues and pull requests are welcome.
 
 When reporting a bug, please include:
+
 - OS + Python version
 - `histoseg` version
-- minimal reproducible code (or a small input subset)
-- expected vs. actual behavior
+- Minimal reproducible code (or a small input subset)
+- Expected vs. actual behavior
+
+---
 
 ## License
 
 CC BY-NC 4.0 (non-commercial). See `LICENSE` for details.
-```
