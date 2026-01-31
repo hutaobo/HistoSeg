@@ -4,7 +4,6 @@
 
 <p align="center">
   <a href="https://pypi.org/project/histoseg/"><img alt="PyPI" src="https://img.shields.io/pypi/v/histoseg.svg"></a>
-  <a href="https://pypi.org/project/histoseg/"><img alt="PyPI - Python Version" src="https://img.shields.io/pypi/pyversions/histoseg.svg"></a>
   <a href="https://histoseg.readthedocs.io/en/latest/"><img alt="Docs" src="https://readthedocs.org/projects/histoseg/badge/?version=latest"></a>
   <a href="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml"><img alt="Publish to PyPI" src="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml/badge.svg?branch=master"></a>
   <a href="https://creativecommons.org/licenses/by-nc/4.0/"><img alt="License: CC BY-NC 4.0" src="https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg"></a>
