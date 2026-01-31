@@ -168,20 +168,20 @@ print(result)
 
 ```mermaid
 flowchart TD
-  A[clusters.csv\nBarcode/Cluster] --> C[Align barcodes\nwith cells.parquet]
-  B[cells.parquet\nx/y + id-like column] --> C
-  C --> D[Select target clusters\n(Pattern1)]
-  D --> E[Sample background points\n(other cells)]
-  F[tissue_boundary.csv] --> G[Generate synthetic background\n(optional)]
+  A["clusters.csv<br/>Barcode/Cluster"] --> C["Align barcodes<br/>with cells.parquet"]
+  B["cells.parquet<br/>x/y + id-like column"] --> C
+  C --> D["Select target clusters<br/>(Pattern1)"]
+  D --> E["Sample background points<br/>(other cells)"]
+  F["tissue_boundary.csv"] --> G["Generate synthetic background<br/>(optional)"]
   G --> E
-  D --> H[KNN regression\npredict P(target)]
+  D --> H["KNN regression<br/>predict P(target)"]
   E --> H
-  H --> I[Predict on mesh grid]
-  I --> J[Gaussian smoothing]
-  J --> K[Mask by tissue\n(nearest-cell threshold)]
-  K --> L[Extract isoline\nlevel = 0.5]
-  L --> M[Filter loops\nmin_cells_inside]
-  M --> N[Save params.json\n+ contours .npy\n+ preview .png]
+  H --> I["Predict on mesh grid"]
+  I --> J["Gaussian smoothing"]
+  J --> K["Mask by tissue<br/>(nearest-cell threshold)"]
+  K --> L["Extract isoline<br/>level = 0.5"]
+  L --> M["Filter loops<br/>min_cells_inside"]
+  M --> N["Save params.json<br/>+ contours .npy<br/>+ preview .png"]
 ```
 
 ---
