@@ -65,12 +65,6 @@ The Pattern1 isoline workflow uses:
 - matplotlib
 - a Parquet engine (**pyarrow is recommended**)
 
-If you run into missing imports, install them explicitly:
-
-```bash
-pip install -U numpy pandas pyarrow scipy scikit-learn matplotlib
-```
-
 Optional:
 
 - Hugging Face downloader: `pip install -U huggingface_hub`
