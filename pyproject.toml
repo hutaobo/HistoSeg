@@ -11,7 +11,14 @@ requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Taobo Hu", email = "taobo.hu@scilifelab.se" }]
 dependencies = [
-  # 你的运行依赖（不要把 docs 依赖放这里）
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "scipy",
+    "scikit-learn",
+    "seaborn",
+    "shapely",
+    "matplotlib",
 ]
 
 [project.urls]
