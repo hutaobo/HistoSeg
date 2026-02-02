@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from shapely.geometry import MultiPoint
+from shapely.geometry import MultiPoint, Polygon, MultiPolygon
 from shapely.ops import unary_union, triangulate
 
 
@@ -15,7 +15,7 @@ def _alpha_shape(points, alpha):
 
     Returns
     -------
-    shapely.geometry.Polygon
+    shapely.geometry.Polygon or MultiPolygon
     """
     if len(points) < 4:
         return MultiPoint(points).convex_hull
@@ -113,6 +113,19 @@ def generate_tissue_boundary(
 
     if simplify_tolerance is not None:
         polygon = polygon.simplify(simplify_tolerance)
+
+    # ------------------------------------------------------------------
+    # Normalize geometry:
+    # tissue boundary must be a single outer polygon
+    # (consistent with tissueboundary.txt behavior)
+    # ------------------------------------------------------------------
+    if isinstance(polygon, MultiPolygon):
+        polygon = max(polygon.geoms, key=lambda p: p.area)
+
+    if not isinstance(polygon, Polygon):
+        raise TypeError(
+            f"Expected Polygon after processing, got {type(polygon)}"
+        )
 
     x, y = polygon.exterior.coords.xy
 
