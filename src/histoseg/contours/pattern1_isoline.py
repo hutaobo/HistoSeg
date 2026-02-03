@@ -44,12 +44,14 @@ PathLike = Union[str, Path]
 class Pattern1IsolineConfig:
     # Required inputs
     clusters_csv: PathLike
-    barcode_col: str = "Barcode"
-    cluster_col: str = "Cluster"
     cells_parquet: PathLike
     tissue_boundary_csv: Optional[PathLike]
     out_dir: PathLike
-    pattern1_clusters: Sequence[int]
+    pattern1_clusters: Sequence[Union[str, int]]
+
+    # Optional overrides for column names in clusters.csv
+    barcode_col: str = "Barcode"
+    cluster_col: str = "Cluster"
 
     # Core params (defaults match the notebook)
     grid_n: int = 1200
@@ -319,15 +321,17 @@ def align_clusters_with_cells(
     """
     cl = pd.read_csv(clusters_csv)
     if barcode_col not in cl.columns or cluster_col not in cl.columns:
-    raise ValueError(
-        f"clusters.csv 需要包含 {barcode_col}/{cluster_col} 列，"
-        f"当前列={list(cl.columns)}"
-    )
+        raise ValueError(
+            f"clusters.csv 需要包含 {barcode_col}/{cluster_col} 列，"
+            f"当前列={list(cl.columns)}"
+        )
 
     cl = cl.copy()
     cl = cl.copy()
     cl[barcode_col] = cl[barcode_col].astype(str)
-    cl[cluster_col] = pd.to_numeric(cl[cluster_col], errors="coerce").astype("Int64")
+    # Keep cluster labels as strings (supports numeric or text labels)
+    cl[cluster_col] = cl[cluster_col].astype("string")
+    cl[cluster_col] = cl[cluster_col].str.replace(r"^(\d+)\.0$", r"\1", regex=True)
 
     cells = pd.read_parquet(cells_parquet)
 
@@ -380,7 +384,7 @@ def align_clusters_with_cells(
         # Provide debugging hints
         msg = [
             "[FAIL] 无法将 clusters.csv 的 Barcode 对齐到 cells.parquet",
-            f"clusters.csv Barcode 示例: {cl['Barcode'].head().tolist()}",
+            f"clusters.csv Barcode 示例: {cl[barcode_col].head().tolist()}",
             f"cells.parquet 列名: {list(cells.columns)[:80]}",
         ]
         for c in id_candidates[:6]:
@@ -406,7 +410,8 @@ def run_pattern1_isoline(cfg: Pattern1IsolineConfig) -> Pattern1IsolineResult:
     )
 
     merged = merged.copy()
-    merged["cluster"] = pd.to_numeric(merged["cluster"], errors="coerce").astype(str)
+    merged["cluster"] = merged["cluster"].astype("string")
+    merged["cluster"] = merged["cluster"].str.replace(r"^(\d+)\.0$", r"\1", regex=True)
     merged = merged.dropna(subset=["cluster"]).copy()
     merged["cluster"] = merged["cluster"].astype(str)
 
@@ -546,13 +551,12 @@ def run_pattern1_isoline(cfg: Pattern1IsolineConfig) -> Pattern1IsolineResult:
     )
 
 
-
 def run_pattern1_isoline_from_hf(
     repo_id: str,
     *,
     revision: str = "main",
     out_dir: PathLike = "outputs/pattern1_isoline0p5_from_graphclust",
-    pattern1_clusters: Sequence[int] = (10, 23, 19, 27, 14, 20, 25, 26),
+    pattern1_clusters: Sequence[Union[str, int]] = (10, 23, 19, 27, 14, 20, 25, 26),
     clusters_relpath: str = "analysis/clustering/gene_expression_graphclust/clusters.csv",
     cache_dir: Optional[PathLike] = None,
     **cfg_overrides,
