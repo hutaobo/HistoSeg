@@ -44,6 +44,8 @@ PathLike = Union[str, Path]
 class Pattern1IsolineConfig:
     # Required inputs
     clusters_csv: PathLike
+    barcode_col: str = "Barcode"
+    cluster_col: str = "Cluster"
     cells_parquet: PathLike
     tissue_boundary_csv: Optional[PathLike]
     out_dir: PathLike
@@ -305,6 +307,8 @@ def sample_background_from_other_cells_plus_synth(
 def align_clusters_with_cells(
     clusters_csv: PathLike,
     cells_parquet: PathLike,
+    barcode_col="Barcode",
+    cluster_col="Cluster",
 ) -> Tuple[pd.DataFrame, str, str, str]:
     """Align clusters.csv(Barcode/Cluster) with cells.parquet.
 
@@ -314,12 +318,16 @@ def align_clusters_with_cells(
         x_col, y_col: chosen coordinate columns
     """
     cl = pd.read_csv(clusters_csv)
-    if "Barcode" not in cl.columns or "Cluster" not in cl.columns:
-        raise ValueError(f"clusters.csv 需要包含 Barcode/Cluster 列，当前列={list(cl.columns)}")
+    if barcode_col not in cl.columns or cluster_col not in cl.columns:
+    raise ValueError(
+        f"clusters.csv 需要包含 {barcode_col}/{cluster_col} 列，"
+        f"当前列={list(cl.columns)}"
+    )
 
     cl = cl.copy()
-    cl["Barcode"] = cl["Barcode"].astype(str)
-    cl["Cluster"] = pd.to_numeric(cl["Cluster"], errors="coerce").astype("Int64")
+    cl = cl.copy()
+    cl[barcode_col] = cl[barcode_col].astype(str)
+    cl[cluster_col] = pd.to_numeric(cl[cluster_col], errors="coerce").astype("Int64")
 
     cells = pd.read_parquet(cells_parquet)
 
@@ -349,13 +357,13 @@ def align_clusters_with_cells(
         tmp = cells.copy()
         tmp["_join_id"] = tmp[cells_id_col].astype(str)
         cl2 = cl.copy()
-        cl2["_join_id"] = cl2["Barcode"].astype(str)
+        cl2["_join_id"] = cl2[barcode_col].astype(str)
 
         if strip_suffix:
             tmp["_join_id"] = tmp["_join_id"].str.replace(r"-1$", "", regex=True)
             cl2["_join_id"] = cl2["_join_id"].str.replace(r"-1$", "", regex=True)
 
-        m = tmp.merge(cl2[["_join_id", "Cluster"]], on="_join_id", how="inner")
+        m = tmp.merge(cl2[["_join_id", cluster_col]], on="_join_id", how="inner")
         return m
 
     best: Optional[pd.DataFrame] = None
@@ -381,7 +389,7 @@ def align_clusters_with_cells(
 
     id_col_used, stripped = best_info
     # Rename Cluster -> cluster (int)
-    out = best.rename(columns={"Cluster": "cluster"})
+    out = best.rename(columns={cluster_col: "cluster"})
     return out, id_col_used, x_col, y_col
 
 
@@ -390,10 +398,15 @@ def run_pattern1_isoline(cfg: Pattern1IsolineConfig) -> Pattern1IsolineResult:
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    merged, id_col_used, x_col, y_col = align_clusters_with_cells(cfg.clusters_csv, cfg.cells_parquet)
+    merged, id_col_used, x_col, y_col = align_clusters_with_cells(
+        cfg.clusters_csv,
+        cfg.cells_parquet,
+        barcode_col=cfg.barcode_col,
+        cluster_col=cfg.cluster_col,
+    )
 
     merged = merged.copy()
-    merged["cluster"] = pd.to_numeric(merged["cluster"], errors="coerce").astype("Int64")
+    merged["cluster"] = pd.to_numeric(merged["cluster"], errors="coerce").astype(str)
     merged = merged.dropna(subset=["cluster"]).copy()
     merged["cluster"] = merged["cluster"].astype(str)
 
