@@ -395,9 +395,9 @@ def run_pattern1_isoline(cfg: Pattern1IsolineConfig) -> Pattern1IsolineResult:
     merged = merged.copy()
     merged["cluster"] = pd.to_numeric(merged["cluster"], errors="coerce").astype("Int64")
     merged = merged.dropna(subset=["cluster"]).copy()
-    merged["cluster"] = merged["cluster"].astype(int)
+    merged["cluster"] = merged["cluster"].astype(str)
 
-    p1 = set(int(x) for x in cfg.pattern1_clusters)
+    p1 = set(str(x) for x in cfg.pattern1_clusters)
     merged["_is_p1"] = merged["cluster"].isin(p1)
 
     p1_df = merged.loc[merged["_is_p1"], [id_col_used, x_col, y_col]].copy()
