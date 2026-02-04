@@ -387,8 +387,8 @@ def align_clusters_with_cells(
     cells = pd.read_parquet(cells_parquet)
 
     # Try to infer coordinate columns
-    cand_x = [c for c in cells.columns if c.lower() in ["x", "x_centroid", "x_center", "xcoord", "x_coord", "x_centroid_um", "x_centroid_px", "x_centroid_microns"]]
-    cand_y = [c for c in cells.columns if c.lower() in ["y", "y_centroid", "y_center", "ycoord", "y_coord", "y_centroid_um", "y_centroid_px", "y_centroid_microns"]]
+    cand_x = [c for c in cells.columns if c.lower() in ["x", "x_location", "x_centroid", "x_center", "xcoord", "x_coord", "x_centroid_um", "x_centroid_px", "x_centroid_microns"]]
+    cand_y = [c for c in cells.columns if c.lower() in ["y", "y_location", "y_centroid", "y_center", "ycoord", "y_coord", "y_centroid_um", "y_centroid_px", "y_centroid_microns"]]
     if not cand_x or not cand_y:
         raise ValueError(f"cells.parquet 找不到 x/y 列。列名示例：{list(cells.columns)[:60]}")
 
