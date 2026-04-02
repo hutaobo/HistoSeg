@@ -24,6 +24,24 @@ __all__ += [
     "plot_cophenetic_heatmap",
 ]
 
+from .spatial_pathologist import (
+    FullAutoSpatialPathologistConfig,
+    SpatialPathologistConfig,
+    load_full_auto_spatial_pathologist_config,
+    load_spatial_pathologist_config,
+    run_full_auto_spatial_pathologist,
+    run_spatial_pathologist,
+)
+
+__all__ += [
+    "FullAutoSpatialPathologistConfig",
+    "SpatialPathologistConfig",
+    "load_full_auto_spatial_pathologist_config",
+    "load_spatial_pathologist_config",
+    "run_full_auto_spatial_pathologist",
+    "run_spatial_pathologist",
+]
+
 # Optional: Hugging Face helpers (requires `huggingface_hub`)
 try:
     from .io.huggingface import (

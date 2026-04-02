@@ -1,0 +1,14 @@
+{
+  "case_name": "lung_graphclust",
+  "study_context": "Human lung cancer FFPE Xenium case. Use the existing structure discovery outputs, H&E overlays, and structure-level evidence to produce an AI spatial pathology review. Treat the case as a pathology-support workflow, not a final autonomous diagnosis.",
+  "base_pipeline_config": "..\\..\\sfplot\\segmentation_methods\\projects\\lung_graphclust\\configs\\lung_graphclust.json",
+  "output_dir": "..\\..\\sfplot\\segmentation_methods\\projects\\lung_graphclust\\outputs\\ai_spatial_pathologist",
+  "openai_enabled": true,
+  "openai_api_key_env": "OPENAI_API_KEY",
+  "openai_model": "gpt-5.4",
+  "openai_reasoning_effort": "medium",
+  "force_recompute_pipeline": false,
+  "low_confidence_threshold": 0.65,
+  "ambiguity_margin_threshold": 0.08,
+  "top_clusters_per_structure": 8
+}

@@ -5,6 +5,7 @@ pycirclize
 psutil
 scikit-learn
 matplotlib
+openai>=1.0.0
 seaborn
 scanpy
 setuptools

@@ -1,0 +1,23 @@
+{
+  "case_name": "lung_addon_graphclust_full_auto",
+  "study_context": "Human lung cancer FFPE Xenium addon case. Run OpenAI-driven cluster annotation from graph-based differential expression evidence, then propagate the generated labels through structure discovery, H&E overlay, and AI spatial pathology review. Treat this as a pathology-support workflow, not a final autonomous diagnosis.",
+  "base_pipeline_config": "..\\..\\sfplot\\segmentation_methods\\projects\\lung_addon_graphclust\\configs\\lung_addon_graphclust.json",
+  "output_root": "..\\..\\sfplot\\segmentation_methods\\projects\\lung_addon_graphclust\\outputs\\full_auto_openai",
+  "differential_expression_csv": "Y:\\long\\10X_datasets\\Xenium\\Xenium_Lung_Cancer\\Xenium_V1_Human_Lung_Cancer_Addon_FFPE_outs\\analysis\\diffexp\\gene_expression_graphclust\\differential_expression.csv",
+  "projection_csv": "Y:\\long\\10X_datasets\\Xenium\\Xenium_Lung_Cancer\\Xenium_V1_Human_Lung_Cancer_Addon_FFPE_outs\\analysis\\umap\\gene_expression_2_components\\projection.csv",
+  "openai_enabled": true,
+  "openai_api_key_env": "OPENAI_API_KEY",
+  "openai_model": "gpt-5.4",
+  "openai_reasoning_effort": "medium",
+  "openai_store": false,
+  "force_recompute_annotation": true,
+  "force_recompute_pipeline": true,
+  "top_positive_markers": 15,
+  "top_negative_markers": 6,
+  "min_log2fc": 0.5,
+  "max_adjusted_p_value": 0.05,
+  "top_neighbors": 5,
+  "low_confidence_threshold": 0.65,
+  "ambiguity_margin_threshold": 0.08,
+  "top_clusters_per_structure": 8
+}

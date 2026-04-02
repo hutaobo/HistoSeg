@@ -12,6 +12,8 @@ setup(
     entry_points={
         "console_scripts": [
             "histoseg-gui = histoseg.gui.gui_app:main",
+            "histoseg-ai-pathologist = histoseg.spatial_pathologist.cli:main",
+            "histoseg-ai-pathologist-full-auto = histoseg.spatial_pathologist.full_auto_cli:main",
         ],
     },
 
