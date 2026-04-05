@@ -157,6 +157,22 @@ def build_case_bundle(cfg: SpatialPathologistConfig) -> dict[str, Any]:
         int(row.structure_id): int(row.cell_count)
         for row in structure_cell_counts.itertuples(index=False)
     }
+    cluster_structure_counts = (
+        cells_for_counts.groupby(["cluster", structure_id_col, structure_name_col])
+        .size()
+        .rename("cell_count")
+        .reset_index()
+    )
+    cluster_structure_counts = cluster_structure_counts.rename(
+        columns={
+            structure_id_col: "structure_id",
+            structure_name_col: "structure_name",
+        }
+    )
+    cluster_structure_count_map = {
+        (int(row.cluster), int(row.structure_id)): int(row.cell_count)
+        for row in cluster_structure_counts.itertuples(index=False)
+    }
 
     polygon_counts = (
         annotation_summary.groupby(["StructureID", "AssignedStructure"])
@@ -227,16 +243,11 @@ def build_case_bundle(cfg: SpatialPathologistConfig) -> dict[str, Any]:
         }
         for row in cluster_lookup.itertuples(index=False)
     }
-    cluster_cell_count_map = {
-        int(row.cluster): int(row.cell_count)
-        for row in cluster_counts.itertuples(index=False)
-    }
-
     clusters: list[dict[str, Any]] = []
     for cluster_id, info in sorted(cluster_structure_map.items()):
         structure_id = int(info["structure_id"])
         structure_cell_count = structure_cell_count_map.get(structure_id, 0)
-        cluster_cell_count = cluster_cell_count_map.get(cluster_id, 0)
+        cluster_cell_count = cluster_structure_count_map.get((cluster_id, structure_id), 0)
         clusters.append(
             {
                 "cluster_id": cluster_id,

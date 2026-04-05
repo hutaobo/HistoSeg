@@ -13,6 +13,7 @@ from .heuristics import (
     build_structure_review,
 )
 from .openai_client import OpenAIJsonClient, OpenAISettings
+from .pathology_ai_api import PathologyAIClient, PathologyAISettings
 from .report import write_html_report
 
 
@@ -151,12 +152,104 @@ def _merge_review(default: dict, llm_result: dict, *, engine_name: str) -> dict:
     return merged
 
 
+def _format_citation(hit: dict) -> str:
+    title = str(hit.get("title", "Unknown source"))
+    page_start = hit.get("page_start", "?")
+    page_end = hit.get("page_end", page_start)
+    retrieval_source = hit.get("retrieval_source", "rag")
+    preview = " ".join(str(hit.get("text_preview", "")).split())
+    if preview:
+        preview = f": {preview[:180]}"
+    return f"{title} pp.{page_start}-{page_end} [{retrieval_source}]{preview}"
+
+
+def _structure_rag_question(structure: dict, heuristic_review: dict, study_context: str) -> str:
+    top_clusters = ", ".join(
+        f"C{int(cluster['cluster_id'])} {cluster['label']} ({100.0 * float(cluster['fraction_of_structure']):.1f}%)"
+        for cluster in structure.get("top_clusters", [])[:4]
+    ) or "No dominant clusters"
+    alternatives = ", ".join(
+        str(candidate.get("label", ""))
+        for candidate in structure.get("top_candidates", [])[1:4]
+        if candidate.get("label")
+    ) or "No strong alternative labels"
+    return (
+        f"Study context: {study_context}\n"
+        f"Spatial structure: S{int(structure['structure_id'])}\n"
+        f"Current assigned label: {structure['assigned_label']}\n"
+        f"Behavior: {structure['behavior']}\n"
+        f"Cells in structure: {int(structure['case_cell_count'])}\n"
+        f"Fraction of case: {100.0 * float(structure['case_cell_fraction']):.1f}%\n"
+        f"Dominant harmonized cell types: {heuristic_review['top_celltype_summary']}\n"
+        f"Dominant contributing clusters: {top_clusters}\n"
+        f"Rule-based score total: {float(structure['score_total']):.3f}\n"
+        f"Winner margin to second leaf: {float(structure['winner_margin_to_second_leaf']):.3f}\n"
+        f"Top alternative labels: {alternatives}\n\n"
+        "Using pathology textbook evidence, write a concise interpretation of whether this structure label is "
+        "pathologically plausible, note the most relevant differentials, and mention the most important manual review checks."
+    )
+
+
+def _case_rag_question(case_bundle: dict, structure_reviews: list[dict]) -> str:
+    structure_lines = []
+    for review in structure_reviews[:6]:
+        structure_lines.append(
+            f"S{int(review['structure_id'])}: {review['assigned_label']} | priority={review['review_priority']} | "
+            f"confidence={float(review['confidence']):.3f} | top_celltypes={review.get('top_celltype_summary', '')[:180]}"
+        )
+    return (
+        f"Study context: {case_bundle['study_context']}\n"
+        f"Case name: {case_bundle['case_name']}\n"
+        f"Total cells: {int(case_bundle['total_cells'])}\n"
+        f"Number of spatial structures: {len(structure_reviews)}\n\n"
+        "Structure-level interpretations:\n"
+        + "\n".join(structure_lines)
+        + "\n\nUsing pathology textbook evidence, provide a brief overall pathology impression for this case, "
+          "highlight key differentials, and mention the most important structures that should be manually confirmed."
+    )
+
+
+def _merge_pathology_ai_structure_review(
+    default: dict,
+    rag_response: dict,
+) -> dict:
+    merged = dict(default)
+    answer = str(rag_response.get("answer", "")).strip()
+    citations = [_format_citation(hit) for hit in rag_response.get("citations", [])]
+    if answer:
+        merged["summary"] = answer
+    merged["key_evidence"] = (list(default.get("key_evidence", [])) + citations[:3])[:10]
+    merged["pathology_ai_citations"] = citations[:5]
+    merged["engine"] = f"pathology_ai_rag:{rag_response.get('used_model', 'unknown')}"
+    if not rag_response.get("used_rag", False):
+        merged["recommended_checks"] = (
+            ["No strong pathology textbook support was retrieved; weigh structure evidence and manual review more heavily."]
+            + list(default.get("recommended_checks", []))
+        )[:8]
+    return merged
+
+
+def _merge_pathology_ai_case_summary(
+    default: dict,
+    rag_response: dict,
+) -> dict:
+    merged = dict(default)
+    answer = str(rag_response.get("answer", "")).strip()
+    citations = [_format_citation(hit) for hit in rag_response.get("citations", [])]
+    if answer:
+        merged["overall_impression"] = answer
+    merged["pathology_ai_citations"] = citations[:5]
+    merged["engine"] = f"pathology_ai_rag:{rag_response.get('used_model', 'unknown')}"
+    return merged
+
+
 def run_spatial_pathologist(cfg: SpatialPathologistConfig) -> dict[str, str]:
     case_bundle = build_case_bundle(cfg)
     output_dir = Path(cfg.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     llm_client = None
+    pathology_ai_client = None
     settings = OpenAISettings(
         enabled=cfg.openai_enabled,
         api_key_env=cfg.openai_api_key_env,
@@ -164,13 +257,22 @@ def run_spatial_pathologist(cfg: SpatialPathologistConfig) -> dict[str, str]:
         reasoning_effort=cfg.openai_reasoning_effort,
         store=cfg.openai_store,
     )
-    if settings.available:
+    if cfg.pathology_review_backend == "openai" and settings.available:
         llm_client = OpenAIJsonClient(settings)
+    if cfg.pathology_review_backend == "pathology_ai_api":
+        pathology_ai_settings = PathologyAISettings(
+            base_url=cfg.pathology_ai_api_base_url,
+            top_k=cfg.pathology_ai_top_k,
+            answer_language=cfg.pathology_ai_answer_language,
+            document_ids=cfg.pathology_ai_document_ids,
+        )
+        if pathology_ai_settings.available:
+            pathology_ai_client = PathologyAIClient(pathology_ai_settings)
 
     cluster_reviews = []
     for cluster in case_bundle["clusters"]:
         heuristic_review = build_cluster_review(cluster)
-        if llm_client is not None:
+        if cfg.pathology_review_backend == "openai" and llm_client is not None:
             try:
                 system, user = _cluster_prompt(cluster, case_bundle["study_context"])
                 llm_review = llm_client.generate_json(
@@ -194,7 +296,7 @@ def run_spatial_pathologist(cfg: SpatialPathologistConfig) -> dict[str, str]:
             low_confidence_threshold=cfg.low_confidence_threshold,
             ambiguity_margin_threshold=cfg.ambiguity_margin_threshold,
         )
-        if llm_client is not None:
+        if cfg.pathology_review_backend == "openai" and llm_client is not None:
             try:
                 system, user = _structure_prompt(structure, case_bundle["study_context"])
                 llm_review = llm_client.generate_json(
@@ -209,10 +311,19 @@ def run_spatial_pathologist(cfg: SpatialPathologistConfig) -> dict[str, str]:
                 continue
             except Exception:
                 pass
+        if cfg.pathology_review_backend == "pathology_ai_api" and pathology_ai_client is not None:
+            try:
+                rag_review = pathology_ai_client.ask(
+                    _structure_rag_question(structure, heuristic_review, case_bundle["study_context"])
+                )
+                structure_reviews.append(_merge_pathology_ai_structure_review(heuristic_review, rag_review))
+                continue
+            except Exception:
+                pass
         structure_reviews.append(heuristic_review)
 
     case_summary = build_case_summary(case_bundle, structure_reviews)
-    if llm_client is not None:
+    if cfg.pathology_review_backend == "openai" and llm_client is not None:
         try:
             system, user = _case_prompt(case_bundle, structure_reviews)
             llm_summary = llm_client.generate_json(
@@ -222,6 +333,12 @@ def run_spatial_pathologist(cfg: SpatialPathologistConfig) -> dict[str, str]:
                 schema=_case_summary_schema(),
             )
             case_summary = _merge_review(case_summary, llm_summary, engine_name=f"openai:{cfg.openai_model}")
+        except Exception:
+            pass
+    elif cfg.pathology_review_backend == "pathology_ai_api" and pathology_ai_client is not None:
+        try:
+            rag_summary = pathology_ai_client.ask(_case_rag_question(case_bundle, structure_reviews))
+            case_summary = _merge_pathology_ai_case_summary(case_summary, rag_summary)
         except Exception:
             pass
 
@@ -248,6 +365,11 @@ def run_spatial_pathologist(cfg: SpatialPathologistConfig) -> dict[str, str]:
     (output_dir / "run_metadata.json").write_text(
         json.dumps(
             {
+                "pathology_review_backend": cfg.pathology_review_backend,
+                "pathology_ai_api_base_url": cfg.pathology_ai_api_base_url,
+                "pathology_ai_top_k": cfg.pathology_ai_top_k,
+                "pathology_ai_answer_language": cfg.pathology_ai_answer_language,
+                "pathology_ai_document_ids": list(cfg.pathology_ai_document_ids),
                 "openai_requested": cfg.openai_enabled,
                 "openai_api_key_env": cfg.openai_api_key_env,
                 "openai_api_key_present": settings.api_key is not None,

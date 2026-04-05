@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from math import exp
 from typing import Any
+import re
 
 
 def _sigmoid(x: float) -> float:
@@ -10,6 +11,22 @@ def _sigmoid(x: float) -> float:
 
 def _format_percent(value: float) -> str:
     return f"{100.0 * float(value):.1f}%"
+
+
+def _summary_brief(text: str, *, max_chars: int = 180) -> str:
+    normalized = str(text).replace("\r", "\n")
+    normalized = re.sub(r"^\s*#{1,4}\s*", "", normalized, flags=re.MULTILINE)
+    normalized = re.sub(r"\*\*(.+?)\*\*", r"\1", normalized)
+    normalized = re.sub(r"\*(.+?)\*", r"\1", normalized)
+    normalized = re.sub(r"`(.+?)`", r"\1", normalized)
+    normalized = " ".join(normalized.split())
+    normalized = re.sub(r"^\*+|\*+$", "", normalized).strip()
+    if not normalized:
+        return "No summary available."
+    if len(normalized) <= max_chars:
+        return normalized
+    cutoff = normalized[: max_chars + 1].rsplit(" ", 1)[0].strip()
+    return cutoff + "..."
 
 
 def _label_family(label: str) -> str:
@@ -203,7 +220,7 @@ def build_case_summary(
         "headline": headline,
         "overall_impression": impression,
         "key_findings": [
-            review["summary"] for review in dominant_structures
+            f"S{review['structure_id']}: {_summary_brief(review['summary'])}" for review in dominant_structures
         ],
         "review_priorities": [
             f"S{review['structure_id']}: {review['assigned_label']}"

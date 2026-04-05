@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 from html import escape
 import json
+import re
 
 
 def _link(from_dir: Path, target: str) -> str:
@@ -17,10 +18,132 @@ def _link(from_dir: Path, target: str) -> str:
             return target_path.as_posix()
 
 
-def _render_list(items: list[str]) -> str:
+def _sanitize_text(text: str) -> str:
+    lines = [line.rstrip() for line in str(text).replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    while lines and lines[-1].strip().lower().startswith(("if you want", "i can also", "i can convert")):
+        lines.pop()
+        while lines and not lines[-1].strip():
+            lines.pop()
+    return "\n".join(lines).strip()
+
+
+def _format_inline_markdown(text: str) -> str:
+    rendered = escape(str(text))
+    rendered = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", rendered)
+    rendered = re.sub(r"\*(.+?)\*", r"<em>\1</em>", rendered)
+    return rendered
+
+
+def _render_rich_text(text: str) -> str:
+    sanitized = _sanitize_text(text)
+    if not sanitized:
+        return "<p class='muted'>None</p>"
+
+    blocks: list[str] = []
+    paragraph_lines: list[str] = []
+    list_items: list[str] = []
+    list_type: str | None = None
+
+    def flush_paragraph() -> None:
+        nonlocal paragraph_lines
+        if paragraph_lines:
+            paragraph = " ".join(line.strip() for line in paragraph_lines if line.strip())
+            if paragraph:
+                blocks.append(f"<p>{_format_inline_markdown(paragraph)}</p>")
+            paragraph_lines = []
+
+    def flush_list() -> None:
+        nonlocal list_items, list_type
+        if list_items and list_type:
+            tag = "ol" if list_type == "ol" else "ul"
+            blocks.append(f"<{tag}>" + "".join(f"<li>{_format_inline_markdown(item)}</li>" for item in list_items) + f"</{tag}>")
+        list_items = []
+        list_type = None
+
+    for raw_line in sanitized.split("\n"):
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            flush_paragraph()
+            flush_list()
+            continue
+
+        if stripped in {"---", "***"}:
+            flush_paragraph()
+            flush_list()
+            blocks.append("<hr class='section-sep'>")
+            continue
+
+        heading_match = re.match(r"^(#{1,4})\s+(.*)$", stripped)
+        ordered_match = re.match(r"^\d+\.\s+(.*)$", stripped)
+        bullet_match = re.match(r"^[-*]\s+(.*)$", stripped)
+
+        if heading_match:
+            flush_paragraph()
+            flush_list()
+            level = min(len(heading_match.group(1)) + 1, 4)
+            blocks.append(f"<h{level}>{_format_inline_markdown(heading_match.group(2).strip())}</h{level}>")
+            continue
+
+        if ordered_match:
+            flush_paragraph()
+            if list_type not in {None, "ol"}:
+                flush_list()
+            list_type = "ol"
+            list_items.append(ordered_match.group(1).strip())
+            continue
+
+        if bullet_match:
+            flush_paragraph()
+            if list_type not in {None, "ul"}:
+                flush_list()
+            list_type = "ul"
+            list_items.append(bullet_match.group(1).strip())
+            continue
+
+        if list_type is not None:
+            list_items[-1] = list_items[-1] + " " + stripped
+        else:
+            paragraph_lines.append(stripped)
+
+    flush_paragraph()
+    flush_list()
+    return "".join(blocks)
+
+
+def _render_list(items: list[str], *, rich: bool = False) -> str:
     if not items:
         return "<p class='muted'>None</p>"
+    if rich:
+        return "<ul>" + "".join(f"<li>{_render_rich_text(str(item))}</li>" for item in items) + "</ul>"
     return "<ul>" + "".join(f"<li>{escape(str(item))}</li>" for item in items) + "</ul>"
+
+
+def _brief_text(text: str, *, max_chars: int = 360) -> str:
+    sanitized = _sanitize_text(text)
+    if not sanitized:
+        return ""
+    blocks = [block.strip() for block in sanitized.split("\n\n") if block.strip()]
+    first_block = ""
+    for block in blocks:
+        single = " ".join(block.split())
+        if re.fullmatch(r"\*{1,2}[^*]+\*{1,2}", single):
+            continue
+        if re.fullmatch(r"#{1,4}\s+.+", single):
+            continue
+        first_block = block
+        break
+    if not first_block and blocks:
+        first_block = blocks[0]
+    single_line = " ".join(first_block.split())
+    single_line = re.sub(r"\*\*(.+?)\*\*", r"\1", single_line)
+    single_line = re.sub(r"\*(.+?)\*", r"\1", single_line)
+    if len(single_line) <= max_chars:
+        return single_line
+    cutoff = single_line[: max_chars + 1].rsplit(" ", 1)[0].strip()
+    return cutoff + "..."
 
 
 def _render_kv_table(mapping: dict[str, Any]) -> str:
@@ -70,17 +193,17 @@ def _render_structure_cards(structure_reviews: list[dict[str, Any]]) -> str:
             "<section class='card structure-card'>"
             f"<div class='card-header'><h3>{escape(review['title'])}</h3>"
             f"<span class='pill pill-{escape(review['review_priority'])}'>{escape(review['review_priority'])}</span></div>"
-            f"<p>{escape(review['summary'])}</p>"
+            f"{_render_rich_text(review['summary'])}"
             f"<p><strong>Confidence:</strong> {float(review['confidence']):.3f}</p>"
             f"<p><strong>Top cell types:</strong> {escape(review['top_celltype_summary'])}</p>"
             "<div class='subgrid'>"
             "<div>"
             "<h4>Key evidence</h4>"
-            f"{_render_list([str(item) for item in review.get('key_evidence', [])])}"
+            f"{_render_list([str(item) for item in review.get('key_evidence', [])], rich=True)}"
             "</div>"
             "<div>"
             "<h4>Recommended checks</h4>"
-            f"{_render_list([str(item) for item in review.get('recommended_checks', [])])}"
+            f"{_render_list([str(item) for item in review.get('recommended_checks', [])], rich=True)}"
             "</div>"
             "</div>"
             "<h4>Top contributing clusters</h4>"
@@ -198,6 +321,10 @@ def write_html_report(
     th, td {{ text-align: left; border-bottom: 1px solid var(--line); padding: 8px 10px; vertical-align: top; }}
     .kv-table th {{ width: 220px; color: var(--muted); font-weight: 600; }}
     .muted {{ color: var(--muted); }}
+    .rich-text p {{ margin: 0 0 12px; }}
+    .rich-text ul, .rich-text ol {{ margin: 0 0 14px 20px; padding: 0; }}
+    .rich-text h3, .rich-text h4 {{ margin-top: 16px; }}
+    .section-sep {{ border: 0; border-top: 1px solid var(--line); margin: 18px 0; }}
     a {{ color: var(--accent); text-decoration: none; }}
     @media (max-width: 900px) {{
       .hero-grid, .subgrid {{ grid-template-columns: 1fr; }}
@@ -213,7 +340,7 @@ def write_html_report(
           <p class="muted">AI-Driven Spatial Pathologist</p>
           <h1>{escape(case_bundle['case_name'])}</h1>
           <p>{escape(case_summary['headline'])}</p>
-          <p>{escape(case_summary['overall_impression'])}</p>
+          <p>{escape(_brief_text(case_summary['overall_impression']))}</p>
         </div>
         <div>
           {_render_kv_table({
@@ -244,8 +371,10 @@ def write_html_report(
     <section>
       <h2>Case synthesis</h2>
       <div class="card card-body">
+        <h3>Overall interpretation</h3>
+        <div class="rich-text">{_render_rich_text(case_summary['overall_impression'])}</div>
         <h3>Key findings</h3>
-        {_render_list(case_summary['key_findings'])}
+        {_render_list(case_summary['key_findings'], rich=True)}
         <h3>Review priorities</h3>
         {_render_list(case_summary['review_priorities'])}
         <h3>Discovery candidates</h3>

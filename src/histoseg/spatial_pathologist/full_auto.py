@@ -24,6 +24,12 @@ class FullAutoSpatialPathologistConfig:
     output_root: Path
     annotation_taxonomy: str = "lung"
 
+    pathology_review_backend: str = "openai"
+    pathology_ai_api_base_url: str = "http://127.0.0.1:8000"
+    pathology_ai_top_k: int = 6
+    pathology_ai_answer_language: str = "en"
+    pathology_ai_document_ids: tuple[str, ...] = ()
+
     differential_expression_csv: Path | None = None
     projection_csv: Path | None = None
 
@@ -65,6 +71,11 @@ def load_full_auto_spatial_pathologist_config(path: str | Path) -> FullAutoSpati
         base_pipeline_config=_resolve_path(payload["base_pipeline_config"], config_path.parent),
         output_root=_resolve_path(payload["output_root"], config_path.parent),
         annotation_taxonomy=str(payload.get("annotation_taxonomy", "lung")),
+        pathology_review_backend=str(payload.get("pathology_review_backend", "openai")),
+        pathology_ai_api_base_url=str(payload.get("pathology_ai_api_base_url", "http://127.0.0.1:8000")),
+        pathology_ai_top_k=int(payload.get("pathology_ai_top_k", 6)),
+        pathology_ai_answer_language=str(payload.get("pathology_ai_answer_language", "en")),
+        pathology_ai_document_ids=tuple(str(item) for item in payload.get("pathology_ai_document_ids", [])),
         differential_expression_csv=_resolve_path(payload.get("differential_expression_csv"), config_path.parent),
         projection_csv=_resolve_path(payload.get("projection_csv"), config_path.parent),
         openai_enabled=bool(payload.get("openai_enabled", True)),
@@ -187,6 +198,11 @@ def run_full_auto_spatial_pathologist(cfg: FullAutoSpatialPathologistConfig) -> 
             study_context=cfg.study_context,
             base_pipeline_config=runtime_cfg_path,
             output_dir=output_root / "pathology_review",
+            pathology_review_backend=cfg.pathology_review_backend,
+            pathology_ai_api_base_url=cfg.pathology_ai_api_base_url,
+            pathology_ai_top_k=cfg.pathology_ai_top_k,
+            pathology_ai_answer_language=cfg.pathology_ai_answer_language,
+            pathology_ai_document_ids=cfg.pathology_ai_document_ids,
             openai_enabled=cfg.openai_enabled,
             openai_api_key_env=cfg.openai_api_key_env,
             openai_model=cfg.openai_model,
@@ -205,6 +221,11 @@ def run_full_auto_spatial_pathologist(cfg: FullAutoSpatialPathologistConfig) -> 
             study_context=cfg.study_context,
             base_pipeline_config=runtime_cfg_path,
             output_dir=output_root / "pathology_review",
+            pathology_review_backend=cfg.pathology_review_backend,
+            pathology_ai_api_base_url=cfg.pathology_ai_api_base_url,
+            pathology_ai_top_k=cfg.pathology_ai_top_k,
+            pathology_ai_answer_language=cfg.pathology_ai_answer_language,
+            pathology_ai_document_ids=cfg.pathology_ai_document_ids,
             openai_enabled=cfg.openai_enabled,
             openai_api_key_env=cfg.openai_api_key_env,
             openai_model=cfg.openai_model,
@@ -226,6 +247,11 @@ def run_full_auto_spatial_pathologist(cfg: FullAutoSpatialPathologistConfig) -> 
         "pathology_outputs": pathology_outputs,
         "responses_api_ready": True,
         "annotation_taxonomy": cfg.annotation_taxonomy,
+        "pathology_review_backend": cfg.pathology_review_backend,
+        "pathology_ai_api_base_url": cfg.pathology_ai_api_base_url,
+        "pathology_ai_top_k": cfg.pathology_ai_top_k,
+        "pathology_ai_answer_language": cfg.pathology_ai_answer_language,
+        "pathology_ai_document_ids": list(cfg.pathology_ai_document_ids),
         "pipeline_recomputed": recompute_pipeline,
         "openai_api_key_env": cfg.openai_api_key_env,
         "openai_model": cfg.openai_model,
