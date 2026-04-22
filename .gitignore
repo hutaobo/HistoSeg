@@ -108,3 +108,10 @@ ENV/
 .vscode/
 .idea/
 
+# Confidential patent materials must never be committed.
+/docs/ai_driven_spatial_pathologist_patent_*
+/docs/patent_centralized_bundle/
+/docs/patent_centralized_bundle.zip
+/docs/patent_figures/
+/docs/patent_package/
+

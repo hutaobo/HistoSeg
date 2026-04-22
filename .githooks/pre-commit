@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if command -v python >/dev/null 2>&1; then
+  exec python scripts/check_no_patent_files.py --staged
+fi
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 scripts/check_no_patent_files.py --staged
+fi
+if command -v py >/dev/null 2>&1; then
+  exec py -3 scripts/check_no_patent_files.py --staged
+fi
+
+echo "Python is required to run the confidential path guard." >&2
+exit 1
