@@ -15,6 +15,7 @@ dependencies = [
     "pandas",
     "pyarrow",
     "scipy",
+    "scikit-image",
     "scikit-learn",
     "seaborn",
     "shapely",

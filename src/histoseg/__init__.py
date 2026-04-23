@@ -6,10 +6,20 @@ from .contours.pattern1_isoline import (
     run_pattern1_isoline,
     run_pattern1_isoline_from_hf,
 )
+from .contours.multi_structure import (
+    MultiStructureContourConfig,
+    MultiStructureContourResult,
+    MultiStructureSpec,
+    run_multi_structure_contours,
+)
 
 __all__ = [
+    "MultiStructureContourConfig",
+    "MultiStructureContourResult",
+    "MultiStructureSpec",
     "Pattern1IsolineConfig",
     "Pattern1IsolineResult",
+    "run_multi_structure_contours",
     "run_pattern1_isoline",
     "run_pattern1_isoline_from_hf",
 ]

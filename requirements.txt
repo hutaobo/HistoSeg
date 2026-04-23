@@ -4,6 +4,7 @@ pandas
 pycirclize
 psutil
 scikit-learn
+scikit-image
 matplotlib
 openai>=1.0.0
 seaborn
