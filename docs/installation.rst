@@ -1,51 +1,42 @@
-.. highlight:: shell
-
 ============
 Installation
 ============
 
-
-Stable release
+Stable Release
 --------------
 
-To install sfplot, run this command in your terminal:
+Install HistoSeg from PyPI:
 
 .. code-block:: console
 
-    $ pip install sfplot
+    pip install -U histoseg
 
-This is the preferred method to install sfplot, as it will always install the most recent stable release.
-
-If you don't have `pip`_ installed, this `Python installation guide`_ can guide
-you through the process.
-
-.. _pip: https://pip.pypa.io
-.. _Python installation guide: http://docs.python-guide.org/en/latest/starting/installation/
-
-
-From sources
-------------
-
-The sources for sfplot can be downloaded from the `Github repo`_.
-
-You can either clone the public repository:
+HE Analysis can optionally use local Hugging Face MedSAM inference. Install the
+extra dependencies when you need the ``backend="medsam"`` workflow:
 
 .. code-block:: console
 
-    $ git clone git://github.com/hutaobo/sfplot
+    pip install -U "histoseg[he]"
 
-Or download the `tarball`_:
+Development Install
+-------------------
 
-.. code-block:: console
-
-    $ curl -OJL https://github.com/hutaobo/sfplot/tarball/master
-
-Once you have a copy of the source, you can install it with:
+Clone the repository and install it in editable mode:
 
 .. code-block:: console
 
-    $ python setup.py install
+    git clone https://github.com/hutaobo/HistoSeg.git
+    cd HistoSeg
+    pip install -U pip
+    pip install -e ".[he]"
 
+Feature Groups
+--------------
 
-.. _Github repo: https://github.com/hutaobo/sfplot
-.. _tarball: https://github.com/hutaobo/sfplot/tarball/master
+``histoseg.he``
+    H&E image workflows for tissue foreground extraction, neutral component
+    partitioning, and aligned-image change detection.
+
+``histoseg.contour``
+    Spatial contour workflows for Pattern1 isolines and multi-structure
+    contour exports from cell-coordinate inputs.

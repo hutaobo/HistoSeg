@@ -1,15 +1,26 @@
-* sfplot version:
+* HistoSeg version:
 * Python version:
-* Operating System:
+* Operating system:
+* Feature group: HE Analysis / Contour Analysis / Other
+* Input type: H&E image / Xenium cell table / clusters.csv / GeoJSON / other
+* Interface used: Python API / CLI / notebook / other
 
 ### Description
 
-Describe what you were trying to get done.
-Tell us what happened, what went wrong, and what you expected to happen.
+Describe what you were trying to do, what happened, and what you expected to happen.
 
-### What I Did
+### Command Or Code
 
 ```
-Paste the command(s) you ran and the output.
-If there was a crash, please include the traceback here.
+Paste the command, Python snippet, or notebook cell you ran.
 ```
+
+### Output Or Traceback
+
+```
+Paste the output here. If there was a crash, include the full traceback.
+```
+
+### Data Notes
+
+Please include the relevant input schema or a small reproducible sample if possible.

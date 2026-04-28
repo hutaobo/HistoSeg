@@ -36,6 +36,10 @@ exclude_patterns = [
     "**/.ipynb_checkpoints",
 ]
 
+suppress_warnings = [
+    "misc.highlighting_failure",
+]
+
 # Remove the default "View page source" link (/_sources/...)
 html_show_sourcelink = False
 

@@ -11,14 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write   # Trusted Publishing 必需
+      id-token: write   # Required for Trusted Publishing.
       contents: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 必须拿到 tags，setuptools-scm 才能算版本
+          fetch-depth: 0  # Fetch tags so setuptools-scm can resolve the version.
 
       - name: Set up Python
         uses: actions/setup-python@v5

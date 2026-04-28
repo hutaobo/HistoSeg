@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "histoseg"              # PyPI 上的名字：必须唯一，全小写更稳
-dynamic = ["version"]          # 版本号由 git tag 自动推导
-description = "..."
+name = "histoseg"
+dynamic = ["version"]
+description = "Python toolkit for H&E image analysis and spatial contour analysis."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -23,17 +23,27 @@ dependencies = [
     "openai>=1.0.0",
 ]
 
+[project.optional-dependencies]
+he = [
+    "torch",
+    "transformers",
+    "accelerate",
+    "pillow",
+    "opencv-python-headless",
+    "rasterio",
+]
+
 [project.urls]
 Homepage = "https://github.com/hutaobo/HistoSeg"
 Documentation = "https://histoseg.readthedocs.io"
 
-# --- 从 Git tag 推导版本，并写入版本文件（推荐） ---
+# Derive the package version from Git tags and write it into the version module.
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
 local_scheme = "node-and-date"
 write_to = "src/histoseg/_version.py"
 
-# --- 为后续的自动发版（semantic-release）预留配置 ---
+# Reserved for future automated semantic-release publishing.
 [tool.semantic_release]
 branch = "master"
 tag_format = "v{version}"

@@ -1,6 +1,7 @@
-# Contour generation based on cell clusters
+# Pattern1 Contour Generation
 
-这里写一句话：这个脚本干啥、输入输出是什么。
+This workflow generates a 0.5 isoline contour for selected clusters from
+cell-coordinate data. It belongs to the `histoseg.contour` feature group.
 
 ## Overview
 
@@ -8,28 +9,44 @@
 :::{grid-item-card} Inputs
 - `clusters.csv`
 - `cells.parquet`
-- `tissue_boundary.csv`
+- optional `tissue_boundary.csv`
 :::
 :::{grid-item-card} Outputs
-- `pattern1_isoline0p5_*.npy`
-- `pattern1_isoline0p5.png`
+- contour vertex arrays
+- preview PNG
 - `params.json`
 :::
 ::::
 
-## Step-by-step
+## Step-by-Step
 
-1. Align IDs
-2. Select Pattern1 clusters
-3. Train KNN
-4. Predict on grid + smoothing
-5. Extract isoline (0.5)
-6. Filter loops
+1. Align cell IDs between `clusters.csv` and `cells.parquet`.
+2. Select target Pattern1 clusters.
+3. Sample background points from non-target cells and optional synthetic tissue background.
+4. Train a KNN regressor on target/background labels.
+5. Predict on a mesh grid and smooth the probability field.
+6. Extract the 0.5 isoline.
+7. Filter small or unsupported loops.
+8. Write contours, preview images, and provenance metadata.
 
-## Full script
+## Python API
 
-```{literalinclude} ../../workflows/contour_generation_pattern1.py
----
-language: python
-linenos: true
----
+```python
+from histoseg.contour import Pattern1IsolineConfig, run_pattern1_isoline
+
+result = run_pattern1_isoline(
+    Pattern1IsolineConfig(
+        clusters_csv="clusters.csv",
+        cells_parquet="cells.parquet",
+        tissue_boundary_csv="tissue_boundary.csv",
+        out_dir="outputs/pattern1",
+        pattern1_clusters=(10, 23, 19),
+    )
+)
+```
+
+## CLI
+
+```bash
+histoseg-contour pattern1 --clusters-csv clusters.csv --cells-parquet cells.parquet --out-dir outputs/pattern1 --pattern1-clusters 10,23,19
+```

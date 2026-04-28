@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from histoseg import (
+from histoseg.contour import (
     MultiStructureContourConfig,
     MultiStructureSpec,
     run_multi_structure_contours,

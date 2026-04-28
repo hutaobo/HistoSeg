@@ -15,7 +15,7 @@ AI-driven spatial pathology system that performs:
 The design is grounded in the current code assets in:
 
 - `src/histoseg/`
-- `D:/GitHub/sfplot/segmentation_methods/src/tissue_structure_pipeline/`
+- `D:/GitHub/segmentation_methods/src/tissue_structure_pipeline/`
 
 The goal is not to replace the current code immediately. The goal is to define
 how the existing prototypes should evolve into a maintainable product-grade
@@ -65,9 +65,9 @@ The current codebase already contains the core building blocks.
 
 | Capability | Current asset | Role in target architecture |
 | --- | --- | --- |
-| KNN + Gaussian isoline contouring | `src/histoseg/contours/pattern1_isoline.py` | Generic geometry engine |
+| KNN + Gaussian isoline contouring | `src/histoseg/contour/pattern1_isoline.py` | Generic geometry engine |
 | Tissue boundary extraction | `src/histoseg/geometry/tissue_boundary.py` | Boundary and polygon utilities |
-| Searcher-Findee distance and cophenetic matrices | `src/histoseg/sfplot/Searcher_Findee_Score.py` | CDE foundation |
+| Searcher-Findee distance and cophenetic matrices | `histoseg.contour` utility exports | CDE foundation |
 | Structure discovery and semantic assignment | `segmentation_methods/src/tissue_structure_pipeline/structure_assignment.py` | Prototype pathology engine |
 | Hierarchical pathology scoring | `segmentation_methods/src/tissue_structure_pipeline/hierarchical_structure_assignment.py` | Reference-based semantic scorer |
 | H&E overlay and Xenium export | `segmentation_methods/src/tissue_structure_pipeline/he_overlay.py` | Review and validation layer |
@@ -147,9 +147,9 @@ src/histoseg/
 
 | Current module | Target module | Migration note |
 | --- | --- | --- |
-| `contours/pattern1_isoline.py` | `segmentation/isoline.py` | Keep current implementation, widen from Pattern1 to generic structures |
+| `contour/pattern1_isoline.py` | `segmentation/isoline.py` | Keep current implementation, widen from Pattern1 to generic structures |
 | `geometry/tissue_boundary.py` | `segmentation/partition.py` or `geometry/` | Keep as shared geometry utility |
-| `sfplot/Searcher_Findee_Score.py` | `cde/distance.py` and `cde/cophenetic.py` | Split plotting from computation |
+| Searcher-Findee utilities | `cde/distance.py` and `cde/cophenetic.py` | Split plotting from computation |
 | `segmentation_methods/.../structure_assignment.py` | `pathology/assignment.py` | Migrate only stable generic pieces |
 | `segmentation_methods/.../hierarchical_structure_assignment.py` | `pathology/reference.py` and `pathology/assignment.py` | Keep scorer logic, simplify organ-specific heuristics |
 | `segmentation_methods/.../he_overlay.py` | `segmentation/overlay.py` and `reports/reviewer_exports.py` | Split geometry, rendering, and export |
@@ -474,7 +474,7 @@ outputs/<case_id>/
     col_cophenetic_matrix.csv
     cluster_structure_lookup.csv
   segmentation/
-    contours/
+    contour/
     masks/
     previews/
     xenium_explorer_annotations.geojson
