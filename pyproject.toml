@@ -45,7 +45,7 @@ write_to = "src/histoseg/_version.py"
 
 # Reserved for future automated semantic-release publishing.
 [tool.semantic_release]
-branch = "master"
+branch = "main"
 tag_format = "v{version}"
 version_toml = ["pyproject.toml:project.version"]
 version_variables = ["src/histoseg/_version.py:__version__"]

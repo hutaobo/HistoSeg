@@ -45,19 +45,19 @@ html_show_sourcelink = False
 
 # Enable GitHub links (e.g., "Edit on GitHub" / "View on GitHub")
 # This should point to:
-# https://github.com/hutaobo/HistoSeg/blob/master/docs/<pagename><suffix>
+# https://github.com/hutaobo/HistoSeg/blob/main/docs/<pagename><suffix>
 html_context = {
     "display_github": True,
     "github_user": "hutaobo",
     "github_repo": "HistoSeg",
-    "github_version": "master",
+    "github_version": "main",
     "conf_py_path": "/docs/",
 }
 
 # Ensure GitHub links open file view ("blob") instead of edit/raw
 html_theme_options = {
     "source_repository": "https://github.com/hutaobo/HistoSeg/",
-    "source_branch": "master",
+    "source_branch": "main",
     "source_directory": "docs/",
     "top_of_page_buttons": ["view", "edit"],
 }
