@@ -61,11 +61,52 @@ result = run_multi_structure_contours(
 )
 ```
 
+## Boundary Network Python API
+
+```python
+from histoseg.contour import BoundaryNetworkConfig, run_group_boundary_network
+
+result = run_group_boundary_network(
+    BoundaryNetworkConfig(
+        boundary_csv="/path/to/group_boundary_overlap_filtered.csv",
+        out_dir="outputs/boundary_network",
+        drop_structures=("1", "6"),
+    )
+)
+```
+
+The boundary network workflow consumes a group-level boundary overlap table,
+including either legacy columns such as `total_shared_boundary` and
+`mean_shared_boundary` or HistoSeg topology columns such as
+`shared_boundary_length_um`.
+
+## Contour Adjacency Python API
+
+```python
+from histoseg.contour import ContourAdjacencyConfig, run_contour_adjacency
+
+result = run_contour_adjacency(
+    ContourAdjacencyConfig(
+        contours="/path/to/contours.csv",
+        groupby="structure",
+        out_dir="outputs/contour_adjacency",
+    )
+)
+```
+
+The contour adjacency workflow recomputes topology from contour geometries.
+Boundary-neighbor pairs contribute shared boundary length, and enclosure pairs
+contribute the inner contour boundary length. It writes a long-form edge CSV, a
+square adjacency matrix CSV with an empty diagonal, a network plot, and a
+heatmap.
+
 ## CLI
 
 ```bash
 histoseg-contour pattern1 --clusters-csv clusters.csv --cells-parquet cells.parquet --out-dir outputs/p1 --pattern1-clusters 10,23,19
 histoseg-contour multi-structure --clusters-csv clusters.csv --cells-parquet cells.parquet --out-dir outputs/ms --structures-json structures.json
+histoseg-contour boundary-network --boundary-csv group_boundary_overlap_filtered.csv --out-dir outputs/boundary_network
+histoseg-contour adjacency --contours-csv contours.csv --groupby structure --out-dir outputs/contour_adjacency
 ```
 
 ## Tutorials

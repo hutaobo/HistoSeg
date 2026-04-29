@@ -6,6 +6,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
+from .boundary_network import BoundaryNetworkConfig, run_group_boundary_network
+from .contour_adjacency import ContourAdjacencyConfig, run_contour_adjacency
 from .multi_structure import MultiStructureContourConfig, run_multi_structure_contours
 from .pattern1_isoline import Pattern1IsolineConfig, run_pattern1_isoline
 
@@ -43,6 +45,84 @@ def main(argv: Sequence[str] | None = None) -> None:
     multi.add_argument("--gaussian-sigma", type=float, default=2.25, help="Density smoothing sigma.")
     multi.add_argument("--min-cells", type=int, default=500, help="Minimum assigned cells per contour.")
 
+    network = subparsers.add_parser(
+        "boundary-network",
+        help="Render a group boundary-overlap network from a CSV edge table.",
+    )
+    network.add_argument("--boundary-csv", required=True, help="Group boundary-overlap CSV path.")
+    network.add_argument("--out-dir", required=True, help="Output directory.")
+    network.add_argument(
+        "--drop-structures",
+        default="",
+        help="Comma-separated structure labels or IDs to omit, for example 1,6.",
+    )
+    network.add_argument(
+        "--min-shared-boundary",
+        type=float,
+        default=0.0,
+        help="Minimum shared boundary length to keep an edge.",
+    )
+    network.add_argument(
+        "--min-boundary-pairs",
+        type=int,
+        default=0,
+        help="Minimum boundary pair count to keep an edge.",
+    )
+    network.add_argument(
+        "--top-n-edges",
+        type=int,
+        default=None,
+        help="Keep only the top N edges after filtering.",
+    )
+    network.add_argument("--dpi", type=int, default=200, help="Preview PNG resolution.")
+    network.add_argument(
+        "--no-preview",
+        action="store_true",
+        help="Skip writing group_boundary_network.png.",
+    )
+
+    adjacency = subparsers.add_parser(
+        "adjacency",
+        help="Compute contour-type adjacency from contour geometries.",
+    )
+    adjacency.add_argument("--contours-csv", required=True, help="Contour CSV path.")
+    adjacency.add_argument("--groupby", required=True, help="Contour type/group column.")
+    adjacency.add_argument("--out-dir", required=True, help="Output directory.")
+    adjacency.add_argument(
+        "--contour-id-col",
+        default="contour_id",
+        help="Column containing stable contour IDs.",
+    )
+    adjacency.add_argument(
+        "--geometry-col",
+        default="geometry",
+        help="Column containing WKT, WKB hex, or GeoJSON geometries.",
+    )
+    adjacency.add_argument(
+        "--boundary-tolerance",
+        type=float,
+        default=1.0,
+        help="Distance tolerance for nearly coincident boundaries.",
+    )
+    adjacency.add_argument(
+        "--min-shared-boundary",
+        type=float,
+        default=0.0,
+        help="Minimum shared boundary length for boundary-neighbor pairs.",
+    )
+    adjacency.add_argument(
+        "--enclosure-min-fraction",
+        type=float,
+        default=0.95,
+        help="Minimum inner area covered fraction for enclosure pairs.",
+    )
+    adjacency.add_argument("--dpi", type=int, default=200, help="Preview PNG resolution.")
+    adjacency.add_argument(
+        "--no-preview",
+        action="store_true",
+        help="Skip writing adjacency network and heatmap PNGs.",
+    )
+
     args = parser.parse_args(argv)
     if args.command == "pattern1":
         result = run_pattern1_isoline(
@@ -58,7 +138,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 min_cells_inside=args.min_cells_inside,
             )
         )
-    else:
+    elif args.command == "multi-structure":
         structures = json.loads(Path(args.structures_json).read_text(encoding="utf-8"))
         result = run_multi_structure_contours(
             MultiStructureContourConfig(
@@ -72,6 +152,34 @@ def main(argv: Sequence[str] | None = None) -> None:
                 min_cells=args.min_cells,
             )
         )
+    elif args.command == "boundary-network":
+        result = run_group_boundary_network(
+            BoundaryNetworkConfig(
+                boundary_csv=args.boundary_csv,
+                out_dir=args.out_dir,
+                drop_structures=_parse_csv_list(args.drop_structures),
+                min_shared_boundary=args.min_shared_boundary,
+                min_boundary_pairs=args.min_boundary_pairs,
+                top_n_edges=args.top_n_edges,
+                dpi=args.dpi,
+                save_preview_png=not args.no_preview,
+            )
+        )
+    else:
+        result = run_contour_adjacency(
+            ContourAdjacencyConfig(
+                contours=args.contours_csv,
+                out_dir=args.out_dir,
+                groupby=args.groupby,
+                contour_id_col=args.contour_id_col,
+                geometry_col=args.geometry_col,
+                boundary_tolerance=args.boundary_tolerance,
+                min_shared_boundary=args.min_shared_boundary,
+                enclosure_min_fraction=args.enclosure_min_fraction,
+                dpi=args.dpi,
+                save_preview_png=not args.no_preview,
+            )
+        )
 
     print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
 
@@ -81,6 +189,10 @@ def _parse_cluster_list(value: str) -> list[str]:
     if not clusters:
         raise SystemExit("--pattern1-clusters must contain at least one cluster ID.")
     return clusters
+
+
+def _parse_csv_list(value: str) -> list[str]:
+    return [part.strip() for part in str(value).split(",") if part.strip()]
 
 
 if __name__ == "__main__":

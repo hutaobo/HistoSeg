@@ -6,6 +6,7 @@ psutil
 scikit-learn
 scikit-image
 matplotlib
+networkx
 openai>=1.0.0
 seaborn
 scanpy

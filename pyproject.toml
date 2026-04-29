@@ -20,6 +20,7 @@ dependencies = [
     "seaborn",
     "shapely",
     "matplotlib",
+    "networkx",
     "openai>=1.0.0",
 ]
 
