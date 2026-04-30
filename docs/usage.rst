@@ -1,13 +1,15 @@
-=====
-Usage
-=====
+==========
+Quickstart
+==========
 
-HistoSeg exposes two public feature groups.
+HistoSeg exposes two public workflow surfaces. Choose the one that matches your
+primary input modality, then run the same configuration from Python or the CLI.
 
 HE Analysis
 -----------
 
-Use ``histoseg.he`` when your input is an H&E image:
+Use ``histoseg.he`` when your starting point is an H&E image and your desired
+output is a tissue mask, neutral component partition, overlay, or change map:
 
 .. code-block:: python
 
@@ -29,12 +31,13 @@ The matching CLI entrypoint is:
 
 .. code-block:: console
 
-    histoseg-he all-elements --image he.png --out-dir outputs/he_all --backend heuristic
+    histoseg-he all-elements --image he.png --out-dir outputs/he_all --backend heuristic --n-components 6
 
 Contour Analysis
 ----------------
 
-Use ``histoseg.contour`` when your input is cell-coordinate data:
+Use ``histoseg.contour`` when your starting point is cell-coordinate data plus
+cluster assignments and you want Pattern1 isolines or named structure contours:
 
 .. code-block:: python
 
@@ -56,3 +59,10 @@ The matching CLI entrypoint is:
 .. code-block:: console
 
     histoseg-contour pattern1 --clusters-csv clusters.csv --cells-parquet cells.parquet --out-dir outputs/pattern1 --pattern1-clusters 10,23,19
+
+Next Steps
+----------
+
+- Read :doc:`he_analysis` for the image-first workflow family.
+- Read :doc:`contour_analysis` for contour generation, exports, and topology workflows.
+- Open :doc:`tutorials/index` if you want a guided run instead of a reference page.

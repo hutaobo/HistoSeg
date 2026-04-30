@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 
-# Ensure we can import histoseg
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if SRC.exists():
@@ -12,27 +11,49 @@ author = "HistoSeg authors"
 
 extensions = [
     "myst_nb",
+    "sphinx_design",
+    "sphinx_copybutton",
     "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
 ]
 
-html_theme = "furo"
+autosummary_generate = True
+autodoc_member_order = "bysource"
+autodoc_typehints = "description"
 
-# Key: let myst-nb parse both .md and .ipynb
+html_theme = "sphinx_book_theme"
+html_title = "HistoSeg"
+templates_path = ["_templates"]
+html_static_path = ["_static"]
+html_css_files = ["css/custom.css"]
+
 source_suffix = {
     ".rst": "restructuredtext",
     ".md": "myst-nb",
     ".ipynb": "myst-nb",
 }
 
-# Core: never execute notebooks on RTD
-nb_execution_mode = "off"
+myst_enable_extensions = [
+    "colon_fence",
+    "deflist",
+    "fieldlist",
+    "html_admonition",
+    "html_image",
+    "linkify",
+]
+myst_heading_anchors = 3
 
-# Render notebook markdown via MyST
+nb_execution_mode = "off"
 nb_render_markdown_format = "myst"
 
 exclude_patterns = [
     "_build",
+    "Thumbs.db",
+    ".DS_Store",
+    "3d_analysis.md",
+    "api/threed.rst",
     "**/.ipynb_checkpoints",
 ]
 
@@ -40,12 +61,12 @@ suppress_warnings = [
     "misc.highlighting_failure",
 ]
 
-# Remove the default "View page source" link (/_sources/...)
 html_show_sourcelink = False
 
-# Enable GitHub links (e.g., "Edit on GitHub" / "View on GitHub")
-# This should point to:
-# https://github.com/hutaobo/HistoSeg/blob/main/docs/<pagename><suffix>
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+}
+
 html_context = {
     "display_github": True,
     "github_user": "hutaobo",
@@ -54,10 +75,15 @@ html_context = {
     "conf_py_path": "/docs/",
 }
 
-# Ensure GitHub links open file view ("blob") instead of edit/raw
 html_theme_options = {
-    "source_repository": "https://github.com/hutaobo/HistoSeg/",
-    "source_branch": "main",
-    "source_directory": "docs/",
-    "top_of_page_buttons": ["view", "edit"],
+    "repository_url": "https://github.com/hutaobo/HistoSeg",
+    "repository_branch": "main",
+    "path_to_docs": "docs",
+    "use_repository_button": True,
+    "use_issues_button": True,
+    "use_edit_page_button": True,
+    "home_page_in_toc": True,
+    "show_toc_level": 2,
+    "navigation_with_keys": True,
+    "announcement": "HistoSeg unifies H&E image analysis and spatial contour workflows in one Python toolkit.",
 }

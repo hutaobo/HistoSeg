@@ -4,6 +4,15 @@ Contour Analysis is the spatial/cell-coordinate workflow group exposed as
 `histoseg.contour`. Use it when the primary input is a table of cells with
 spatial coordinates and cluster assignments.
 
+## When To Use It
+
+Choose this workflow group when you want to:
+
+- extract Pattern1 isolines from clustered cell coordinates;
+- partition cells into multiple named structures with non-overlapping contours;
+- export Xenium Explorer-compatible review layers; or
+- analyze how generated structures touch, overlap, or enclose one another.
+
 ## Workflows
 
 - Pattern1 isoline contours from clustered cell coordinates.
@@ -11,7 +20,7 @@ spatial coordinates and cluster assignments.
 - Xenium Explorer annotation exports.
 - Hugging Face dataset helper workflows for Xenium-style public datasets.
 
-## Inputs
+## Inputs And Outputs
 
 Pattern1 and multi-structure contour workflows use:
 
@@ -19,9 +28,6 @@ Pattern1 and multi-structure contour workflows use:
 - `cells.parquet` with cell identifiers and x/y coordinates.
 - optional `tissue_boundary.csv` for tissue-aware background generation.
 - selected cluster IDs for the target Pattern1 or named structures.
-
-## Outputs
-
 - contour vertices and preview PNGs.
 - region partition tables.
 - Xenium Explorer-compatible GeoJSON/CSV exports for multi-structure contours.
@@ -102,6 +108,10 @@ heatmap.
 
 ## CLI
 
+The CLI surface is aligned with the same workflow concepts used in the Python
+API, which makes it straightforward to promote an exploratory run into a batch
+pipeline:
+
 ```bash
 histoseg-contour pattern1 --clusters-csv clusters.csv --cells-parquet cells.parquet --out-dir outputs/p1 --pattern1-clusters 10,23,19
 histoseg-contour multi-structure --clusters-csv clusters.csv --cells-parquet cells.parquet --out-dir outputs/ms --structures-json structures.json
@@ -109,7 +119,7 @@ histoseg-contour boundary-network --boundary-csv group_boundary_overlap_filtered
 histoseg-contour adjacency --contours-csv contours.csv --groupby structure --out-dir outputs/contour_adjacency
 ```
 
-## Tutorials
+## Related Pages
 
 - {doc}`tutorials/pattern1_isoline`
 - {doc}`workflows/contour_generation`

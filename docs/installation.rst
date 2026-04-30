@@ -2,14 +2,20 @@
 Installation
 ============
 
-Stable Release
---------------
+HistoSeg ships as a Python package with a lightweight base install and an
+optional H&E extra for local MedSAM-backed workflows.
+
+Quick Install
+-------------
 
 Install HistoSeg from PyPI:
 
 .. code-block:: console
 
     pip install -U histoseg
+
+Optional H&E Extra
+------------------
 
 HE Analysis can optionally use local Hugging Face MedSAM inference. Install the
 extra dependencies when you need the ``backend="medsam"`` workflow:
@@ -18,8 +24,8 @@ extra dependencies when you need the ``backend="medsam"`` workflow:
 
     pip install -U "histoseg[he]"
 
-Development Install
--------------------
+Development Setup
+-----------------
 
 Clone the repository and install it in editable mode:
 
@@ -29,6 +35,12 @@ Clone the repository and install it in editable mode:
     cd HistoSeg
     pip install -U pip
     pip install -e ".[he]"
+
+.. note::
+
+   Install the base package when your work is centered on contour workflows and
+   cell-coordinate data. Add ``[he]`` when you need image-first H&E analysis
+   with the MedSAM backend available locally.
 
 Feature Groups
 --------------

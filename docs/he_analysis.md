@@ -1,8 +1,18 @@
 # HE Analysis
 
-HE Analysis is the image-based H&E workflow group exposed as `histoseg.he`.
+HE Analysis is the image-first workflow family exposed as `histoseg.he`.
 Use it when the primary input is a histology image and the desired output is a
-mask, overlay, heatmap, GeoJSON polygon, or region table.
+mask, overlay, heatmap, GeoJSON polygon, or region table that can be reviewed
+or integrated downstream.
+
+## When To Use It
+
+Choose this workflow group when you want to:
+
+- extract tissue foreground or prompt-selected image regions;
+- partition tissue into neutral components without forcing diagnostic labels;
+- detect changes between aligned before/after H&E images; or
+- export geometries and provenance artifacts from image-based analysis runs.
 
 ## Workflows
 
@@ -14,22 +24,19 @@ HistoSeg does not assign diagnostic labels such as tumor, stroma, or necrosis by
 default. Region names are neutral unless supplied by the user or a downstream
 classification workflow.
 
-## Inputs
+## Inputs And Outputs
 
 - PNG, JPG, TIFF, or GeoTIFF H&E images.
 - Optional prompt boxes or points for `single` region extraction.
 - Aligned before/after images for `change` detection.
-
-GeoTIFF coordinate metadata is preserved in exported GeoJSON when `rasterio` is
-available.
-
-## Outputs
-
 - PNG overlay images.
 - Label maps and change heatmaps.
 - GeoJSON polygons.
 - CSV/Parquet region tables.
 - `params.json` and `metrics.json` provenance files.
+
+GeoTIFF coordinate metadata is preserved in exported GeoJSON when `rasterio` is
+available.
 
 ## Python API
 
@@ -47,7 +54,7 @@ result = run_he_segmentation(
 )
 ```
 
-For local Hugging Face MedSAM inference, install `histoseg[he]` and use
+For local Hugging Face MedSAM inference, install `histoseg[he]` and set
 `backend="medsam"`.
 
 ```python
@@ -64,13 +71,16 @@ result = run_he_change_detection(
 
 ## CLI
 
+The CLI mirrors the Python workflow names so you can move from notebooks to
+batch runs without translating the conceptual model:
+
 ```bash
 histoseg-he single --image /path/to/he.png --out-dir outputs/he_single --backend heuristic
 histoseg-he all-elements --image /path/to/he.png --out-dir outputs/he_all --backend heuristic
 histoseg-he change --before before.png --after after.png --out-dir outputs/he_change
 ```
 
-## Synthetic Image Tutorial
+## Synthetic Image Walkthrough
 
 The dependency-light `heuristic` backend is useful for tests and examples:
 

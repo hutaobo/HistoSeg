@@ -1,4 +1,6 @@
-furo
 sphinx
-sphinx-rtd-theme
 myst-nb
+sphinx-book-theme
+sphinx-design
+sphinx-copybutton
+linkify-it-py
