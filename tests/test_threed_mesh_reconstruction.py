@@ -240,9 +240,12 @@ def test_min_component_volume_filters_small_fragments(tmp_path):
         min_mesh_component_volume_um3=_LARGE_VOLUME_FILTER_UM3,
     )
 
-    # Structure 1 is large enough and should survive.
+    # Structure 1 is large enough and should survive, and Structure 2 should
+    # be filtered out by the large minimum component volume.
     structures_found = {p["structure"] for p in payloads}
     assert "Structure 1" in structures_found
+    assert "Structure 2" not in structures_found
+    assert len(payloads) == 1
 
 
 def test_config_new_fields_have_correct_defaults():
