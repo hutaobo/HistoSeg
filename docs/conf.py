@@ -99,5 +99,5 @@ html_theme_options = {
             "icon": "fa-solid fa-book-open",
         },
     ],
-    "announcement": "HistoSeg unifies H&E image analysis, spatial contour workflows, and 3D contour alignment in one Python toolkit.",
+    "announcement": "HistoSeg's flagship workflow reconstructs 3D Xenium contour stacks with H&E and 2D contour support.",
 }

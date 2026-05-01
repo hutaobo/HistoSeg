@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "histoseg"
 dynamic = ["version"]
-description = "Python toolkit for H&E image analysis, spatial contour analysis, and 3D contour reconstruction."
+description = "3D Xenium contour reconstruction toolkit with H&E image analysis and 2D spatial contour workflows."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }

@@ -1,10 +1,12 @@
-# 3D Analysis
+# 3D Reconstruction
 
-3D Analysis is the HistoSeg workflow group for same-sample, multi-slice Xenium
-contour reconstruction. It is exposed as `histoseg.threed` because Python
-module names cannot begin with a digit.
+3D Reconstruction is the flagship HistoSeg workflow group. It is designed for
+same-sample, multi-slice Xenium contour reconstruction: align neighboring 2D
+contour annotations, build 3D contour stacks, export per-structure PLY/OBJ
+meshes, and inspect QC artifacts before downstream analysis. The Python
+namespace is `histoseg.threed` because module names cannot begin with a digit.
 
-3D Analysis currently has two public workflows:
+The flagship 3D surface currently has two public workflows:
 
 - Pairwise conservative TPS soft alignment for a fixed contour GeoJSON and a
   moving contour GeoJSON that has already been hard-aligned with a similarity
@@ -16,6 +18,8 @@ module names cannot begin with a digit.
 
 ## Current Scope
 
+- Treat 3D contour reconstruction as the main HistoSeg workflow, with 2D
+  contour generation and H&E analysis supporting upstream preparation and QC.
 - Align neighboring 2D Xenium contour slices before downstream 3D
   reconstruction.
 - Read ordered Xenium slice folders through `pyXenium.io.read_xenium(...,

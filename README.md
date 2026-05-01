@@ -19,7 +19,8 @@ stacks, sampled 3D points, smoothed PLY/OBJ meshes, QC metrics, and interactive
 HTML views. The package also includes the H&E and 2D contour workflows needed
 to prepare and review the structures that feed the 3D reconstruction pipeline.
 
-HistoSeg has three public feature groups:
+HistoSeg is organized around its 3D reconstruction surface, with two supporting
+analysis groups:
 
 - **3D Reconstruction** (`histoseg.threed`) for same-sample, multi-slice Xenium contour alignment, 3D contour stacks, mesh export, and QC visualization.
 - **2D Contour Analysis** (`histoseg.contour`) for contour extraction from spatial/cell-coordinate data, including Pattern1 isolines and multi-structure Xenium exports.

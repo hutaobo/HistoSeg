@@ -7,12 +7,12 @@ artifacts, and outputs in one place.
 :gutter: 2
 :class-container: link-grid
 
-:::{grid-item-card} Pattern1 Isoline Tutorial
-:link: pattern1_isoline
+:::{grid-item-card} 3D Contour Stack Reconstruction
+:link: 3d_stack_reconstruction
 :link-type: doc
 
-Build a Pattern1 contour from clustered cell coordinates and inspect the
-resulting preview outputs and exported files.
+Use GitHub pyXenium to read ordered Xenium slices, align a 32-slice contour
+stack, and export 3D points, PLY meshes, and an interactive HTML view.
 :::
 
 :::{grid-item-card} 3D Contour Soft Alignment
@@ -23,12 +23,12 @@ Run TPS soft alignment on two bundled polyp Xenium contour GeoJSON slices and
 inspect the overlay and diagnostic report.
 :::
 
-:::{grid-item-card} 3D Contour Stack Reconstruction
-:link: 3d_stack_reconstruction
+:::{grid-item-card} Pattern1 Isoline Tutorial
+:link: pattern1_isoline
 :link-type: doc
 
-Use GitHub pyXenium to read ordered Xenium slices, align a 32-slice contour
-stack, and export 3D points, PLY meshes, and an interactive HTML view.
+Build a Pattern1 contour from clustered cell coordinates and inspect the
+resulting preview outputs and exported files.
 :::
 ::::
 
@@ -36,7 +36,7 @@ stack, and export 3D points, PLY meshes, and an interactive HTML view.
 :hidden:
 :maxdepth: 1
 
-pattern1_isoline
-3d_soft_alignment
 3d_stack_reconstruction
+3d_soft_alignment
+pattern1_isoline
 ```

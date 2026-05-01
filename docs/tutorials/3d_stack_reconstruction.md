@@ -1,8 +1,8 @@
 # 3D Contour Stack Reconstruction Tutorial
 
-This tutorial shows the same-sample multi-slice workflow in `histoseg.threed`.
-It is designed for a folder of ordered Xenium slice outputs and uses GitHub
-`pyXenium` for IO:
+This tutorial shows the flagship same-sample multi-slice reconstruction
+workflow in `histoseg.threed`. It is designed for a folder of ordered Xenium
+slice outputs and uses GitHub `pyXenium` for IO:
 
 ```python
 from pyXenium.io import read_xenium
