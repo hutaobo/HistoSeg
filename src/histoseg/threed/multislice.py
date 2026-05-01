@@ -94,7 +94,7 @@ class ThreeDStackReconstructionConfig:
     point_sample_distance_um: float = 80.0
     voxel_size_um: float = 80.0
     mesh_method: str = "marching_cubes"
-    mesh_smoothing_sigma_um: float = 40.0
+    mesh_smoothing_sigma_um: float | None = 40.0
     mesh_level: float = 0.5
     mesh_export_formats: Sequence[str] = ("ply", "obj")
     mesh_cleanup: bool = True
@@ -542,7 +542,7 @@ def reconstruct_3d_contour_meshes(
     z_spacing_um: float,
     xenium_pixel_size_um: float,
     mesh_method: str = "marching_cubes",
-    mesh_smoothing_sigma_um: float = 40.0,
+    mesh_smoothing_sigma_um: float | None = 40.0,
     mesh_level: float = 0.5,
     mesh_export_formats: Sequence[str] = ("ply", "obj"),
     mesh_cleanup: bool = True,
@@ -553,6 +553,15 @@ def reconstruct_3d_contour_meshes(
 
     if mesh_method != "marching_cubes":
         raise ValueError("mesh_method currently supports only 'marching_cubes'.")
+    if mesh_smoothing_sigma_um is not None and mesh_smoothing_sigma_um < 0:
+        raise ValueError("mesh_smoothing_sigma_um must be non-negative or None.")
+    if not (0.0 < float(mesh_level) < 1.0):
+        raise ValueError("mesh_level must be strictly between 0 and 1.")
+    if (
+        min_mesh_component_volume_um3 is not None
+        and min_mesh_component_volume_um3 < 0
+    ):
+        raise ValueError("min_mesh_component_volume_um3 must be non-negative.")
     export_formats = _normalize_mesh_export_formats(mesh_export_formats)
     trimesh = _import_trimesh()
     mesh_path = Path(mesh_dir)
@@ -579,7 +588,9 @@ def reconstruct_3d_contour_meshes(
         "voxel_size_um": float(voxel_size_um),
         "z_spacing_um": float(z_spacing_um),
         "mesh_method": mesh_method,
-        "mesh_smoothing_sigma_um": float(mesh_smoothing_sigma_um),
+        "mesh_smoothing_sigma_um": (
+            None if mesh_smoothing_sigma_um is None else float(mesh_smoothing_sigma_um)
+        ),
         "mesh_level": float(mesh_level),
         "mesh_cleanup": bool(mesh_cleanup),
         "min_mesh_component_volume_um3": min_mesh_component_volume_um3,
@@ -620,7 +631,9 @@ def reconstruct_3d_contour_meshes(
             z_spacing_um=z_spacing_um,
         )
         level = float(mesh_level)
-        smoothing_applied = bool(mesh_smoothing_sigma_um > 0)
+        smoothing_applied = bool(
+            mesh_smoothing_sigma_um is not None and mesh_smoothing_sigma_um > 0
+        )
         if field.max() <= level and smoothing_applied:
             field = padded
             level = 0.5
@@ -822,10 +835,10 @@ def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
         raise ValueError("point_sample_distance_um must be greater than 0.")
     if cfg.mesh_method != "marching_cubes":
         raise ValueError("mesh_method currently supports only 'marching_cubes'.")
-    if cfg.mesh_smoothing_sigma_um < 0:
-        raise ValueError("mesh_smoothing_sigma_um must be non-negative.")
-    if cfg.mesh_level <= 0:
-        raise ValueError("mesh_level must be greater than 0.")
+    if cfg.mesh_smoothing_sigma_um is not None and cfg.mesh_smoothing_sigma_um < 0:
+        raise ValueError("mesh_smoothing_sigma_um must be non-negative or None.")
+    if not (0.0 < cfg.mesh_level < 1.0):
+        raise ValueError("mesh_level must be strictly between 0 and 1.")
     if (
         cfg.min_mesh_component_volume_um3 is not None
         and cfg.min_mesh_component_volume_um3 < 0
@@ -1340,12 +1353,12 @@ def _normalize_mesh_export_formats(mesh_export_formats: Sequence[str] | str) -> 
 def _smooth_volume_field(
     volume: np.ndarray,
     *,
-    mesh_smoothing_sigma_um: float,
+    mesh_smoothing_sigma_um: float | None,
     voxel_size_um: float,
     z_spacing_um: float,
 ) -> np.ndarray:
     field = np.asarray(volume, dtype=np.float32)
-    if mesh_smoothing_sigma_um <= 0:
+    if mesh_smoothing_sigma_um is None or mesh_smoothing_sigma_um <= 0:
         return field
     sigma = (
         float(mesh_smoothing_sigma_um) / float(z_spacing_um),

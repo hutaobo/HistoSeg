@@ -185,7 +185,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     stack.add_argument("--point-sample-distance-um", type=float, default=80.0)
     stack.add_argument("--voxel-size-um", type=float, default=80.0)
     stack.add_argument("--mesh-method", default="marching_cubes")
-    stack.add_argument("--mesh-smoothing-sigma-um", type=float, default=40.0)
+    stack.add_argument(
+        "--mesh-smoothing-sigma-um",
+        type=float,
+        default=40.0,
+        help="3D Gaussian smoothing sigma in microns. Use 0 to disable smoothing.",
+    )
     stack.add_argument("--mesh-level", type=float, default=0.5)
     stack.add_argument(
         "--mesh-export-formats",
@@ -195,7 +200,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     stack.add_argument(
         "--no-mesh-cleanup",
         action="store_true",
-        help="Skip trimesh cleanup before writing PLY/OBJ.",
+        help="Skip trimesh post-processing before writing PLY/OBJ.",
     )
     stack.add_argument(
         "--min-mesh-component-volume-um3",
@@ -244,6 +249,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
     elif args.command == "reconstruct-stack":
+        mesh_smoothing_sigma_um = args.mesh_smoothing_sigma_um
+        if mesh_smoothing_sigma_um < 0:
+            parser.error("--mesh-smoothing-sigma-um must be >= 0. Use 0 to disable smoothing.")
+        if mesh_smoothing_sigma_um == 0:
+            mesh_smoothing_sigma_um = None
+        mesh_export_formats = tuple(
+            fmt.strip().lower()
+            for fmt in args.mesh_export_formats.split(",")
+            if fmt.strip()
+        )
         result = run_3d_stack_reconstruction(
             ThreeDStackReconstructionConfig(
                 xenium_root=args.xenium_root,
@@ -278,9 +293,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 point_sample_distance_um=args.point_sample_distance_um,
                 voxel_size_um=args.voxel_size_um,
                 mesh_method=args.mesh_method,
-                mesh_smoothing_sigma_um=args.mesh_smoothing_sigma_um,
+                mesh_smoothing_sigma_um=mesh_smoothing_sigma_um,
                 mesh_level=args.mesh_level,
-                mesh_export_formats=args.mesh_export_formats,
+                mesh_export_formats=mesh_export_formats,
                 mesh_cleanup=not args.no_mesh_cleanup,
                 min_mesh_component_volume_um3=args.min_mesh_component_volume_um3,
                 mesh_max_faces_for_html=args.mesh_max_faces_for_html,

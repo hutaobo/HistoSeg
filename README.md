@@ -9,25 +9,31 @@
   <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/License-PolyForm--Noncommercial%201.0.0-blue.svg"></a>
 </p>
 
-**Python toolkit for H&E image analysis, spatial contour analysis, and 3D contour reconstruction.**
+**3D Xenium contour reconstruction toolkit with H&E image analysis and 2D spatial contour workflows.**
 
 </div>
 
+HistoSeg is centered on same-sample, multi-slice **3D Xenium contour
+reconstruction**. It turns ordered 2D contour annotations into aligned contour
+stacks, sampled 3D points, smoothed PLY/OBJ meshes, QC metrics, and interactive
+HTML views. The package also includes the H&E and 2D contour workflows needed
+to prepare and review the structures that feed the 3D reconstruction pipeline.
+
 HistoSeg has three public feature groups:
 
-- **HE Analysis** (`histoseg.he`) for image-based H&E tissue segmentation, neutral tissue partitioning, and aligned-image change detection.
-- **Contour Analysis** (`histoseg.contour`) for contour extraction from spatial/cell-coordinate data, including Pattern1 isolines and multi-structure Xenium exports.
-- **3D Analysis** (`histoseg.threed`) for same-sample, multi-slice Xenium contour alignment and reconstruction workflows.
+- **3D Reconstruction** (`histoseg.threed`) for same-sample, multi-slice Xenium contour alignment, 3D contour stacks, mesh export, and QC visualization.
+- **2D Contour Analysis** (`histoseg.contour`) for contour extraction from spatial/cell-coordinate data, including Pattern1 isolines and multi-structure Xenium exports.
+- **H&E Analysis** (`histoseg.he`) for image-based H&E tissue segmentation, neutral tissue partitioning, and aligned-image change detection.
 
 Full documentation: [histoseg.readthedocs.io](https://histoseg.readthedocs.io)
 
 ## When To Use Each Feature Group
 
-Use **HE Analysis** when your input is an H&E image such as PNG, JPG, TIFF, or GeoTIFF and you want masks, overlays, heatmaps, GeoJSON polygons, or region tables.
+Use **3D Reconstruction** when you are preparing for multi-slice Xenium contour reconstruction from the same sample. It can soft-align a hard-aligned moving contour GeoJSON to a fixed reference slice, or build a pyXenium-backed multi-slice contour stack with 3D points, smoothed PLY/OBJ surface meshes, and an interactive HTML view.
 
 Use **Contour Analysis** when your input is spatial cell-coordinate data such as Xenium `cells.parquet` plus cluster assignments, and you want geometry extracted from cell neighborhoods or selected cluster groups.
 
-Use **3D Analysis** when you are preparing for multi-slice Xenium contour reconstruction from the same sample. It can soft-align a hard-aligned moving contour GeoJSON to a fixed reference slice, or build a pyXenium-backed multi-slice contour stack with 3D points, smoothed PLY/OBJ surface meshes, and an interactive HTML view.
+Use **HE Analysis** when your input is an H&E image such as PNG, JPG, TIFF, or GeoTIFF and you want masks, overlays, heatmaps, GeoJSON polygons, or region tables.
 
 ## Installation
 
@@ -35,10 +41,10 @@ Use **3D Analysis** when you are preparing for multi-slice Xenium contour recons
 pip install -U histoseg
 ```
 
-For local Hugging Face MedSAM-backed HE segmentation:
+For flagship 3D Xenium stack reconstruction, install the pyXenium-backed 3D extra:
 
 ```bash
-pip install -U "histoseg[he]"
+pip install -U "histoseg[threed]"
 ```
 
 For development:
@@ -47,14 +53,64 @@ For development:
 git clone https://github.com/hutaobo/HistoSeg.git
 cd HistoSeg
 pip install -U pip
-pip install -e ".[he]"
+pip install -e ".[threed,he]"
 ```
 
-For 3D Xenium stack reconstruction, install the GitHub pyXenium extra:
+For local Hugging Face MedSAM-backed HE segmentation only:
 
 ```bash
-pip install -e ".[threed]"
+pip install -U "histoseg[he]"
 ```
+
+## Flagship 3D Reconstruction Quickstart
+
+```python
+from histoseg.threed import (
+    ThreeDContourReconstructionConfig,
+    run_3d_contour_reconstruction,
+)
+
+cfg = ThreeDContourReconstructionConfig(
+    fixed_geojson="slice_01.geojson",
+    moving_hard_aligned_geojson="slice_02_hard_aligned_to_01.geojson",
+    out_dir="outputs/3d_soft_alignment",
+    group_property="structure",
+    diagnostic_structure="Structure 5",
+)
+
+result = run_3d_contour_reconstruction(cfg)
+print(result.soft_aligned_geojson)
+print(result.diagnostic_report_png)
+```
+
+```bash
+histoseg-3d reconstruct \
+  --fixed-geojson slice_01.geojson \
+  --moving-hard-aligned-geojson slice_02_hard_aligned_to_01.geojson \
+  --out-dir outputs/3d_soft_alignment \
+  --group-property structure \
+  --diagnostic-structure "Structure 5"
+```
+
+For a complete same-sample Xenium stack:
+
+```bash
+histoseg-3d reconstruct-stack \
+  --xenium-root polyp \
+  --segmentation-strategy "polyp/contour for alignment/segmentationstrategy.txt" \
+  --merged-h5ad "polyp/pdc_merge_leiden/polyp_32samples_processed_leiden.h5ad" \
+  --merged-cluster-column leiden_1_0 \
+  --out-dir outputs/polyp_3d_reconstruction \
+  --z-spacing-um 5 \
+  --mesh-smoothing-sigma-um 40 \
+  --mesh-export-formats ply,obj
+```
+
+3D Reconstruction writes aligned per-slice GeoJSON files, pairwise alignment
+metrics, sampled 3D contour points, per-structure PLY/OBJ meshes, mesh QC
+metrics, and an interactive Plotly HTML visualization. Use
+`--mesh-smoothing-sigma-um 0` to disable 3D smoothing for direct Marching Cubes
+output.
 
 ## HE Analysis Quickstart
 
@@ -121,58 +177,13 @@ Contour Analysis currently supports:
 - Xenium Explorer annotation exports
 - Hugging Face dataset helper workflows for Xenium-style inputs
 
-## 3D Analysis Quickstart
-
-```python
-from histoseg.threed import (
-    ThreeDContourReconstructionConfig,
-    run_3d_contour_reconstruction,
-)
-
-cfg = ThreeDContourReconstructionConfig(
-    fixed_geojson="slice_01.geojson",
-    moving_hard_aligned_geojson="slice_02_hard_aligned_to_01.geojson",
-    out_dir="outputs/3d_soft_alignment",
-    group_property="structure",
-    diagnostic_structure="Structure 5",
-)
-
-result = run_3d_contour_reconstruction(cfg)
-print(result.soft_aligned_geojson)
-print(result.diagnostic_report_png)
-```
-
-```bash
-histoseg-3d reconstruct \
-  --fixed-geojson slice_01.geojson \
-  --moving-hard-aligned-geojson slice_02_hard_aligned_to_01.geojson \
-  --out-dir outputs/3d_soft_alignment \
-  --group-property structure \
-  --diagnostic-structure "Structure 5"
-```
-
-For a complete same-sample Xenium stack:
-
-```bash
-histoseg-3d reconstruct-stack \
-  --xenium-root polyp \
-  --segmentation-strategy "polyp/contour for alignment/segmentationstrategy.txt" \
-  --merged-h5ad "polyp/pdc_merge_leiden/polyp_32samples_processed_leiden.h5ad" \
-  --merged-cluster-column leiden_1_0 \
-  --out-dir outputs/polyp_3d_reconstruction \
-  --z-spacing-um 5 \
-  --mesh-smoothing-sigma-um 40 \
-  --mesh-export-formats ply,obj
-```
-
-3D Analysis writes aligned per-slice GeoJSON files, pairwise alignment metrics,
-sampled 3D contour points, per-structure PLY/OBJ meshes, mesh QC metrics, and
-an interactive Plotly HTML visualization.
-
 ## Outputs
 
 HistoSeg workflows write reviewable artifacts such as:
 
+- aligned 3D contour stacks and sampled 3D point clouds
+- PLY/OBJ surface meshes and mesh QC summaries
+- interactive Plotly 3D HTML views
 - PNG previews and overlays
 - label maps and heatmaps
 - GeoJSON polygons
@@ -181,11 +192,11 @@ HistoSeg workflows write reviewable artifacts such as:
 
 ## Documentation
 
-- [HE Analysis](https://histoseg.readthedocs.io/en/latest/he_analysis.html)
-- [Contour Analysis](https://histoseg.readthedocs.io/en/latest/contour_analysis.html)
-- [3D Analysis](https://histoseg.readthedocs.io/en/latest/3d_analysis.html)
-- [3D contour soft alignment tutorial](https://histoseg.readthedocs.io/en/latest/tutorials/3d_soft_alignment.html)
+- [3D Reconstruction](https://histoseg.readthedocs.io/en/latest/3d_analysis.html)
 - [3D contour stack reconstruction tutorial](https://histoseg.readthedocs.io/en/latest/tutorials/3d_stack_reconstruction.html)
+- [3D contour soft alignment tutorial](https://histoseg.readthedocs.io/en/latest/tutorials/3d_soft_alignment.html)
+- [Contour Analysis](https://histoseg.readthedocs.io/en/latest/contour_analysis.html)
+- [HE Analysis](https://histoseg.readthedocs.io/en/latest/he_analysis.html)
 - [API Reference](https://histoseg.readthedocs.io/en/latest/api/index.html)
 
 ## License

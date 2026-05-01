@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pandas as pd
+import pytest
 import trimesh
 from shapely.geometry import MultiPolygon, box, mapping, shape
 
@@ -172,6 +173,52 @@ def test_mesh_component_filter_removes_tiny_disconnected_fragments(tmp_path):
     manifest = pd.read_csv(tmp_path / "meshes" / "mesh_manifest.csv")
     assert int(manifest.loc[0, "volume_component_count_before_filter"]) == 2
     assert int(manifest.loc[0, "volume_component_count_after_filter"]) == 1
+
+
+def test_mesh_smoothing_none_disables_gaussian_smoothing(tmp_path):
+    slice1 = tmp_path / "slice1.geojson"
+    slice2 = tmp_path / "slice2.geojson"
+    _write_geojson(slice1, [_feature(box(0, 0, 20, 20), "Structure 1")])
+    _write_geojson(slice2, [_feature(box(0, 0, 20, 20), "Structure 1")])
+    aligned_rows = [
+        {"order": 1, "sample_id": "s1", "z_um": 0.0, "aligned_geojson": str(slice1)},
+        {"order": 2, "sample_id": "s2", "z_um": 5.0, "aligned_geojson": str(slice2)},
+    ]
+
+    reconstruct_3d_contour_meshes(
+        aligned_rows,
+        tmp_path / "meshes",
+        group_property="structure",
+        voxel_size_um=5.0,
+        z_spacing_um=5.0,
+        xenium_pixel_size_um=1.0,
+        mesh_smoothing_sigma_um=None,
+    )
+
+    manifest = pd.read_csv(tmp_path / "meshes" / "mesh_manifest.csv")
+    assert bool(manifest.loc[0, "smoothing_applied"]) is False
+
+
+def test_mesh_level_must_be_between_zero_and_one(tmp_path):
+    slice1 = tmp_path / "slice1.geojson"
+    slice2 = tmp_path / "slice2.geojson"
+    _write_geojson(slice1, [_feature(box(0, 0, 20, 20), "Structure 1")])
+    _write_geojson(slice2, [_feature(box(0, 0, 20, 20), "Structure 1")])
+    aligned_rows = [
+        {"order": 1, "sample_id": "s1", "z_um": 0.0, "aligned_geojson": str(slice1)},
+        {"order": 2, "sample_id": "s2", "z_um": 5.0, "aligned_geojson": str(slice2)},
+    ]
+
+    with pytest.raises(ValueError, match="strictly between 0 and 1"):
+        reconstruct_3d_contour_meshes(
+            aligned_rows,
+            tmp_path / "meshes",
+            group_property="structure",
+            voxel_size_um=5.0,
+            z_spacing_um=5.0,
+            xenium_pixel_size_um=1.0,
+            mesh_level=1.0,
+        )
 
 
 def _feature(geom, structure: str):

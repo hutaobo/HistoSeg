@@ -109,6 +109,10 @@ Cubes. `mesh_manifest.csv` records mesh QC fields such as vertex count, face
 count, surface area, volume, watertight status, Euler number, and connected
 component count for each structure.
 
+Use `--mesh-smoothing-sigma-um 0` when you want a direct unsmoothed Marching
+Cubes surface. The Marching Cubes `--mesh-level` should be strictly between
+`0` and `1`.
+
 ## Preview
 
 The interactive Plotly file is the main visualization artifact:

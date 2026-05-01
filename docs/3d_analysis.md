@@ -104,6 +104,9 @@ histoseg-3d reconstruct-stack \
   --no-alignment-preview
 ```
 
+Set `--mesh-smoothing-sigma-um 0` to disable the 3D Gaussian smoothing step.
+`--mesh-level` must stay between `0` and `1` for the Marching Cubes surface.
+
 ## Outputs
 
 - `soft_aligned_contours.geojson`
