@@ -1,0 +1,95 @@
+{
+  "fixed_sample_path": "Y:\\long\\spatialpathologist\\3D aligment\\polyp\\contour for alignment\\xenium_explorer_annotations 01.geojson",
+  "moving_hard_aligned_sample_path": "Y:\\long\\spatialpathologist\\3D aligment\\polyp\\contour for alignment\\aligned_to_01\\xenium_explorer_annotations 02_aligned_to_01.geojson",
+  "method": {
+    "type": "local_tps_rbf_displacement_field",
+    "source": "hard-aligned moving boundary landmarks",
+    "target": "nearest fixed boundary landmarks by matching structure",
+    "group_property": "structure",
+    "rbf_kernel": "thin_plate_spline",
+    "rbf_neighbors": 96,
+    "rbf_smoothing": 0.0001,
+    "landmarks_per_structure": 260,
+    "diagnostic_structure": "Structure 5",
+    "diagnostic_structure_landmarks": 620,
+    "normalization_center_xy": [
+      9261.803579533725,
+      8878.533396495675
+    ],
+    "normalization_scale": 21670.036199365582
+  },
+  "landmarks": {
+    "boundary_landmark_count": 1660,
+    "zero_anchor_count": 8,
+    "total_landmark_count": 1668,
+    "distance_um_min": 0.026712890110957233,
+    "distance_um_median": 27.910743605437347,
+    "distance_um_mean": 38.37267213847007,
+    "distance_um_max": 178.35371802913622
+  },
+  "qc": {
+    "fixed_feature_count": 638,
+    "hard_aligned_feature_count": 666,
+    "soft_aligned_feature_count": 666,
+    "union_iou_hard_before_soft": 0.9653935135763333,
+    "union_iou_soft_after": 0.9722128230917049,
+    "delta_union_iou_soft": 0.006819309515371574,
+    "geometry_status_counts": {
+      "valid": 666
+    },
+    "displacement_magnitude_um": {
+      "min": 0.026712890110957233,
+      "median": 27.910743605437347,
+      "mean": 38.37267213847007,
+      "p90": 88.25088949300854,
+      "p95": 115.93125634460755,
+      "max": 178.35371802913622
+    },
+    "post_warp_residual_um": {
+      "min": 0.26576949849319487,
+      "median": 14.364198454820858,
+      "mean": 19.424399247881304,
+      "p90": 41.492540847849206,
+      "p95": 54.92609622292755,
+      "max": 124.2586198250922
+    },
+    "per_structure": {
+      "Structure 1": {
+        "iou_hard_before_soft": 0.8744519602976806,
+        "iou_soft_after": 0.9059573053480937,
+        "delta_iou_soft": 0.031505345050413136
+      },
+      "Structure 2": {
+        "iou_hard_before_soft": 0.6401947144349325,
+        "iou_soft_after": 0.6851646315296656,
+        "delta_iou_soft": 0.04496991709473308
+      },
+      "Structure 3": {
+        "iou_hard_before_soft": 0.6662838504091534,
+        "iou_soft_after": 0.6910051292652949,
+        "delta_iou_soft": 0.024721278856141504
+      },
+      "Structure 4": {
+        "iou_hard_before_soft": 0.8407360023909228,
+        "iou_soft_after": 0.8560737005937584,
+        "delta_iou_soft": 0.015337698202835592
+      },
+      "Structure 5": {
+        "iou_hard_before_soft": 0.5861884241280513,
+        "iou_soft_after": 0.6199203185820727,
+        "delta_iou_soft": 0.03373189445402147
+      }
+    }
+  },
+  "outputs": {
+    "out_dir": "C:\\Users\\taobo.hu\\AppData\\Local\\Temp\\histoseg_threed_polyp_verify",
+    "soft_geojson": "C:\\Users\\taobo.hu\\AppData\\Local\\Temp\\histoseg_threed_polyp_verify\\soft_aligned_contours.geojson",
+    "metrics_csv": "C:\\Users\\taobo.hu\\AppData\\Local\\Temp\\histoseg_threed_polyp_verify\\soft_tps_alignment_metrics.csv",
+    "landmarks_csv": "C:\\Users\\taobo.hu\\AppData\\Local\\Temp\\histoseg_threed_polyp_verify\\soft_tps_landmarks.csv",
+    "residuals_csv": "C:\\Users\\taobo.hu\\AppData\\Local\\Temp\\histoseg_threed_polyp_verify\\soft_tps_diagnostic_residuals.csv",
+    "overlay_before_png": "C:\\Users\\taobo.hu\\AppData\\Local\\Temp\\histoseg_threed_polyp_verify\\soft_tps_overlay_hard_before.png",
+    "overlay_after_png": "C:\\Users\\taobo.hu\\AppData\\Local\\Temp\\histoseg_threed_polyp_verify\\soft_tps_overlay_soft_after.png",
+    "landmarks_qc_png": "C:\\Users\\taobo.hu\\AppData\\Local\\Temp\\histoseg_threed_polyp_verify\\soft_tps_landmarks_qc.png",
+    "diagnostic_report_png": "C:\\Users\\taobo.hu\\AppData\\Local\\Temp\\histoseg_threed_polyp_verify\\soft_tps_diagnostic_report.png"
+  }
+}

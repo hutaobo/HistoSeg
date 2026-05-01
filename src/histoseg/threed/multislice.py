@@ -1,0 +1,1161 @@
+from __future__ import annotations
+
+import copy
+import json
+import math
+import re
+import shutil
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Iterable, Mapping, Sequence, Union
+
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.optimize import minimize
+from shapely import affinity
+from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, mapping, shape
+from shapely.ops import unary_union
+from skimage import measure
+
+from histoseg.contour import (
+    MultiStructureContourConfig,
+    MultiStructureSpec,
+    run_multi_structure_contours,
+)
+
+from .soft_alignment import (
+    ThreeDContourReconstructionConfig,
+    _feature_group,
+    _iou,
+    _read_geojson,
+    _records_from_geojson,
+    run_3d_contour_reconstruction,
+)
+
+try:  # Shapely 2.x fast vectorized containment.
+    from shapely import contains_xy as _contains_xy
+except Exception:  # pragma: no cover - only used on older Shapely versions.
+    _contains_xy = None
+
+PathLike = Union[str, Path]
+
+
+@dataclass(frozen=True)
+class ThreeDStackReconstructionConfig:
+    """Configuration for same-sample multi-slice Xenium contour reconstruction.
+
+    This workflow reads Xenium output folders through GitHub pyXenium's
+    ``XeniumSlide`` IO path, builds 2D structure contours for each slice, aligns
+    slices in a fixed order, and exports a 3D contour stack plus surface meshes.
+    """
+
+    xenium_root: PathLike
+    out_dir: PathLike = "outputs/3d_stack_reconstruction"
+    segmentation_strategy: PathLike | None = None
+    structures: Sequence[MultiStructureSpec | Mapping[str, Any]] | None = None
+    slice_dirs: Sequence[PathLike] | None = None
+    sample_glob: str = "*"
+    reference_slice_index: int = 0
+    z_spacing_um: float = 5.0
+    xenium_pixel_size_um: float = 0.2125
+    group_property: str = "structure"
+    cluster_column_name: str = "cluster"
+    clusters_relpath: str = "analysis/clustering/gene_expression_graphclust/clusters.csv"
+    bins_x: int = 900
+    bins_y: int = 700
+    gaussian_sigma: float = 2.25
+    density_scale_quantile: float = 0.98
+    support_quantile: float = 0.18
+    tissue_quantile: float = 0.06
+    min_dominance: float = 0.34
+    min_cells: int = 500
+    min_component_pixels: int = 180
+    save_slice_preview_png: bool = False
+    hard_alignment_maxiter: int = 80
+    run_soft_alignment: bool = True
+    sampling_distance_um: float = 50.0
+    max_landmark_distance_um: float = 180.0
+    landmarks_per_structure: int | None = 260
+    diagnostic_structure_landmarks: int | None = 620
+    rbf_neighbors: int | None = 96
+    rbf_smoothing: float = 1e-4
+    diagnostic_structure: str | None = "Structure 5"
+    save_alignment_preview_png: bool = True
+    point_sample_distance_um: float = 80.0
+    voxel_size_um: float = 80.0
+    mesh_max_faces_for_html: int = 25000
+    overwrite: bool = False
+    dpi: int = 180
+
+
+@dataclass
+class ThreeDStackReconstructionResult:
+    out_dir: Path
+    slice_manifest_csv: Path
+    pairwise_metrics_csv: Path
+    aligned_manifest_csv: Path
+    contour_points_csv: Path
+    summary_json: Path
+    visualization_html: Path
+    mesh_dir: Path
+
+
+@dataclass(frozen=True)
+class _SliceInput:
+    order: int
+    sample_id: str
+    sample_dir: Path
+    xenium_dir: Path
+
+
+@dataclass(frozen=True)
+class _SimilarityTransform:
+    origin_x: float
+    origin_y: float
+    rotation_degrees: float
+    scale: float
+    translate_x: float
+    translate_y: float
+
+
+def run_3d_stack_reconstruction(
+    cfg: ThreeDStackReconstructionConfig,
+) -> ThreeDStackReconstructionResult:
+    """Run 32-slice style Xenium contour alignment and 3D reconstruction."""
+
+    _validate_stack_config(cfg)
+    out_dir = Path(cfg.out_dir).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    structures = list(cfg.structures) if cfg.structures is not None else _read_strategy_specs(cfg)
+    slices = discover_xenium_slices(
+        cfg.xenium_root,
+        slice_dirs=cfg.slice_dirs,
+        sample_glob=cfg.sample_glob,
+    )
+    if not slices:
+        raise ValueError(f"No Xenium output folders were found under {cfg.xenium_root!s}.")
+    if cfg.reference_slice_index != 0:
+        raise ValueError("Only reference_slice_index=0 is supported in v1 to keep order fixed.")
+
+    slice_manifest_path = out_dir / "xenium_slice_manifest.csv"
+    pd.DataFrame(
+        [
+            {
+                "order": item.order,
+                "sample_id": item.sample_id,
+                "sample_dir": str(item.sample_dir),
+                "xenium_dir": str(item.xenium_dir),
+            }
+            for item in slices
+        ]
+    ).to_csv(slice_manifest_path, index=False)
+
+    contour_dir = out_dir / "slice_contours"
+    aligned_dir = out_dir / "aligned_contours"
+    alignment_dir = out_dir / "pairwise_alignments"
+    mesh_dir = out_dir / "meshes"
+    for path in (contour_dir, aligned_dir, alignment_dir, mesh_dir):
+        path.mkdir(parents=True, exist_ok=True)
+
+    aligned_rows: list[dict[str, Any]] = []
+    pairwise_rows: list[dict[str, Any]] = []
+    aligned_paths: list[Path] = []
+
+    for slice_input in slices:
+        raw_geojson = _build_slice_contours(slice_input, structures, contour_dir, cfg)
+        aligned_path = aligned_dir / f"{slice_input.order:03d}_{slice_input.sample_id}_aligned.geojson"
+
+        if slice_input.order == 1:
+            if cfg.overwrite or not aligned_path.exists():
+                shutil.copy2(raw_geojson, aligned_path)
+            aligned_paths.append(aligned_path)
+            aligned_rows.append(
+                {
+                    "order": slice_input.order,
+                    "sample_id": slice_input.sample_id,
+                    "z_um": 0.0,
+                    "raw_geojson": str(raw_geojson),
+                    "aligned_geojson": str(aligned_path),
+                    "alignment_role": "reference",
+                }
+            )
+            continue
+
+        fixed_path = aligned_paths[-1]
+        pair_dir = alignment_dir / f"{slice_input.order - 1:03d}_to_{slice_input.order:03d}_{slice_input.sample_id}"
+        pair_dir.mkdir(parents=True, exist_ok=True)
+        hard_path = pair_dir / "moving_hard_aligned.geojson"
+        hard_summary_path = pair_dir / "hard_similarity_alignment.json"
+
+        hard_summary = hard_align_geojson(
+            fixed_geojson=fixed_path,
+            moving_geojson=raw_geojson,
+            output_geojson=hard_path,
+            summary_json=hard_summary_path,
+            group_property=cfg.group_property,
+            maxiter=cfg.hard_alignment_maxiter,
+            overwrite=cfg.overwrite,
+        )
+
+        if cfg.run_soft_alignment:
+            soft_result = run_3d_contour_reconstruction(
+                ThreeDContourReconstructionConfig(
+                    fixed_geojson=fixed_path,
+                    moving_hard_aligned_geojson=hard_path,
+                    out_dir=pair_dir / "soft_tps",
+                    group_property=cfg.group_property,
+                    sampling_distance_um=cfg.sampling_distance_um / cfg.xenium_pixel_size_um,
+                    max_landmark_distance_um=(
+                        cfg.max_landmark_distance_um / cfg.xenium_pixel_size_um
+                    ),
+                    landmarks_per_structure=cfg.landmarks_per_structure,
+                    diagnostic_structure_landmarks=cfg.diagnostic_structure_landmarks,
+                    rbf_neighbors=cfg.rbf_neighbors,
+                    rbf_smoothing=cfg.rbf_smoothing,
+                    diagnostic_structure=cfg.diagnostic_structure,
+                    dpi=cfg.dpi,
+                    save_preview_png=cfg.save_alignment_preview_png,
+                )
+            )
+            if cfg.overwrite or not aligned_path.exists():
+                shutil.copy2(soft_result.soft_aligned_geojson, aligned_path)
+            soft_summary = json.loads(soft_result.summary_json.read_text(encoding="utf-8"))
+            pairwise_rows.append(_pairwise_row(slice_input, hard_summary, soft_summary, soft_result))
+        else:
+            if cfg.overwrite or not aligned_path.exists():
+                shutil.copy2(hard_path, aligned_path)
+            pairwise_rows.append(_pairwise_row(slice_input, hard_summary, None, None))
+
+        aligned_paths.append(aligned_path)
+        aligned_rows.append(
+            {
+                "order": slice_input.order,
+                "sample_id": slice_input.sample_id,
+                "z_um": (slice_input.order - 1) * cfg.z_spacing_um,
+                "raw_geojson": str(raw_geojson),
+                "aligned_geojson": str(aligned_path),
+                "alignment_role": "moving",
+            }
+        )
+
+    aligned_manifest_path = out_dir / "aligned_slice_manifest.csv"
+    pd.DataFrame(aligned_rows).to_csv(aligned_manifest_path, index=False)
+
+    pairwise_metrics_path = out_dir / "pairwise_alignment_metrics.csv"
+    pd.DataFrame(pairwise_rows).to_csv(pairwise_metrics_path, index=False)
+
+    contour_points_path = out_dir / "aligned_contour_3d_points.csv"
+    contour_points = write_3d_contour_points(
+        aligned_rows,
+        contour_points_path,
+        group_property=cfg.group_property,
+        point_sample_distance_um=cfg.point_sample_distance_um,
+        xenium_pixel_size_um=cfg.xenium_pixel_size_um,
+    )
+
+    mesh_payloads = reconstruct_3d_contour_meshes(
+        aligned_rows,
+        mesh_dir,
+        group_property=cfg.group_property,
+        voxel_size_um=cfg.voxel_size_um,
+        z_spacing_um=cfg.z_spacing_um,
+        xenium_pixel_size_um=cfg.xenium_pixel_size_um,
+        max_faces_for_html=cfg.mesh_max_faces_for_html,
+    )
+
+    visualization_path = out_dir / "histoseg_3d_contour_stack.html"
+    write_3d_visualization_html(
+        contour_points,
+        mesh_payloads,
+        visualization_path,
+        title="HistoSeg 3D contour reconstruction",
+    )
+
+    summary_path = out_dir / "3d_stack_reconstruction_summary.json"
+    summary = {
+        "config": _jsonable_config(cfg),
+        "slice_count": len(slices),
+        "structure_count": len(structures),
+        "outputs": {
+            "slice_manifest_csv": str(slice_manifest_path),
+            "aligned_manifest_csv": str(aligned_manifest_path),
+            "pairwise_metrics_csv": str(pairwise_metrics_path),
+            "contour_points_csv": str(contour_points_path),
+            "visualization_html": str(visualization_path),
+            "mesh_dir": str(mesh_dir),
+        },
+    }
+    summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    return ThreeDStackReconstructionResult(
+        out_dir=out_dir,
+        slice_manifest_csv=slice_manifest_path,
+        pairwise_metrics_csv=pairwise_metrics_path,
+        aligned_manifest_csv=aligned_manifest_path,
+        contour_points_csv=contour_points_path,
+        summary_json=summary_path,
+        visualization_html=visualization_path,
+        mesh_dir=mesh_dir,
+    )
+
+
+def discover_xenium_slices(
+    xenium_root: PathLike,
+    *,
+    slice_dirs: Sequence[PathLike] | None = None,
+    sample_glob: str = "*",
+) -> list[_SliceInput]:
+    """Discover Xenium outs directories and return them in numeric slice order."""
+
+    root = Path(xenium_root).expanduser().resolve()
+    if slice_dirs is not None:
+        candidates = [Path(path).expanduser().resolve() for path in slice_dirs]
+    elif _looks_like_xenium_dir(root):
+        candidates = [root]
+    else:
+        candidates = [
+            child
+            for child in root.glob(sample_glob)
+            if child.is_dir() and _find_xenium_output_dir(child) is not None
+        ]
+
+    slices: list[_SliceInput] = []
+    for candidate in candidates:
+        xenium_dir = _find_xenium_output_dir(candidate)
+        if xenium_dir is None:
+            continue
+        slices.append(
+            _SliceInput(
+                order=0,
+                sample_id=candidate.name,
+                sample_dir=candidate,
+                xenium_dir=xenium_dir,
+            )
+        )
+
+    ordered = sorted(slices, key=lambda item: _sample_sort_key(item.sample_id))
+    return [
+        _SliceInput(
+            order=index,
+            sample_id=item.sample_id,
+            sample_dir=item.sample_dir,
+            xenium_dir=item.xenium_dir,
+        )
+        for index, item in enumerate(ordered, start=1)
+    ]
+
+
+def hard_align_geojson(
+    *,
+    fixed_geojson: PathLike,
+    moving_geojson: PathLike,
+    output_geojson: PathLike,
+    summary_json: PathLike | None = None,
+    group_property: str = "structure",
+    maxiter: int = 80,
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    """Hard-align one contour GeoJSON to another with a similarity transform."""
+
+    output_path = Path(output_geojson)
+    summary_path = Path(summary_json) if summary_json is not None else None
+    if output_path.exists() and not overwrite and summary_path is not None and summary_path.exists():
+        return json.loads(summary_path.read_text(encoding="utf-8"))
+
+    fixed_payload = _read_geojson(Path(fixed_geojson))
+    moving_payload = _read_geojson(Path(moving_geojson))
+    fixed_records = _records_from_geojson(fixed_payload, group_property, "fixed")
+    moving_records = _records_from_geojson(moving_payload, group_property, "moving")
+    fixed_union = unary_union([record.geometry for record in fixed_records])
+    moving_union = unary_union([record.geometry for record in moving_records])
+
+    transform, optimization = _estimate_similarity_transform(
+        fixed_union,
+        moving_union,
+        maxiter=maxiter,
+    )
+    aligned_payload = _apply_similarity_to_geojson(moving_payload, transform)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(aligned_payload, ensure_ascii=False), encoding="utf-8")
+
+    aligned_union = _apply_similarity_to_geometry(moving_union, transform)
+    per_structure = _per_structure_iou(
+        fixed_records,
+        _records_from_geojson(aligned_payload, group_property, "aligned"),
+    )
+    summary = {
+        "fixed_geojson": str(Path(fixed_geojson)),
+        "moving_geojson": str(Path(moving_geojson)),
+        "output_geojson": str(output_path),
+        "transform": asdict(transform),
+        "optimization": optimization,
+        "union_iou_before_hard": _iou(fixed_union, moving_union),
+        "union_iou_after_hard": _iou(fixed_union, aligned_union),
+        "per_structure_iou_after_hard": per_structure,
+    }
+    if summary_path is not None:
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    return summary
+
+
+def write_3d_contour_points(
+    aligned_rows: Sequence[Mapping[str, Any]],
+    output_csv: PathLike,
+    *,
+    group_property: str,
+    point_sample_distance_um: float,
+    xenium_pixel_size_um: float,
+) -> pd.DataFrame:
+    """Sample aligned slice boundaries into a 3D contour point table."""
+
+    rows: list[dict[str, Any]] = []
+    native_distance = max(point_sample_distance_um / xenium_pixel_size_um, 1e-6)
+    for row in aligned_rows:
+        payload = _read_geojson(Path(row["aligned_geojson"]))
+        z_um = float(row["z_um"])
+        for feature_index, feature in enumerate(payload["features"]):
+            group = _feature_group(feature.get("properties") or {}, group_property)
+            geom = _valid_polygonal_geometry(shape(feature["geometry"]))
+            if geom is None:
+                continue
+            for poly_index, polygon in enumerate(_iter_polygons(geom)):
+                boundary = polygon.exterior
+                if boundary.length <= 0:
+                    continue
+                distances = np.arange(0.0, boundary.length, native_distance)
+                if len(distances) == 0:
+                    distances = np.array([0.0])
+                polyline_id = (
+                    f"{int(row['order']):03d}_{feature_index:05d}_{poly_index:03d}"
+                )
+                for point_index, distance in enumerate(distances):
+                    point = boundary.interpolate(float(distance))
+                    rows.append(
+                        {
+                            "slice_order": int(row["order"]),
+                            "sample_id": row["sample_id"],
+                            "z_um": z_um,
+                            "structure": str(group),
+                            "polyline_id": polyline_id,
+                            "point_index": point_index,
+                            "x_um": float(point.x) * xenium_pixel_size_um,
+                            "y_um": float(point.y) * xenium_pixel_size_um,
+                        }
+                    )
+
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "slice_order",
+            "sample_id",
+            "z_um",
+            "structure",
+            "polyline_id",
+            "point_index",
+            "x_um",
+            "y_um",
+        ],
+    )
+    output_path = Path(output_csv)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output_path, index=False)
+    return df
+
+
+def reconstruct_3d_contour_meshes(
+    aligned_rows: Sequence[Mapping[str, Any]],
+    mesh_dir: PathLike,
+    *,
+    group_property: str,
+    voxel_size_um: float,
+    z_spacing_um: float,
+    xenium_pixel_size_um: float,
+    max_faces_for_html: int = 25000,
+) -> list[dict[str, Any]]:
+    """Voxelize aligned structure masks and export one PLY surface per structure."""
+
+    mesh_path = Path(mesh_dir)
+    mesh_path.mkdir(parents=True, exist_ok=True)
+    slice_records = _load_aligned_slice_geometries(
+        aligned_rows,
+        group_property=group_property,
+        xenium_pixel_size_um=xenium_pixel_size_um,
+    )
+    structures = sorted({record["structure"] for record in slice_records})
+    if not structures:
+        return []
+
+    bounds = _combined_scaled_bounds(slice_records)
+    x_min, y_min, x_max, y_max = bounds
+    x_values = np.arange(x_min, x_max + voxel_size_um, voxel_size_um, dtype=float)
+    y_values = np.arange(y_min, y_max + voxel_size_um, voxel_size_um, dtype=float)
+    xx, yy = np.meshgrid(x_values, y_values)
+
+    mesh_payloads: list[dict[str, Any]] = []
+    for structure in structures:
+        volume = np.zeros((len(aligned_rows), len(y_values), len(x_values)), dtype=bool)
+        for record in slice_records:
+            if record["structure"] != structure:
+                continue
+            slice_index = int(record["slice_order"]) - 1
+            mask = _geometry_contains_grid(record["geometry_um"], xx, yy)
+            volume[slice_index] |= mask
+        if not volume.any():
+            continue
+
+        padded = np.pad(volume.astype(np.float32), ((1, 1), (1, 1), (1, 1)))
+        try:
+            vertices, faces, _, _ = measure.marching_cubes(
+                padded,
+                level=0.5,
+                spacing=(z_spacing_um, voxel_size_um, voxel_size_um),
+            )
+        except ValueError:
+            continue
+
+        xyz = np.column_stack(
+            [
+                x_min + (vertices[:, 2] - voxel_size_um),
+                y_min + (vertices[:, 1] - voxel_size_um),
+                vertices[:, 0] - z_spacing_um,
+            ]
+        )
+        ply_path = mesh_path / f"{_safe_name(structure)}.ply"
+        _write_ascii_ply(ply_path, xyz, faces)
+        payload = {
+            "structure": structure,
+            "ply": str(ply_path),
+            "vertex_count": int(len(xyz)),
+            "face_count": int(len(faces)),
+        }
+        if len(faces) <= max_faces_for_html:
+            payload.update(
+                {
+                    "x": xyz[:, 0].round(3).tolist(),
+                    "y": xyz[:, 1].round(3).tolist(),
+                    "z": xyz[:, 2].round(3).tolist(),
+                    "i": faces[:, 0].astype(int).tolist(),
+                    "j": faces[:, 1].astype(int).tolist(),
+                    "k": faces[:, 2].astype(int).tolist(),
+                }
+            )
+        mesh_payloads.append(payload)
+
+    pd.DataFrame(
+        [
+            {
+                "structure": item["structure"],
+                "ply": item["ply"],
+                "vertex_count": item["vertex_count"],
+                "face_count": item["face_count"],
+            }
+            for item in mesh_payloads
+        ]
+    ).to_csv(mesh_path / "mesh_manifest.csv", index=False)
+    return mesh_payloads
+
+
+def write_3d_visualization_html(
+    contour_points: pd.DataFrame,
+    mesh_payloads: Sequence[Mapping[str, Any]],
+    output_html: PathLike,
+    *,
+    title: str,
+) -> Path:
+    """Write a self-contained Plotly HTML view for the 3D contour stack."""
+
+    traces: list[dict[str, Any]] = []
+    palette = [
+        "#3ddbc7",
+        "#5aa9ff",
+        "#ffb156",
+        "#b891ff",
+        "#ff7188",
+        "#8be563",
+        "#ffd15c",
+    ]
+    for color_index, (structure, group) in enumerate(contour_points.groupby("structure")):
+        x_values: list[float | None] = []
+        y_values: list[float | None] = []
+        z_values: list[float | None] = []
+        for _, polyline in group.sort_values(
+            ["slice_order", "polyline_id", "point_index"]
+        ).groupby("polyline_id", sort=False):
+            x_values.extend(polyline["x_um"].round(3).tolist())
+            y_values.extend(polyline["y_um"].round(3).tolist())
+            z_values.extend(polyline["z_um"].round(3).tolist())
+            x_values.append(None)
+            y_values.append(None)
+            z_values.append(None)
+        traces.append(
+            {
+                "type": "scatter3d",
+                "mode": "lines",
+                "name": f"{structure} contours",
+                "x": x_values,
+                "y": y_values,
+                "z": z_values,
+                "line": {"width": 3, "color": palette[color_index % len(palette)]},
+                "opacity": 0.9,
+            }
+        )
+
+    for color_index, mesh in enumerate(mesh_payloads):
+        if not {"x", "y", "z", "i", "j", "k"}.issubset(mesh.keys()):
+            continue
+        traces.append(
+            {
+                "type": "mesh3d",
+                "name": f"{mesh['structure']} mesh",
+                "x": mesh["x"],
+                "y": mesh["y"],
+                "z": mesh["z"],
+                "i": mesh["i"],
+                "j": mesh["j"],
+                "k": mesh["k"],
+                "color": palette[color_index % len(palette)],
+                "opacity": 0.18,
+                "flatshading": True,
+            }
+        )
+
+    html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>{title}</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    body {{ margin: 0; background: #07111d; color: #d8e2ef; font-family: Arial, sans-serif; }}
+    #plot {{ width: 100vw; height: 100vh; }}
+  </style>
+</head>
+<body>
+  <div id="plot"></div>
+  <script>
+    const data = {json.dumps(traces)};
+    const layout = {{
+      title: {{text: {json.dumps(title)}, font: {{color: "#d8e2ef", size: 22}}}},
+      paper_bgcolor: "#07111d",
+      plot_bgcolor: "#07111d",
+      scene: {{
+        xaxis: {{title: "X (um)", color: "#b9c7d6", gridcolor: "#27364a"}},
+        yaxis: {{title: "Y (um)", color: "#b9c7d6", gridcolor: "#27364a"}},
+        zaxis: {{title: "Z (um)", color: "#b9c7d6", gridcolor: "#27364a"}},
+        aspectmode: "data"
+      }},
+      legend: {{font: {{color: "#d8e2ef"}}}},
+      margin: {{l: 0, r: 0, t: 50, b: 0}}
+    }};
+    Plotly.newPlot("plot", data, layout, {{responsive: true}});
+  </script>
+</body>
+</html>
+"""
+    output_path = Path(output_html)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(html, encoding="utf-8")
+    return output_path
+
+
+def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
+    if cfg.z_spacing_um <= 0:
+        raise ValueError("z_spacing_um must be greater than 0.")
+    if cfg.xenium_pixel_size_um <= 0:
+        raise ValueError("xenium_pixel_size_um must be greater than 0.")
+    if cfg.voxel_size_um <= 0:
+        raise ValueError("voxel_size_um must be greater than 0.")
+    if cfg.point_sample_distance_um <= 0:
+        raise ValueError("point_sample_distance_um must be greater than 0.")
+
+
+def _read_strategy_specs(cfg: ThreeDStackReconstructionConfig) -> list[MultiStructureSpec]:
+    strategy_path = Path(cfg.segmentation_strategy) if cfg.segmentation_strategy else None
+    if strategy_path is None:
+        candidate = Path(cfg.xenium_root) / "contour for alignment" / "segmentationstrategy.txt"
+        if candidate.exists():
+            strategy_path = candidate
+    if strategy_path is None or not strategy_path.exists():
+        raise ValueError(
+            "Provide structures=... or --segmentation-strategy. "
+            "No contour for alignment/segmentationstrategy.txt was found."
+        )
+    specs: list[MultiStructureSpec] = []
+    for index, line in enumerate(strategy_path.read_text(encoding="utf-8").splitlines(), start=1):
+        text = line.strip()
+        if not text:
+            continue
+        clusters = [value.strip() for value in text.split(",") if value.strip()]
+        specs.append(
+            MultiStructureSpec(
+                structure_name=f"Structure {len(specs) + 1}",
+                structure_id=len(specs) + 1,
+                cluster_ids=clusters,
+            )
+        )
+    if not specs:
+        raise ValueError(f"No structures were parsed from {strategy_path}.")
+    return specs
+
+
+def _build_slice_contours(
+    slice_input: _SliceInput,
+    structures: Sequence[MultiStructureSpec | Mapping[str, Any]],
+    contour_root: Path,
+    cfg: ThreeDStackReconstructionConfig,
+) -> Path:
+    slice_out = contour_root / f"{slice_input.order:03d}_{slice_input.sample_id}"
+    contour_geojson = slice_out / "xenium_explorer_annotations.geojson"
+    if contour_geojson.exists() and not cfg.overwrite:
+        return contour_geojson
+
+    slice_out.mkdir(parents=True, exist_ok=True)
+    slide = _read_xenium_slide(slice_input.xenium_dir, cfg)
+    inputs = _write_slide_contour_inputs(slide, slice_out, cfg)
+    result = run_multi_structure_contours(
+        MultiStructureContourConfig(
+            clusters_csv=inputs["clusters_csv"],
+            cells_parquet=inputs["cells_parquet"],
+            out_dir=slice_out,
+            structures=structures,
+            bins_x=cfg.bins_x,
+            bins_y=cfg.bins_y,
+            gaussian_sigma=cfg.gaussian_sigma,
+            density_scale_quantile=cfg.density_scale_quantile,
+            support_quantile=cfg.support_quantile,
+            tissue_quantile=cfg.tissue_quantile,
+            min_dominance=cfg.min_dominance,
+            min_cells=cfg.min_cells,
+            min_component_pixels=cfg.min_component_pixels,
+            xenium_pixel_size_um=cfg.xenium_pixel_size_um,
+            save_preview_png=cfg.save_slice_preview_png,
+        )
+    )
+    return result.geojson
+
+
+def _read_xenium_slide(xenium_dir: Path, cfg: ThreeDStackReconstructionConfig) -> Any:
+    read_xenium = _import_pyxenium_read_xenium()
+    try:
+        return read_xenium(
+            str(xenium_dir),
+            as_="slide",
+            prefer="auto",
+            include_transcripts=False,
+            stream_transcripts=True,
+            include_boundaries=False,
+            include_images=False,
+            clusters_relpath=cfg.clusters_relpath,
+            cluster_column_name=cfg.cluster_column_name,
+        )
+    except TypeError:
+        return read_xenium(str(xenium_dir), as_="slide")
+
+
+def _import_pyxenium_read_xenium():
+    try:
+        from pyXenium.io import read_xenium
+
+        return read_xenium
+    except Exception as first_error:
+        try:
+            from pyxenium.io import read_xenium
+
+            return read_xenium
+        except Exception as second_error:
+            raise ImportError(
+                "HistoSeg 3D stack reconstruction requires GitHub pyXenium. "
+                "Install it with: pip install "
+                "'pyXenium @ git+https://github.com/hutaobo/pyXenium.git'"
+            ) from second_error or first_error
+
+
+def _write_slide_contour_inputs(
+    slide: Any,
+    out_dir: Path,
+    cfg: ThreeDStackReconstructionConfig,
+) -> dict[str, Path]:
+    table = getattr(slide, "table", None)
+    if table is None or not hasattr(table, "obs"):
+        raise ValueError("pyXenium did not return a XeniumSlide with a table.obs annotation table.")
+    obs = table.obs.copy()
+    obs["Barcode"] = obs.index.astype(str)
+
+    x_values, y_values = _extract_slide_xy(obs, table)
+    cluster_col = _find_cluster_column(obs, cfg.cluster_column_name)
+    if cluster_col is None:
+        raise ValueError(
+            f"XeniumSlide.table.obs does not contain cluster column {cfg.cluster_column_name!r}."
+        )
+
+    cells = pd.DataFrame(
+        {
+            "Barcode": obs["Barcode"].astype(str).to_numpy(),
+            "cell_id": obs["Barcode"].astype(str).to_numpy(),
+            "x_centroid": np.asarray(x_values, dtype=float),
+            "y_centroid": np.asarray(y_values, dtype=float),
+        }
+    )
+    clusters = pd.DataFrame(
+        {
+            "Barcode": obs["Barcode"].astype(str).to_numpy(),
+            "Cluster": obs[cluster_col].astype(str).to_numpy(),
+        }
+    )
+    keep = (
+        np.isfinite(cells["x_centroid"].to_numpy(dtype=float))
+        & np.isfinite(cells["y_centroid"].to_numpy(dtype=float))
+        & (clusters["Cluster"].astype(str).str.strip() != "")
+    )
+    cells = cells.loc[keep].reset_index(drop=True)
+    clusters = clusters.loc[keep].reset_index(drop=True)
+
+    cells_path = out_dir / "pyxenium_cells_for_contours.parquet"
+    clusters_path = out_dir / "pyxenium_clusters_for_contours.csv"
+    cells.to_parquet(cells_path, index=False)
+    clusters.to_csv(clusters_path, index=False)
+    return {"cells_parquet": cells_path, "clusters_csv": clusters_path}
+
+
+def _extract_slide_xy(obs: pd.DataFrame, table: Any) -> tuple[np.ndarray, np.ndarray]:
+    x_candidates = [
+        "x_centroid",
+        "x_centroid_um",
+        "cell_x_centroid",
+        "x",
+        "x_location",
+        "x_coord",
+    ]
+    y_candidates = [
+        "y_centroid",
+        "y_centroid_um",
+        "cell_y_centroid",
+        "y",
+        "y_location",
+        "y_coord",
+    ]
+    for x_col in x_candidates:
+        for y_col in y_candidates:
+            if x_col in obs.columns and y_col in obs.columns:
+                return obs[x_col].to_numpy(dtype=float), obs[y_col].to_numpy(dtype=float)
+    if hasattr(table, "obsm") and "spatial" in table.obsm:
+        spatial = np.asarray(table.obsm["spatial"], dtype=float)
+        if spatial.ndim == 2 and spatial.shape[1] >= 2:
+            return spatial[:, 0], spatial[:, 1]
+    raise ValueError("XeniumSlide.table does not expose x/y centroid coordinates.")
+
+
+def _find_cluster_column(obs: pd.DataFrame, preferred: str) -> str | None:
+    if preferred in obs.columns:
+        return preferred
+    for candidate in ("Cluster", "cluster", "graphclust", "leiden", "leiden_cluster"):
+        if candidate in obs.columns:
+            return candidate
+    return None
+
+
+def _find_xenium_output_dir(path: Path) -> Path | None:
+    if _looks_like_xenium_dir(path):
+        return path
+    for child in sorted(path.iterdir()) if path.exists() else []:
+        if child.is_dir() and _looks_like_xenium_dir(child):
+            return child
+    return None
+
+
+def _looks_like_xenium_dir(path: Path) -> bool:
+    return (path / "cells.parquet").exists() and (
+        (path / "cell_feature_matrix.h5").exists()
+        or (path / "cell_feature_matrix").exists()
+    )
+
+
+def _sample_sort_key(sample_id: str) -> tuple[int, str]:
+    matches = re.findall(r"\d+", sample_id)
+    if matches:
+        return int(matches[-1]), sample_id
+    return 10**9, sample_id
+
+
+def _estimate_similarity_transform(
+    fixed_union: Any,
+    moving_union: Any,
+    *,
+    maxiter: int,
+) -> tuple[_SimilarityTransform, dict[str, Any]]:
+    origin = moving_union.centroid
+    scale0 = math.sqrt(max(fixed_union.area, 1e-9) / max(moving_union.area, 1e-9))
+    rotation0 = _principal_axis_angle(fixed_union) - _principal_axis_angle(moving_union)
+    initial = _SimilarityTransform(
+        origin_x=float(origin.x),
+        origin_y=float(origin.y),
+        rotation_degrees=float(rotation0),
+        scale=float(scale0),
+        translate_x=0.0,
+        translate_y=0.0,
+    )
+    initial_aligned = _apply_similarity_to_geometry(moving_union, initial)
+    centroid_dx = float(fixed_union.centroid.x - initial_aligned.centroid.x)
+    centroid_dy = float(fixed_union.centroid.y - initial_aligned.centroid.y)
+    initial = _SimilarityTransform(
+        origin_x=initial.origin_x,
+        origin_y=initial.origin_y,
+        rotation_degrees=initial.rotation_degrees,
+        scale=initial.scale,
+        translate_x=centroid_dx,
+        translate_y=centroid_dy,
+    )
+    before = _iou(fixed_union, moving_union)
+    initial_iou = _iou(fixed_union, _apply_similarity_to_geometry(moving_union, initial))
+
+    if maxiter <= 0:
+        return initial, {
+            "method": "pca_centroid",
+            "success": True,
+            "union_iou_before": before,
+            "union_iou_initial": initial_iou,
+            "union_iou_final": initial_iou,
+        }
+
+    def objective(params: np.ndarray) -> float:
+        transform = _SimilarityTransform(
+            origin_x=initial.origin_x,
+            origin_y=initial.origin_y,
+            rotation_degrees=float(params[0]),
+            scale=float(math.exp(params[1])),
+            translate_x=float(params[2]),
+            translate_y=float(params[3]),
+        )
+        return -_iou(fixed_union, _apply_similarity_to_geometry(moving_union, transform))
+
+    params0 = np.array(
+        [
+            initial.rotation_degrees,
+            math.log(max(initial.scale, 1e-9)),
+            initial.translate_x,
+            initial.translate_y,
+        ],
+        dtype=float,
+    )
+    result = minimize(
+        objective,
+        params0,
+        method="Nelder-Mead",
+        options={"maxiter": int(maxiter), "xatol": 1e-3, "fatol": 1e-5},
+    )
+    params = result.x if result.fun <= objective(params0) else params0
+    transform = _SimilarityTransform(
+        origin_x=initial.origin_x,
+        origin_y=initial.origin_y,
+        rotation_degrees=float(params[0]),
+        scale=float(math.exp(params[1])),
+        translate_x=float(params[2]),
+        translate_y=float(params[3]),
+    )
+    final_iou = _iou(fixed_union, _apply_similarity_to_geometry(moving_union, transform))
+    return transform, {
+        "method": "pca_centroid_nelder_mead",
+        "success": bool(result.success) or final_iou >= initial_iou,
+        "message": str(result.message),
+        "iterations": int(getattr(result, "nit", 0)),
+        "union_iou_before": before,
+        "union_iou_initial": initial_iou,
+        "union_iou_final": final_iou,
+    }
+
+
+def _principal_axis_angle(geom: Any) -> float:
+    hull = geom.convex_hull
+    if hull.is_empty or not hasattr(hull, "exterior"):
+        return 0.0
+    coords = np.asarray(hull.exterior.coords, dtype=float)
+    if len(coords) < 3:
+        return 0.0
+    centered = coords - coords.mean(axis=0)
+    cov = np.cov(centered.T)
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    axis = eigvecs[:, int(np.argmax(eigvals))]
+    return float(math.degrees(math.atan2(axis[1], axis[0])))
+
+
+def _apply_similarity_to_geojson(
+    geojson: dict[str, Any],
+    transform: _SimilarityTransform,
+) -> dict[str, Any]:
+    payload = copy.deepcopy(geojson)
+    for feature in payload["features"]:
+        geom = _apply_similarity_to_geometry(shape(feature["geometry"]), transform)
+        feature["geometry"] = mapping(geom)
+    return payload
+
+
+def _apply_similarity_to_geometry(geom: Any, transform: _SimilarityTransform) -> Any:
+    origin = (transform.origin_x, transform.origin_y)
+    transformed = affinity.rotate(geom, transform.rotation_degrees, origin=origin)
+    transformed = affinity.scale(
+        transformed,
+        xfact=transform.scale,
+        yfact=transform.scale,
+        origin=origin,
+    )
+    transformed = affinity.translate(
+        transformed,
+        xoff=transform.translate_x,
+        yoff=transform.translate_y,
+    )
+    return transformed
+
+
+def _per_structure_iou(fixed_records: Sequence[Any], moving_records: Sequence[Any]) -> dict[str, float]:
+    fixed_by_group = _group_union(fixed_records)
+    moving_by_group = _group_union(moving_records)
+    return {
+        group: _iou(fixed_by_group[group], moving_by_group[group])
+        for group in sorted(set(fixed_by_group) & set(moving_by_group))
+    }
+
+
+def _group_union(records: Sequence[Any]) -> dict[str, Any]:
+    grouped: dict[str, list[Any]] = {}
+    for record in records:
+        grouped.setdefault(record.group, []).append(record.geometry)
+    return {group: unary_union(geoms) for group, geoms in grouped.items()}
+
+
+def _pairwise_row(
+    slice_input: _SliceInput,
+    hard_summary: Mapping[str, Any],
+    soft_summary: Mapping[str, Any] | None,
+    soft_result: Any,
+) -> dict[str, Any]:
+    row = {
+        "moving_order": slice_input.order,
+        "moving_sample_id": slice_input.sample_id,
+        "hard_union_iou_before": hard_summary.get("union_iou_before_hard"),
+        "hard_union_iou_after": hard_summary.get("union_iou_after_hard"),
+        "hard_transform_rotation_degrees": hard_summary["transform"]["rotation_degrees"],
+        "hard_transform_scale": hard_summary["transform"]["scale"],
+        "hard_transform_translate_x": hard_summary["transform"]["translate_x"],
+        "hard_transform_translate_y": hard_summary["transform"]["translate_y"],
+        "soft_union_iou_before": None,
+        "soft_union_iou_after": None,
+        "soft_boundary_landmarks": None,
+        "soft_summary_json": None,
+    }
+    if soft_summary is not None and soft_result is not None:
+        row.update(
+            {
+                "soft_union_iou_before": soft_summary["qc"]["union_iou_hard_before_soft"],
+                "soft_union_iou_after": soft_summary["qc"]["union_iou_soft_after"],
+                "soft_boundary_landmarks": soft_summary["landmarks"]["boundary_landmark_count"],
+                "soft_summary_json": str(soft_result.summary_json),
+            }
+        )
+    return row
+
+
+def _valid_polygonal_geometry(geom: Any) -> Any | None:
+    if geom.is_empty:
+        return None
+    if not geom.is_valid:
+        geom = geom.buffer(0)
+    if geom.is_empty:
+        return None
+    if isinstance(geom, (Polygon, MultiPolygon)):
+        return geom
+    if isinstance(geom, GeometryCollection):
+        polygons = [part for part in geom.geoms if isinstance(part, (Polygon, MultiPolygon))]
+        if not polygons:
+            return None
+        return unary_union(polygons)
+    return None
+
+
+def _iter_polygons(geom: Any) -> Iterable[Polygon]:
+    if isinstance(geom, Polygon):
+        yield geom
+    elif isinstance(geom, MultiPolygon):
+        yield from geom.geoms
+
+
+def _load_aligned_slice_geometries(
+    aligned_rows: Sequence[Mapping[str, Any]],
+    *,
+    group_property: str,
+    xenium_pixel_size_um: float,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for row in aligned_rows:
+        payload = _read_geojson(Path(row["aligned_geojson"]))
+        for feature in payload["features"]:
+            group = _feature_group(feature.get("properties") or {}, group_property)
+            geom = _valid_polygonal_geometry(shape(feature["geometry"]))
+            if geom is None:
+                continue
+            scaled = affinity.scale(
+                geom,
+                xfact=xenium_pixel_size_um,
+                yfact=xenium_pixel_size_um,
+                origin=(0.0, 0.0),
+            )
+            records.append(
+                {
+                    "slice_order": int(row["order"]),
+                    "structure": str(group),
+                    "geometry_um": scaled,
+                }
+            )
+    return records
+
+
+def _combined_scaled_bounds(records: Sequence[Mapping[str, Any]]) -> tuple[float, float, float, float]:
+    union = unary_union([record["geometry_um"] for record in records])
+    return tuple(map(float, union.bounds))
+
+
+def _geometry_contains_grid(geom: Any, xx: np.ndarray, yy: np.ndarray) -> np.ndarray:
+    if _contains_xy is not None:
+        return np.asarray(_contains_xy(geom, xx, yy), dtype=bool)
+    flat = [geom.contains(shape({"type": "Point", "coordinates": [x, y]})) for x, y in zip(xx.ravel(), yy.ravel())]
+    return np.asarray(flat, dtype=bool).reshape(xx.shape)
+
+
+def _write_ascii_ply(path: Path, vertices: np.ndarray, faces: np.ndarray) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write("ply\n")
+        handle.write("format ascii 1.0\n")
+        handle.write(f"element vertex {len(vertices)}\n")
+        handle.write("property float x\n")
+        handle.write("property float y\n")
+        handle.write("property float z\n")
+        handle.write(f"element face {len(faces)}\n")
+        handle.write("property list uchar int vertex_indices\n")
+        handle.write("end_header\n")
+        for vertex in vertices:
+            handle.write(f"{vertex[0]:.6f} {vertex[1]:.6f} {vertex[2]:.6f}\n")
+        for face in faces:
+            handle.write(f"3 {int(face[0])} {int(face[1])} {int(face[2])}\n")
+
+
+def _safe_name(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", text).strip("_") or "structure"
+
+
+def _jsonable_config(cfg: ThreeDStackReconstructionConfig) -> dict[str, Any]:
+    payload = asdict(cfg)
+    for key in ("xenium_root", "out_dir", "segmentation_strategy"):
+        if payload.get(key) is not None:
+            payload[key] = str(payload[key])
+    if payload.get("slice_dirs") is not None:
+        payload["slice_dirs"] = [str(path) for path in payload["slice_dirs"]]
+    return payload

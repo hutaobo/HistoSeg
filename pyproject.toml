@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "histoseg"
 dynamic = ["version"]
-description = "Python toolkit for H&E image analysis and spatial contour analysis."
+description = "Python toolkit for H&E image analysis, spatial contour analysis, and 3D contour reconstruction."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -33,6 +33,14 @@ he = [
     "opencv-python-headless",
     "rasterio",
 ]
+
+[project.scripts]
+histoseg-gui = "histoseg.gui.gui_app:main"
+histoseg-ai-pathologist = "histoseg.spatial_pathologist.cli:main"
+histoseg-ai-pathologist-full-auto = "histoseg.spatial_pathologist.full_auto_cli:main"
+histoseg-he = "histoseg.he.cli:main"
+histoseg-contour = "histoseg.contour.cli:main"
+histoseg-3d = "histoseg.threed.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/hutaobo/HistoSeg"

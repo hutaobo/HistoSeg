@@ -52,8 +52,6 @@ exclude_patterns = [
     "_build",
     "Thumbs.db",
     ".DS_Store",
-    "3d_analysis.md",
-    "api/threed.rst",
     "**/.ipynb_checkpoints",
 ]
 
@@ -101,5 +99,5 @@ html_theme_options = {
             "icon": "fa-solid fa-book-open",
         },
     ],
-    "announcement": "HistoSeg unifies H&E image analysis and spatial contour workflows in one Python toolkit.",
+    "announcement": "HistoSeg unifies H&E image analysis, spatial contour workflows, and 3D contour alignment in one Python toolkit.",
 }

@@ -14,6 +14,14 @@ artifacts, and outputs in one place.
 Build a Pattern1 contour from clustered cell coordinates and inspect the
 resulting preview outputs and exported files.
 :::
+
+:::{grid-item-card} 3D Contour Soft Alignment
+:link: 3d_soft_alignment
+:link-type: doc
+
+Run TPS soft alignment on two bundled polyp Xenium contour GeoJSON slices and
+inspect the overlay and diagnostic report.
+:::
 ::::
 
 ```{toctree}
@@ -21,4 +29,5 @@ resulting preview outputs and exported files.
 :maxdepth: 1
 
 pattern1_isoline
+3d_soft_alignment
 ```

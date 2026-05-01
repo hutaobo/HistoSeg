@@ -9,14 +9,15 @@
   <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/License-PolyForm--Noncommercial%201.0.0-blue.svg"></a>
 </p>
 
-**Python toolkit for H&E image analysis and spatial contour analysis.**
+**Python toolkit for H&E image analysis, spatial contour analysis, and 3D contour reconstruction.**
 
 </div>
 
-HistoSeg has two public feature groups:
+HistoSeg has three public feature groups:
 
 - **HE Analysis** (`histoseg.he`) for image-based H&E tissue segmentation, neutral tissue partitioning, and aligned-image change detection.
 - **Contour Analysis** (`histoseg.contour`) for contour extraction from spatial/cell-coordinate data, including Pattern1 isolines and multi-structure Xenium exports.
+- **3D Analysis** (`histoseg.threed`) for same-sample, multi-slice Xenium contour alignment and reconstruction workflows.
 
 Full documentation: [histoseg.readthedocs.io](https://histoseg.readthedocs.io)
 
@@ -25,6 +26,8 @@ Full documentation: [histoseg.readthedocs.io](https://histoseg.readthedocs.io)
 Use **HE Analysis** when your input is an H&E image such as PNG, JPG, TIFF, or GeoTIFF and you want masks, overlays, heatmaps, GeoJSON polygons, or region tables.
 
 Use **Contour Analysis** when your input is spatial cell-coordinate data such as Xenium `cells.parquet` plus cluster assignments, and you want geometry extracted from cell neighborhoods or selected cluster groups.
+
+Use **3D Analysis** when you are preparing for multi-slice Xenium contour reconstruction from the same sample. The first released workflow soft-aligns a hard-aligned moving contour GeoJSON to a fixed reference slice with a conservative TPS displacement field.
 
 ## Installation
 
@@ -112,6 +115,38 @@ Contour Analysis currently supports:
 - Xenium Explorer annotation exports
 - Hugging Face dataset helper workflows for Xenium-style inputs
 
+## 3D Analysis Quickstart
+
+```python
+from histoseg.threed import (
+    ThreeDContourReconstructionConfig,
+    run_3d_contour_reconstruction,
+)
+
+cfg = ThreeDContourReconstructionConfig(
+    fixed_geojson="slice_01.geojson",
+    moving_hard_aligned_geojson="slice_02_hard_aligned_to_01.geojson",
+    out_dir="outputs/3d_soft_alignment",
+    group_property="structure",
+    diagnostic_structure="Structure 5",
+)
+
+result = run_3d_contour_reconstruction(cfg)
+print(result.soft_aligned_geojson)
+print(result.diagnostic_report_png)
+```
+
+```bash
+histoseg-3d reconstruct \
+  --fixed-geojson slice_01.geojson \
+  --moving-hard-aligned-geojson slice_02_hard_aligned_to_01.geojson \
+  --out-dir outputs/3d_soft_alignment \
+  --group-property structure \
+  --diagnostic-structure "Structure 5"
+```
+
+3D Analysis currently performs the soft TPS registration/pre-reconstruction step. It does not yet generate a 3D mesh or volume.
+
 ## Outputs
 
 HistoSeg workflows write reviewable artifacts such as:
@@ -126,6 +161,8 @@ HistoSeg workflows write reviewable artifacts such as:
 
 - [HE Analysis](https://histoseg.readthedocs.io/en/latest/he_analysis.html)
 - [Contour Analysis](https://histoseg.readthedocs.io/en/latest/contour_analysis.html)
+- [3D Analysis](https://histoseg.readthedocs.io/en/latest/3d_analysis.html)
+- [3D contour soft alignment tutorial](https://histoseg.readthedocs.io/en/latest/tutorials/3d_soft_alignment.html)
 - [API Reference](https://histoseg.readthedocs.io/en/latest/api/index.html)
 
 ## License

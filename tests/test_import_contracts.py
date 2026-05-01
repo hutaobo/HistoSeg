@@ -6,6 +6,7 @@ import importlib
 def test_feature_group_import_contracts():
     he = importlib.import_module("histoseg.he")
     contour = importlib.import_module("histoseg.contour")
+    threed = importlib.import_module("histoseg.threed")
 
     assert callable(he.run_he_segmentation)
     assert callable(he.run_he_change_detection)
@@ -13,6 +14,7 @@ def test_feature_group_import_contracts():
     assert callable(contour.run_multi_structure_contours)
     assert callable(contour.run_group_boundary_network)
     assert callable(contour.run_contour_adjacency)
+    assert callable(threed.run_3d_contour_reconstruction)
 
 
 def test_top_level_exports_feature_group_namespaces():
@@ -20,3 +22,4 @@ def test_top_level_exports_feature_group_namespaces():
 
     assert histoseg.he.__name__ == "histoseg.he"
     assert histoseg.contour.__name__ == "histoseg.contour"
+    assert histoseg.threed.__name__ == "histoseg.threed"

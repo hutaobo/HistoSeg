@@ -5,6 +5,8 @@ pycirclize
 psutil
 scikit-learn
 scikit-image
+scipy
+shapely
 matplotlib
 networkx
 openai>=1.0.0
