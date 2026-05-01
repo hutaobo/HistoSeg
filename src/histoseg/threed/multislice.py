@@ -675,9 +675,12 @@ def reconstruct_3d_contour_meshes(
         "euler_number",
         "component_count",
     ]
-    # Add one column per requested export format.
+    # Always include a "ply" column for backward compatibility, then add any
+    # additional requested formats (deduplicating if ply is also in export_formats).
+    manifest_cols.append("ply")
     for fmt in export_formats:
-        manifest_cols.append(fmt)
+        if fmt != "ply":
+            manifest_cols.append(fmt)
     manifest_rows = [
         {col: item.get(col) for col in manifest_cols} for item in mesh_payloads
     ]
@@ -1525,7 +1528,7 @@ def _json_default(obj: Any) -> Any:
 
 def _jsonable_config(cfg: ThreeDStackReconstructionConfig) -> dict[str, Any]:
     payload = asdict(cfg)
-    for key in ("xenium_root", "out_dir", "segmentation_strategy"):
+    for key in ("xenium_root", "out_dir", "segmentation_strategy", "merged_h5ad"):
         if payload.get(key) is not None:
             payload[key] = str(payload[key])
     if payload.get("slice_dirs") is not None:
