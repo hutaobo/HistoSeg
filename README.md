@@ -27,7 +27,7 @@ Use **HE Analysis** when your input is an H&E image such as PNG, JPG, TIFF, or G
 
 Use **Contour Analysis** when your input is spatial cell-coordinate data such as Xenium `cells.parquet` plus cluster assignments, and you want geometry extracted from cell neighborhoods or selected cluster groups.
 
-Use **3D Analysis** when you are preparing for multi-slice Xenium contour reconstruction from the same sample. It can soft-align a hard-aligned moving contour GeoJSON to a fixed reference slice, or build a pyXenium-backed multi-slice contour stack with 3D points, PLY meshes, and an interactive HTML view.
+Use **3D Analysis** when you are preparing for multi-slice Xenium contour reconstruction from the same sample. It can soft-align a hard-aligned moving contour GeoJSON to a fixed reference slice, or build a pyXenium-backed multi-slice contour stack with 3D points, smoothed PLY/OBJ surface meshes, and an interactive HTML view.
 
 ## Installation
 
@@ -160,12 +160,14 @@ histoseg-3d reconstruct-stack \
   --merged-h5ad "polyp/pdc_merge_leiden/polyp_32samples_processed_leiden.h5ad" \
   --merged-cluster-column leiden_1_0 \
   --out-dir outputs/polyp_3d_reconstruction \
-  --z-spacing-um 5
+  --z-spacing-um 5 \
+  --mesh-smoothing-sigma-um 40 \
+  --mesh-export-formats ply,obj
 ```
 
 3D Analysis writes aligned per-slice GeoJSON files, pairwise alignment metrics,
-sampled 3D contour points, per-structure PLY meshes, and an interactive Plotly
-HTML visualization.
+sampled 3D contour points, per-structure PLY/OBJ meshes, mesh QC metrics, and
+an interactive Plotly HTML visualization.
 
 ## Outputs
 

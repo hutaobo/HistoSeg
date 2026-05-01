@@ -13,6 +13,7 @@ openai>=1.0.0
 seaborn
 scanpy
 pyXenium @ git+https://github.com/hutaobo/pyXenium.git
+trimesh
 setuptools
 xsdata-pydantic
 myst-parser

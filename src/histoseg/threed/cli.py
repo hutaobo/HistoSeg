@@ -184,6 +184,25 @@ def main(argv: Sequence[str] | None = None) -> None:
     stack.add_argument("--diagnostic-structure", default="Structure 5")
     stack.add_argument("--point-sample-distance-um", type=float, default=80.0)
     stack.add_argument("--voxel-size-um", type=float, default=80.0)
+    stack.add_argument("--mesh-method", default="marching_cubes")
+    stack.add_argument("--mesh-smoothing-sigma-um", type=float, default=40.0)
+    stack.add_argument("--mesh-level", type=float, default=0.5)
+    stack.add_argument(
+        "--mesh-export-formats",
+        default="ply,obj",
+        help="Comma-separated mesh export formats. Supported: ply,obj.",
+    )
+    stack.add_argument(
+        "--no-mesh-cleanup",
+        action="store_true",
+        help="Skip trimesh cleanup before writing PLY/OBJ.",
+    )
+    stack.add_argument(
+        "--min-mesh-component-volume-um3",
+        type=float,
+        default=None,
+        help="Drop disconnected volume components smaller than this volume.",
+    )
     stack.add_argument("--mesh-max-faces-for-html", type=int, default=25000)
     stack.add_argument("--dpi", type=int, default=180)
     stack.add_argument(
@@ -258,6 +277,12 @@ def main(argv: Sequence[str] | None = None) -> None:
                 save_alignment_preview_png=not args.no_alignment_preview,
                 point_sample_distance_um=args.point_sample_distance_um,
                 voxel_size_um=args.voxel_size_um,
+                mesh_method=args.mesh_method,
+                mesh_smoothing_sigma_um=args.mesh_smoothing_sigma_um,
+                mesh_level=args.mesh_level,
+                mesh_export_formats=args.mesh_export_formats,
+                mesh_cleanup=not args.no_mesh_cleanup,
+                min_mesh_component_volume_um3=args.min_mesh_component_volume_um3,
                 mesh_max_faces_for_html=args.mesh_max_faces_for_html,
                 overwrite=args.overwrite,
                 dpi=args.dpi,

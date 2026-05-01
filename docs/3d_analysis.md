@@ -12,7 +12,7 @@ module names cannot begin with a digit.
 - Same-sample Xenium contour stack reconstruction from multiple slice folders,
   using GitHub `pyXenium`/`XeniumSlide` for IO, unified Leiden labels from a
   merged AnnData when available, sequential hard+soft alignment, and 3D
-  contour mesh export.
+  contour surface mesh export.
 
 ## Current Scope
 
@@ -20,16 +20,17 @@ module names cannot begin with a digit.
   reconstruction.
 - Read ordered Xenium slice folders through `pyXenium.io.read_xenium(...,
   as_="slide")`.
-- Reconstruct 3D contour stacks as sampled 3D contour points, per-structure PLY
-  meshes, and an interactive Plotly HTML view.
+- Reconstruct 3D contour stacks as sampled 3D contour points, per-structure
+  smoothed Marching Cubes PLY/OBJ meshes, and an interactive Plotly HTML view.
 - Preserve GeoJSON feature properties and annotation structure.
 - Report union IoU, per-structure IoU, landmark residuals, and geometry
   validity.
 - Write QC overlays and a TPS diagnostic report.
 
-The v1 mesh is a conservative contour-stack surface reconstructed from aligned
-2D structure masks. It is intended for QC and pre-reconstruction review, not yet
-for topology-optimized 3D mesh editing.
+The v1 surface mesh is a conservative voxelized contour-stack reconstruction:
+aligned 2D polygons are rasterized into a 3D volume, optionally smoothed with a
+3D Gaussian filter, and converted to a triangle surface with Marching Cubes.
+It is intended for biomedical 3D reconstruction/QC, not CAD-level editing.
 
 ## Python API
 
@@ -98,6 +99,8 @@ histoseg-3d reconstruct-stack \
   --merged-cluster-column leiden_1_0 \
   --out-dir outputs/polyp_3d_reconstruction \
   --z-spacing-um 5 \
+  --mesh-smoothing-sigma-um 40 \
+  --mesh-export-formats ply,obj \
   --no-alignment-preview
 ```
 
@@ -121,7 +124,9 @@ Multi-slice reconstruction writes:
 - `aligned_contour_3d_points.csv`
 - `histoseg_3d_contour_stack.html`
 - `meshes/Structure_*.ply`
+- `meshes/Structure_*.obj`
 - `meshes/mesh_manifest.csv`
+- `meshes/mesh_qc_summary.json`
 
 See the [3D contour soft alignment tutorial](tutorials/3d_soft_alignment)
 for a complete polyp contour example with bundled data and rendered QC figures.

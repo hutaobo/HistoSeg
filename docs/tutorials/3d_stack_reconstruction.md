@@ -12,7 +12,8 @@ slide = read_xenium(xenium_output_dir, as_="slide")
 
 HistoSeg uses the `XeniumSlide.table.obs` cell coordinates, combines them with
 a unified cluster source, generates one 2D contour GeoJSON per slice, aligns the
-contours in fixed slice order, and exports a 3D contour stack.
+contours in fixed slice order, and exports a 3D contour stack plus continuous
+surface meshes.
 
 ## Inputs
 
@@ -50,6 +51,8 @@ histoseg-3d reconstruct-stack \
   --hard-alignment-maxiter 40 \
   --voxel-size-um 80 \
   --point-sample-distance-um 80 \
+  --mesh-smoothing-sigma-um 40 \
+  --mesh-export-formats ply,obj \
   --no-alignment-preview \
   --overwrite
 ```
@@ -75,7 +78,9 @@ The stack workflow writes:
 - `aligned_contour_3d_points.csv`
 - `histoseg_3d_contour_stack.html`
 - `meshes/Structure_1.ply` through `meshes/Structure_5.ply`
+- `meshes/Structure_1.obj` through `meshes/Structure_5.obj`
 - `meshes/mesh_manifest.csv`
+- `meshes/mesh_qc_summary.json`
 - `3d_stack_reconstruction_summary.json`
 
 ## QC Summary
@@ -99,6 +104,11 @@ The hard alignment corrects large global offsets and rotations. The TPS step is
 guarded by a no-degrade rule: if a local warp lowers the union IoU, HistoSeg
 keeps the hard-aligned result for that pair and records the rejected attempt.
 
+The surface mesh stage uses voxelization, 3D Gaussian smoothing, and Marching
+Cubes. `mesh_manifest.csv` records mesh QC fields such as vertex count, face
+count, surface area, volume, watertight status, Euler number, and connected
+component count for each structure.
+
 ## Preview
 
 The interactive Plotly file is the main visualization artifact:
@@ -111,5 +121,6 @@ The same run also produced this static preview for documentation:
 
 ![32-slice 3D contour stack preview](../_static/threed/polyp/3d_stack_preview.png)
 
-The PLY files in `meshes/` are per-structure contour-stack surfaces. They are
-useful for external 3D viewers or downstream mesh processing.
+The PLY and OBJ files in `meshes/` are per-structure contour-stack surfaces.
+They are useful for external 3D viewers such as Blender or ParaView and for
+downstream mesh processing.

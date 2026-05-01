@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 
 import pandas as pd
-from shapely.geometry import box, mapping, shape
+import trimesh
+from shapely.geometry import MultiPolygon, box, mapping, shape
 
 from histoseg.threed import (
     discover_xenium_slices,
@@ -117,14 +118,60 @@ def test_3d_contour_points_mesh_and_html_outputs(tmp_path):
         voxel_size_um=5.0,
         z_spacing_um=5.0,
         xenium_pixel_size_um=1.0,
+        mesh_smoothing_sigma_um=1.0,
+        mesh_export_formats=("ply", "obj"),
     )
     html = write_3d_visualization_html(points, meshes, tmp_path / "view.html", title="test")
 
     assert points_csv.exists()
     assert not pd.read_csv(points_csv).empty
     assert (tmp_path / "meshes" / "Structure_1.ply").exists()
+    assert (tmp_path / "meshes" / "Structure_1.obj").exists()
+    assert (tmp_path / "meshes" / "mesh_qc_summary.json").exists()
+    mesh = trimesh.load(tmp_path / "meshes" / "Structure_1.ply", force="mesh")
+    assert 10.0 < float(mesh.bounds[1][0]) < 40.0
+    assert -5.0 <= float(mesh.bounds[0][2]) <= 5.0
+    manifest = pd.read_csv(tmp_path / "meshes" / "mesh_manifest.csv")
+    assert {
+        "surface_area_um2",
+        "volume_um3",
+        "is_watertight",
+        "euler_number",
+        "component_count",
+    }.issubset(set(manifest.columns))
+    assert float(manifest.loc[0, "surface_area_um2"]) > 0
     assert html.exists()
-    assert "Plotly.newPlot" in html.read_text(encoding="utf-8")
+    html_text = html.read_text(encoding="utf-8")
+    assert "Plotly.newPlot" in html_text
+    assert '"type": "mesh3d"' in html_text
+    assert '"visible": "legendonly"' in html_text
+
+
+def test_mesh_component_filter_removes_tiny_disconnected_fragments(tmp_path):
+    slice1 = tmp_path / "slice1.geojson"
+    slice2 = tmp_path / "slice2.geojson"
+    geom = MultiPolygon([box(0, 0, 20, 20), box(79, 79, 81, 81)])
+    _write_geojson(slice1, [_feature(geom, "Structure 1")])
+    _write_geojson(slice2, [_feature(geom, "Structure 1")])
+    aligned_rows = [
+        {"order": 1, "sample_id": "s1", "z_um": 0.0, "aligned_geojson": str(slice1)},
+        {"order": 2, "sample_id": "s2", "z_um": 5.0, "aligned_geojson": str(slice2)},
+    ]
+
+    reconstruct_3d_contour_meshes(
+        aligned_rows,
+        tmp_path / "meshes",
+        group_property="structure",
+        voxel_size_um=2.0,
+        z_spacing_um=5.0,
+        xenium_pixel_size_um=1.0,
+        mesh_smoothing_sigma_um=0.0,
+        min_mesh_component_volume_um3=100.0,
+    )
+
+    manifest = pd.read_csv(tmp_path / "meshes" / "mesh_manifest.csv")
+    assert int(manifest.loc[0, "volume_component_count_before_filter"]) == 2
+    assert int(manifest.loc[0, "volume_component_count_after_filter"]) == 1
 
 
 def _feature(geom, structure: str):

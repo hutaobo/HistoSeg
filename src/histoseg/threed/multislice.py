@@ -16,6 +16,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.ndimage import gaussian_filter, label as nd_label
 from scipy.optimize import minimize
 from shapely import affinity
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, mapping, shape
@@ -92,6 +93,12 @@ class ThreeDStackReconstructionConfig:
     save_alignment_preview_png: bool = True
     point_sample_distance_um: float = 80.0
     voxel_size_um: float = 80.0
+    mesh_method: str = "marching_cubes"
+    mesh_smoothing_sigma_um: float = 40.0
+    mesh_level: float = 0.5
+    mesh_export_formats: Sequence[str] = ("ply", "obj")
+    mesh_cleanup: bool = True
+    min_mesh_component_volume_um3: float | None = None
     mesh_max_faces_for_html: int = 25000
     overwrite: bool = False
     dpi: int = 180
@@ -290,6 +297,12 @@ def run_3d_stack_reconstruction(
         voxel_size_um=cfg.voxel_size_um,
         z_spacing_um=cfg.z_spacing_um,
         xenium_pixel_size_um=cfg.xenium_pixel_size_um,
+        mesh_method=cfg.mesh_method,
+        mesh_smoothing_sigma_um=cfg.mesh_smoothing_sigma_um,
+        mesh_level=cfg.mesh_level,
+        mesh_export_formats=cfg.mesh_export_formats,
+        mesh_cleanup=cfg.mesh_cleanup,
+        min_mesh_component_volume_um3=cfg.min_mesh_component_volume_um3,
         max_faces_for_html=cfg.mesh_max_faces_for_html,
     )
 
@@ -313,6 +326,7 @@ def run_3d_stack_reconstruction(
             "contour_points_csv": str(contour_points_path),
             "visualization_html": str(visualization_path),
             "mesh_dir": str(mesh_dir),
+            "mesh_qc_summary_json": str(mesh_dir / "mesh_qc_summary.json"),
         },
     }
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -527,10 +541,20 @@ def reconstruct_3d_contour_meshes(
     voxel_size_um: float,
     z_spacing_um: float,
     xenium_pixel_size_um: float,
+    mesh_method: str = "marching_cubes",
+    mesh_smoothing_sigma_um: float = 40.0,
+    mesh_level: float = 0.5,
+    mesh_export_formats: Sequence[str] = ("ply", "obj"),
+    mesh_cleanup: bool = True,
+    min_mesh_component_volume_um3: float | None = None,
     max_faces_for_html: int = 25000,
 ) -> list[dict[str, Any]]:
-    """Voxelize aligned structure masks and export one PLY surface per structure."""
+    """Voxelize aligned structure masks and export continuous surface meshes."""
 
+    if mesh_method != "marching_cubes":
+        raise ValueError("mesh_method currently supports only 'marching_cubes'.")
+    export_formats = _normalize_mesh_export_formats(mesh_export_formats)
+    trimesh = _import_trimesh()
     mesh_path = Path(mesh_dir)
     mesh_path.mkdir(parents=True, exist_ok=True)
     slice_records = _load_aligned_slice_geometries(
@@ -547,6 +571,19 @@ def reconstruct_3d_contour_meshes(
     x_values = np.arange(x_min, x_max + voxel_size_um, voxel_size_um, dtype=float)
     y_values = np.arange(y_min, y_max + voxel_size_um, voxel_size_um, dtype=float)
     xx, yy = np.meshgrid(x_values, y_values)
+    volume_metadata = {
+        "x_min_um": float(x_min),
+        "y_min_um": float(y_min),
+        "x_max_um": float(x_max),
+        "y_max_um": float(y_max),
+        "voxel_size_um": float(voxel_size_um),
+        "z_spacing_um": float(z_spacing_um),
+        "mesh_method": mesh_method,
+        "mesh_smoothing_sigma_um": float(mesh_smoothing_sigma_um),
+        "mesh_level": float(mesh_level),
+        "mesh_cleanup": bool(mesh_cleanup),
+        "min_mesh_component_volume_um3": min_mesh_component_volume_um3,
+    }
 
     mesh_payloads: list[dict[str, Any]] = []
     for structure in structures:
@@ -560,11 +597,39 @@ def reconstruct_3d_contour_meshes(
         if not volume.any():
             continue
 
-        padded = np.pad(volume.astype(np.float32), ((1, 1), (1, 1), (1, 1)))
+        component_stats_before = _volume_component_stats(volume, voxel_size_um, z_spacing_um)
+        filtered_volume = _filter_volume_components(
+            volume,
+            min_mesh_component_volume_um3=min_mesh_component_volume_um3,
+            voxel_size_um=voxel_size_um,
+            z_spacing_um=z_spacing_um,
+        )
+        if not filtered_volume.any():
+            continue
+
+        component_stats_after = _volume_component_stats(
+            filtered_volume,
+            voxel_size_um,
+            z_spacing_um,
+        )
+        padded = np.pad(filtered_volume.astype(np.float32), ((1, 1), (1, 1), (1, 1)))
+        field = _smooth_volume_field(
+            padded,
+            mesh_smoothing_sigma_um=mesh_smoothing_sigma_um,
+            voxel_size_um=voxel_size_um,
+            z_spacing_um=z_spacing_um,
+        )
+        level = float(mesh_level)
+        smoothing_applied = bool(mesh_smoothing_sigma_um > 0)
+        if field.max() <= level and smoothing_applied:
+            field = padded
+            level = 0.5
+            smoothing_applied = False
+
         try:
             vertices, faces, _, _ = measure.marching_cubes(
-                padded,
-                level=0.5,
+                field,
+                level=level,
                 spacing=(z_spacing_um, voxel_size_um, voxel_size_um),
             )
         except ValueError:
@@ -577,38 +642,68 @@ def reconstruct_3d_contour_meshes(
                 vertices[:, 0] - z_spacing_um,
             ]
         )
-        ply_path = mesh_path / f"{_safe_name(structure)}.ply"
-        _write_ascii_ply(ply_path, xyz, faces)
+
+        mesh = trimesh.Trimesh(vertices=xyz, faces=faces, process=False)
+        if mesh_cleanup:
+            mesh = _cleanup_trimesh_mesh(mesh)
+
+        base_path = mesh_path / _safe_name(structure)
+        export_paths = _export_mesh(mesh, base_path, export_formats)
+        component_count = _mesh_component_count(mesh)
         payload = {
             "structure": structure,
-            "ply": str(ply_path),
-            "vertex_count": int(len(xyz)),
-            "face_count": int(len(faces)),
+            "ply": str(export_paths.get("ply")) if "ply" in export_paths else None,
+            "obj": str(export_paths.get("obj")) if "obj" in export_paths else None,
+            "vertex_count": int(len(mesh.vertices)),
+            "face_count": int(len(mesh.faces)),
+            "surface_area_um2": float(mesh.area),
+            "volume_um3": float(abs(mesh.volume)) if len(mesh.faces) else 0.0,
+            "is_watertight": bool(mesh.is_watertight),
+            "euler_number": int(mesh.euler_number),
+            "component_count": int(component_count),
+            "volume_component_count_before_filter": int(
+                component_stats_before["component_count"]
+            ),
+            "volume_component_count_after_filter": int(component_stats_after["component_count"]),
+            "volume_voxel_count_after_filter": int(component_stats_after["voxel_count"]),
+            "smoothing_applied": smoothing_applied,
+            "mesh_level_used": float(level),
         }
-        if len(faces) <= max_faces_for_html:
+        if len(mesh.faces) <= max_faces_for_html:
             payload.update(
                 {
-                    "x": xyz[:, 0].round(3).tolist(),
-                    "y": xyz[:, 1].round(3).tolist(),
-                    "z": xyz[:, 2].round(3).tolist(),
-                    "i": faces[:, 0].astype(int).tolist(),
-                    "j": faces[:, 1].astype(int).tolist(),
-                    "k": faces[:, 2].astype(int).tolist(),
+                    "x": np.asarray(mesh.vertices)[:, 0].round(3).tolist(),
+                    "y": np.asarray(mesh.vertices)[:, 1].round(3).tolist(),
+                    "z": np.asarray(mesh.vertices)[:, 2].round(3).tolist(),
+                    "i": np.asarray(mesh.faces)[:, 0].astype(int).tolist(),
+                    "j": np.asarray(mesh.faces)[:, 1].astype(int).tolist(),
+                    "k": np.asarray(mesh.faces)[:, 2].astype(int).tolist(),
                 }
             )
         mesh_payloads.append(payload)
 
+    manifest_columns = [
+        "structure",
+        "ply",
+        "obj",
+        "vertex_count",
+        "face_count",
+        "surface_area_um2",
+        "volume_um3",
+        "is_watertight",
+        "euler_number",
+        "component_count",
+        "volume_component_count_before_filter",
+        "volume_component_count_after_filter",
+        "volume_voxel_count_after_filter",
+        "smoothing_applied",
+        "mesh_level_used",
+    ]
     pd.DataFrame(
-        [
-            {
-                "structure": item["structure"],
-                "ply": item["ply"],
-                "vertex_count": item["vertex_count"],
-                "face_count": item["face_count"],
-            }
-            for item in mesh_payloads
-        ]
+        [{column: item.get(column) for column in manifest_columns} for item in mesh_payloads],
+        columns=manifest_columns,
     ).to_csv(mesh_path / "mesh_manifest.csv", index=False)
+    _write_mesh_qc_summary(mesh_path / "mesh_qc_summary.json", mesh_payloads, volume_metadata)
     return mesh_payloads
 
 
@@ -631,32 +726,7 @@ def write_3d_visualization_html(
         "#8be563",
         "#ffd15c",
     ]
-    for color_index, (structure, group) in enumerate(contour_points.groupby("structure")):
-        x_values: list[float | None] = []
-        y_values: list[float | None] = []
-        z_values: list[float | None] = []
-        for _, polyline in group.sort_values(
-            ["slice_order", "polyline_id", "point_index"]
-        ).groupby("polyline_id", sort=False):
-            x_values.extend(polyline["x_um"].round(3).tolist())
-            y_values.extend(polyline["y_um"].round(3).tolist())
-            z_values.extend(polyline["z_um"].round(3).tolist())
-            x_values.append(None)
-            y_values.append(None)
-            z_values.append(None)
-        traces.append(
-            {
-                "type": "scatter3d",
-                "mode": "lines",
-                "name": f"{structure} contours",
-                "x": x_values,
-                "y": y_values,
-                "z": z_values,
-                "line": {"width": 3, "color": palette[color_index % len(palette)]},
-                "opacity": 0.9,
-            }
-        )
-
+    has_mesh_surface = any({"x", "y", "z", "i", "j", "k"}.issubset(mesh.keys()) for mesh in mesh_payloads)
     for color_index, mesh in enumerate(mesh_payloads):
         if not {"x", "y", "z", "i", "j", "k"}.issubset(mesh.keys()):
             continue
@@ -671,10 +741,36 @@ def write_3d_visualization_html(
                 "j": mesh["j"],
                 "k": mesh["k"],
                 "color": palette[color_index % len(palette)],
-                "opacity": 0.18,
+                "opacity": 0.36,
                 "flatshading": True,
             }
         )
+    for color_index, (structure, group) in enumerate(contour_points.groupby("structure")):
+        x_values: list[float | None] = []
+        y_values: list[float | None] = []
+        z_values: list[float | None] = []
+        for _, polyline in group.sort_values(
+            ["slice_order", "polyline_id", "point_index"]
+        ).groupby("polyline_id", sort=False):
+            x_values.extend(polyline["x_um"].round(3).tolist())
+            y_values.extend(polyline["y_um"].round(3).tolist())
+            z_values.extend(polyline["z_um"].round(3).tolist())
+            x_values.append(None)
+            y_values.append(None)
+            z_values.append(None)
+        trace = {
+            "type": "scatter3d",
+            "mode": "lines",
+            "name": f"{structure} contours",
+            "x": x_values,
+            "y": y_values,
+            "z": z_values,
+            "line": {"width": 3, "color": palette[color_index % len(palette)]},
+            "opacity": 0.9,
+        }
+        if has_mesh_surface:
+            trace["visible"] = "legendonly"
+        traces.append(trace)
 
     html = f"""<!doctype html>
 <html>
@@ -724,6 +820,18 @@ def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
         raise ValueError("voxel_size_um must be greater than 0.")
     if cfg.point_sample_distance_um <= 0:
         raise ValueError("point_sample_distance_um must be greater than 0.")
+    if cfg.mesh_method != "marching_cubes":
+        raise ValueError("mesh_method currently supports only 'marching_cubes'.")
+    if cfg.mesh_smoothing_sigma_um < 0:
+        raise ValueError("mesh_smoothing_sigma_um must be non-negative.")
+    if cfg.mesh_level <= 0:
+        raise ValueError("mesh_level must be greater than 0.")
+    if (
+        cfg.min_mesh_component_volume_um3 is not None
+        and cfg.min_mesh_component_volume_um3 < 0
+    ):
+        raise ValueError("min_mesh_component_volume_um3 must be non-negative.")
+    _normalize_mesh_export_formats(cfg.mesh_export_formats)
 
 
 def _read_strategy_specs(cfg: ThreeDStackReconstructionConfig) -> list[MultiStructureSpec]:
@@ -1199,6 +1307,185 @@ def _pairwise_row(
     return row
 
 
+def _import_trimesh():
+    try:
+        import trimesh
+
+        return trimesh
+    except Exception as exc:
+        raise ImportError(
+            "3D surface mesh export requires trimesh. Install with "
+            "`pip install -e '.[threed]'` or `pip install trimesh`."
+        ) from exc
+
+
+def _normalize_mesh_export_formats(mesh_export_formats: Sequence[str] | str) -> tuple[str, ...]:
+    if isinstance(mesh_export_formats, str):
+        raw_formats = [
+            value.strip().lower()
+            for value in mesh_export_formats.split(",")
+            if value.strip()
+        ]
+    else:
+        raw_formats = [str(value).strip().lower() for value in mesh_export_formats]
+    formats = tuple(dict.fromkeys(raw_formats))
+    if not formats:
+        raise ValueError("mesh_export_formats must include at least one format.")
+    unsupported = sorted(set(formats) - {"ply", "obj"})
+    if unsupported:
+        raise ValueError(f"Unsupported mesh export format(s): {', '.join(unsupported)}.")
+    return formats
+
+
+def _smooth_volume_field(
+    volume: np.ndarray,
+    *,
+    mesh_smoothing_sigma_um: float,
+    voxel_size_um: float,
+    z_spacing_um: float,
+) -> np.ndarray:
+    field = np.asarray(volume, dtype=np.float32)
+    if mesh_smoothing_sigma_um <= 0:
+        return field
+    sigma = (
+        float(mesh_smoothing_sigma_um) / float(z_spacing_um),
+        float(mesh_smoothing_sigma_um) / float(voxel_size_um),
+        float(mesh_smoothing_sigma_um) / float(voxel_size_um),
+    )
+    return gaussian_filter(field, sigma=sigma, mode="constant", cval=0.0)
+
+
+def _volume_component_stats(
+    volume: np.ndarray,
+    voxel_size_um: float,
+    z_spacing_um: float,
+) -> dict[str, float | int]:
+    labels, component_count = nd_label(volume, structure=np.ones((3, 3, 3), dtype=bool))
+    counts = np.bincount(labels.ravel())
+    voxel_count = int(volume.sum())
+    voxel_volume = float(voxel_size_um) * float(voxel_size_um) * float(z_spacing_um)
+    if component_count == 0:
+        largest_component_voxels = 0
+    else:
+        largest_component_voxels = int(counts[1:].max())
+    return {
+        "component_count": int(component_count),
+        "voxel_count": voxel_count,
+        "volume_um3": float(voxel_count * voxel_volume),
+        "largest_component_voxels": largest_component_voxels,
+    }
+
+
+def _filter_volume_components(
+    volume: np.ndarray,
+    *,
+    min_mesh_component_volume_um3: float | None,
+    voxel_size_um: float,
+    z_spacing_um: float,
+) -> np.ndarray:
+    if min_mesh_component_volume_um3 is None or min_mesh_component_volume_um3 <= 0:
+        return np.asarray(volume, dtype=bool)
+
+    labels, component_count = nd_label(volume, structure=np.ones((3, 3, 3), dtype=bool))
+    if component_count == 0:
+        return np.asarray(volume, dtype=bool)
+    voxel_volume = float(voxel_size_um) * float(voxel_size_um) * float(z_spacing_um)
+    min_voxels = max(int(math.ceil(float(min_mesh_component_volume_um3) / voxel_volume)), 1)
+    counts = np.bincount(labels.ravel())
+    keep_labels = np.flatnonzero(counts >= min_voxels)
+    keep_labels = keep_labels[keep_labels != 0]
+    if len(keep_labels) == 0:
+        return np.zeros_like(volume, dtype=bool)
+    return np.isin(labels, keep_labels)
+
+
+def _cleanup_trimesh_mesh(mesh):
+    mesh = mesh.copy()
+    for method_name in (
+        "remove_infinite_values",
+        "remove_degenerate_faces",
+        "remove_duplicate_faces",
+    ):
+        method = getattr(mesh, method_name, None)
+        if callable(method):
+            try:
+                method()
+            except Exception:
+                pass
+    try:
+        mesh.remove_unreferenced_vertices()
+    except Exception:
+        pass
+    try:
+        mesh.merge_vertices()
+    except Exception:
+        pass
+    try:
+        mesh.fill_holes()
+    except Exception:
+        pass
+    try:
+        processed = mesh.process(validate=True)
+        if processed is not None:
+            mesh = processed
+    except Exception:
+        pass
+    return mesh
+
+
+def _mesh_component_count(mesh) -> int:
+    try:
+        return len(mesh.split(only_watertight=False))
+    except Exception:
+        return 1 if len(mesh.faces) else 0
+
+
+def _export_mesh(mesh, base_path: Path, export_formats: Sequence[str]) -> dict[str, Path]:
+    paths: dict[str, Path] = {}
+    for export_format in export_formats:
+        path = base_path.with_suffix(f".{export_format}")
+        mesh.export(path)
+        paths[export_format] = path
+    return paths
+
+
+def _write_mesh_qc_summary(
+    path: Path,
+    mesh_payloads: Sequence[Mapping[str, Any]],
+    volume_metadata: Mapping[str, Any],
+) -> None:
+    manifest = [
+        {
+            "structure": item.get("structure"),
+            "vertex_count": item.get("vertex_count"),
+            "face_count": item.get("face_count"),
+            "surface_area_um2": item.get("surface_area_um2"),
+            "volume_um3": item.get("volume_um3"),
+            "is_watertight": item.get("is_watertight"),
+            "euler_number": item.get("euler_number"),
+            "component_count": item.get("component_count"),
+            "ply": item.get("ply"),
+            "obj": item.get("obj"),
+        }
+        for item in mesh_payloads
+    ]
+    summary = {
+        "mesh_count": len(mesh_payloads),
+        "watertight_count": int(sum(1 for item in mesh_payloads if item.get("is_watertight"))),
+        "total_vertex_count": int(sum(int(item.get("vertex_count", 0)) for item in mesh_payloads)),
+        "total_face_count": int(sum(int(item.get("face_count", 0)) for item in mesh_payloads)),
+        "total_surface_area_um2": float(
+            sum(float(item.get("surface_area_um2", 0.0)) for item in mesh_payloads)
+        ),
+        "total_volume_um3": float(
+            sum(float(item.get("volume_um3", 0.0)) for item in mesh_payloads)
+        ),
+        "volume_metadata": dict(volume_metadata),
+        "meshes": manifest,
+    }
+    path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def _valid_polygonal_geometry(geom: Any) -> Any | None:
     if geom.is_empty:
         return None
@@ -1288,7 +1575,7 @@ def _safe_name(text: str) -> str:
 
 def _jsonable_config(cfg: ThreeDStackReconstructionConfig) -> dict[str, Any]:
     payload = asdict(cfg)
-    for key in ("xenium_root", "out_dir", "segmentation_strategy"):
+    for key in ("xenium_root", "out_dir", "segmentation_strategy", "merged_h5ad"):
         if payload.get(key) is not None:
             payload[key] = str(payload[key])
     if payload.get("slice_dirs") is not None:

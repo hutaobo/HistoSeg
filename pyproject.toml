@@ -35,6 +35,7 @@ he = [
 ]
 threed = [
     "pyXenium @ git+https://github.com/hutaobo/pyXenium.git",
+    "trimesh",
 ]
 
 [project.scripts]
