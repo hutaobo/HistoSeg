@@ -675,12 +675,9 @@ def reconstruct_3d_contour_meshes(
         "euler_number",
         "component_count",
     ]
-    # Always include a "ply" column for backward compatibility, then add any
-    # additional requested formats (deduplicating if ply is also in export_formats).
-    manifest_cols.append("ply")
-    for fmt in export_formats:
-        if fmt != "ply":
-            manifest_cols.append(fmt)
+    # Always include a "ply" column for backward compatibility; preserve insertion
+    # order and deduplicate in case ply is also in export_formats.
+    manifest_cols.extend(dict.fromkeys(["ply"] + list(export_formats)))
     manifest_rows = [
         {col: item.get(col) for col in manifest_cols} for item in mesh_payloads
     ]
