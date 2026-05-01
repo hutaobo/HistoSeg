@@ -1,9 +1,9 @@
 3D Analysis API
 ===============
 
-Reference for ``histoseg.threed`` 3D Analysis workflows. The current public
-runner performs conservative TPS soft alignment for a hard-aligned pair of
-Xenium contour GeoJSON slices.
+Reference for ``histoseg.threed`` 3D Analysis workflows. The public runners
+cover pairwise conservative TPS soft alignment and pyXenium-backed multi-slice
+Xenium contour stack reconstruction.
 
 .. automodule:: histoseg.threed
    :members:

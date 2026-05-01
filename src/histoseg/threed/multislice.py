@@ -66,6 +66,10 @@ class ThreeDStackReconstructionConfig:
     group_property: str = "structure"
     cluster_column_name: str = "cluster"
     clusters_relpath: str = "analysis/clustering/gene_expression_graphclust/clusters.csv"
+    merged_h5ad: PathLike | None = None
+    merged_cluster_column: str | None = None
+    merged_sample_column: str = "sample_id"
+    merged_barcode_column: str = "barcode"
     bins_x: int = 900
     bins_y: int = 700
     gaussian_sigma: float = 2.25
@@ -155,6 +159,7 @@ def run_3d_stack_reconstruction(
             for item in slices
         ]
     ).to_csv(slice_manifest_path, index=False)
+    merged_cluster_tables = _load_merged_cluster_tables(cfg, slices)
 
     contour_dir = out_dir / "slice_contours"
     aligned_dir = out_dir / "aligned_contours"
@@ -168,7 +173,13 @@ def run_3d_stack_reconstruction(
     aligned_paths: list[Path] = []
 
     for slice_input in slices:
-        raw_geojson = _build_slice_contours(slice_input, structures, contour_dir, cfg)
+        raw_geojson = _build_slice_contours(
+            slice_input,
+            structures,
+            contour_dir,
+            cfg,
+            merged_clusters=merged_cluster_tables.get(slice_input.sample_id),
+        )
         aligned_path = aligned_dir / f"{slice_input.order:03d}_{slice_input.sample_id}_aligned.geojson"
 
         if slice_input.order == 1:
@@ -210,10 +221,8 @@ def run_3d_stack_reconstruction(
                     moving_hard_aligned_geojson=hard_path,
                     out_dir=pair_dir / "soft_tps",
                     group_property=cfg.group_property,
-                    sampling_distance_um=cfg.sampling_distance_um / cfg.xenium_pixel_size_um,
-                    max_landmark_distance_um=(
-                        cfg.max_landmark_distance_um / cfg.xenium_pixel_size_um
-                    ),
+                    sampling_distance_um=cfg.sampling_distance_um,
+                    max_landmark_distance_um=cfg.max_landmark_distance_um,
                     landmarks_per_structure=cfg.landmarks_per_structure,
                     diagnostic_structure_landmarks=cfg.diagnostic_structure_landmarks,
                     rbf_neighbors=cfg.rbf_neighbors,
@@ -223,10 +232,25 @@ def run_3d_stack_reconstruction(
                     save_preview_png=cfg.save_alignment_preview_png,
                 )
             )
-            if cfg.overwrite or not aligned_path.exists():
-                shutil.copy2(soft_result.soft_aligned_geojson, aligned_path)
             soft_summary = json.loads(soft_result.summary_json.read_text(encoding="utf-8"))
-            pairwise_rows.append(_pairwise_row(slice_input, hard_summary, soft_summary, soft_result))
+            soft_improved = (
+                soft_summary["qc"]["union_iou_soft_after"]
+                >= soft_summary["qc"]["union_iou_hard_before_soft"]
+            )
+            if cfg.overwrite or not aligned_path.exists():
+                shutil.copy2(
+                    soft_result.soft_aligned_geojson if soft_improved else hard_path,
+                    aligned_path,
+                )
+            pairwise_rows.append(
+                _pairwise_row(
+                    slice_input,
+                    hard_summary,
+                    soft_summary,
+                    soft_result,
+                    soft_accepted=soft_improved,
+                )
+            )
         else:
             if cfg.overwrite or not aligned_path.exists():
                 shutil.copy2(hard_path, aligned_path)
@@ -380,11 +404,33 @@ def hard_align_geojson(
         moving_union,
         maxiter=maxiter,
     )
+    aligned_union = _apply_similarity_to_geometry(moving_union, transform)
+    before_iou = _iou(fixed_union, moving_union)
+    after_iou = _iou(fixed_union, aligned_union)
+    accepted = after_iou >= before_iou
+    if not accepted:
+        transform = _SimilarityTransform(
+            origin_x=float(moving_union.centroid.x),
+            origin_y=float(moving_union.centroid.y),
+            rotation_degrees=0.0,
+            scale=1.0,
+            translate_x=0.0,
+            translate_y=0.0,
+        )
+        optimization = {
+            **optimization,
+            "accepted": False,
+            "accepted_reason": "identity_kept_because_similarity_alignment_reduced_iou",
+        }
+        aligned_union = moving_union
+        after_iou = before_iou
+    else:
+        optimization = {**optimization, "accepted": True}
+
     aligned_payload = _apply_similarity_to_geojson(moving_payload, transform)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(aligned_payload, ensure_ascii=False), encoding="utf-8")
 
-    aligned_union = _apply_similarity_to_geometry(moving_union, transform)
     per_structure = _per_structure_iou(
         fixed_records,
         _records_from_geojson(aligned_payload, group_property, "aligned"),
@@ -395,8 +441,9 @@ def hard_align_geojson(
         "output_geojson": str(output_path),
         "transform": asdict(transform),
         "optimization": optimization,
-        "union_iou_before_hard": _iou(fixed_union, moving_union),
-        "union_iou_after_hard": _iou(fixed_union, aligned_union),
+        "union_iou_before_hard": before_iou,
+        "union_iou_after_hard": after_iou,
+        "hard_alignment_accepted": accepted,
         "per_structure_iou_after_hard": per_structure,
     }
     if summary_path is not None:
@@ -713,6 +760,8 @@ def _build_slice_contours(
     structures: Sequence[MultiStructureSpec | Mapping[str, Any]],
     contour_root: Path,
     cfg: ThreeDStackReconstructionConfig,
+    *,
+    merged_clusters: pd.DataFrame | None = None,
 ) -> Path:
     slice_out = contour_root / f"{slice_input.order:03d}_{slice_input.sample_id}"
     contour_geojson = slice_out / "xenium_explorer_annotations.geojson"
@@ -721,7 +770,12 @@ def _build_slice_contours(
 
     slice_out.mkdir(parents=True, exist_ok=True)
     slide = _read_xenium_slide(slice_input.xenium_dir, cfg)
-    inputs = _write_slide_contour_inputs(slide, slice_out, cfg)
+    inputs = _write_slide_contour_inputs(
+        slide,
+        slice_out,
+        cfg,
+        merged_clusters=merged_clusters,
+    )
     result = run_multi_structure_contours(
         MultiStructureContourConfig(
             clusters_csv=inputs["clusters_csv"],
@@ -784,6 +838,8 @@ def _write_slide_contour_inputs(
     slide: Any,
     out_dir: Path,
     cfg: ThreeDStackReconstructionConfig,
+    *,
+    merged_clusters: pd.DataFrame | None = None,
 ) -> dict[str, Path]:
     table = getattr(slide, "table", None)
     if table is None or not hasattr(table, "obs"):
@@ -792,11 +848,6 @@ def _write_slide_contour_inputs(
     obs["Barcode"] = obs.index.astype(str)
 
     x_values, y_values = _extract_slide_xy(obs, table)
-    cluster_col = _find_cluster_column(obs, cfg.cluster_column_name)
-    if cluster_col is None:
-        raise ValueError(
-            f"XeniumSlide.table.obs does not contain cluster column {cfg.cluster_column_name!r}."
-        )
 
     cells = pd.DataFrame(
         {
@@ -806,25 +857,106 @@ def _write_slide_contour_inputs(
             "y_centroid": np.asarray(y_values, dtype=float),
         }
     )
-    clusters = pd.DataFrame(
-        {
-            "Barcode": obs["Barcode"].astype(str).to_numpy(),
-            "Cluster": obs[cluster_col].astype(str).to_numpy(),
-        }
-    )
-    keep = (
+    if merged_clusters is not None:
+        clusters = merged_clusters.loc[:, ["Barcode", "Cluster"]].copy()
+    else:
+        cluster_col = _find_cluster_column(obs, cfg.cluster_column_name)
+        if cluster_col is None:
+            raise ValueError(
+                f"XeniumSlide.table.obs does not contain cluster column "
+                f"{cfg.cluster_column_name!r}, and no merged_h5ad clusters were provided."
+            )
+        clusters = pd.DataFrame(
+            {
+                "Barcode": obs["Barcode"].astype(str).to_numpy(),
+                "Cluster": obs[cluster_col].astype(str).to_numpy(),
+            }
+        )
+    cell_keep = (
         np.isfinite(cells["x_centroid"].to_numpy(dtype=float))
         & np.isfinite(cells["y_centroid"].to_numpy(dtype=float))
-        & (clusters["Cluster"].astype(str).str.strip() != "")
     )
-    cells = cells.loc[keep].reset_index(drop=True)
-    clusters = clusters.loc[keep].reset_index(drop=True)
+    cells = cells.loc[cell_keep].reset_index(drop=True)
+    clusters = clusters.loc[clusters["Cluster"].astype(str).str.strip() != ""].reset_index(
+        drop=True
+    )
 
     cells_path = out_dir / "pyxenium_cells_for_contours.parquet"
     clusters_path = out_dir / "pyxenium_clusters_for_contours.csv"
     cells.to_parquet(cells_path, index=False)
     clusters.to_csv(clusters_path, index=False)
     return {"cells_parquet": cells_path, "clusters_csv": clusters_path}
+
+
+def _load_merged_cluster_tables(
+    cfg: ThreeDStackReconstructionConfig,
+    slices: Sequence[_SliceInput],
+) -> dict[str, pd.DataFrame]:
+    h5ad_path = _find_merged_h5ad(cfg)
+    if h5ad_path is None:
+        return {}
+    try:
+        import scanpy as sc
+    except Exception as exc:  # pragma: no cover - scanpy is a package dependency.
+        raise ImportError("Reading merged_h5ad cluster labels requires scanpy.") from exc
+
+    adata = sc.read_h5ad(h5ad_path, backed="r")
+    try:
+        obs = adata.obs
+        sample_col = cfg.merged_sample_column
+        barcode_col = cfg.merged_barcode_column
+        if sample_col not in obs.columns:
+            raise ValueError(f"merged_h5ad obs is missing sample column {sample_col!r}.")
+        if barcode_col not in obs.columns:
+            raise ValueError(f"merged_h5ad obs is missing barcode column {barcode_col!r}.")
+        cluster_col = _choose_merged_cluster_column(obs, cfg.merged_cluster_column)
+        sample_ids = {item.sample_id for item in slices}
+        selected = obs.loc[
+            obs[sample_col].astype(str).isin(sample_ids),
+            [sample_col, barcode_col, cluster_col],
+        ].copy()
+    finally:
+        if getattr(adata, "isbacked", False):
+            adata.file.close()
+
+    selected.columns = ["sample_id", "Barcode", "Cluster"]
+    selected["sample_id"] = selected["sample_id"].astype(str)
+    selected["Barcode"] = selected["Barcode"].astype(str)
+    selected["Cluster"] = selected["Cluster"].astype(str)
+    tables: dict[str, pd.DataFrame] = {}
+    for sample_id, group in selected.groupby("sample_id", sort=False):
+        tables[str(sample_id)] = group.loc[:, ["Barcode", "Cluster"]].reset_index(drop=True)
+    return tables
+
+
+def _find_merged_h5ad(cfg: ThreeDStackReconstructionConfig) -> Path | None:
+    if cfg.merged_h5ad is not None:
+        path = Path(cfg.merged_h5ad).expanduser().resolve()
+        if not path.exists():
+            raise FileNotFoundError(path)
+        return path
+    root = Path(cfg.xenium_root).expanduser().resolve()
+    merge_dir = root / "pdc_merge_leiden"
+    if not merge_dir.exists():
+        return None
+    candidates = sorted(merge_dir.glob("*processed_leiden*.h5ad"))
+    if candidates:
+        return candidates[0]
+    candidates = sorted(merge_dir.glob("*.h5ad"))
+    return candidates[0] if candidates else None
+
+
+def _choose_merged_cluster_column(obs: pd.DataFrame, requested: str | None) -> str:
+    if requested is not None:
+        if requested not in obs.columns:
+            raise ValueError(f"merged_h5ad obs is missing cluster column {requested!r}.")
+        return requested
+    if "leiden_1_0" in obs.columns:
+        return "leiden_1_0"
+    candidates = [column for column in obs.columns if str(column).startswith("leiden")]
+    if candidates:
+        return sorted(candidates)[0]
+    raise ValueError("Could not infer a merged_h5ad Leiden cluster column.")
 
 
 def _extract_slide_xy(obs: pd.DataFrame, table: Any) -> tuple[np.ndarray, np.ndarray]:
@@ -1037,6 +1169,7 @@ def _pairwise_row(
     hard_summary: Mapping[str, Any],
     soft_summary: Mapping[str, Any] | None,
     soft_result: Any,
+    soft_accepted: bool | None = None,
 ) -> dict[str, Any]:
     row = {
         "moving_order": slice_input.order,
@@ -1047,8 +1180,10 @@ def _pairwise_row(
         "hard_transform_scale": hard_summary["transform"]["scale"],
         "hard_transform_translate_x": hard_summary["transform"]["translate_x"],
         "hard_transform_translate_y": hard_summary["transform"]["translate_y"],
+        "hard_accepted": hard_summary.get("hard_alignment_accepted"),
         "soft_union_iou_before": None,
         "soft_union_iou_after": None,
+        "soft_accepted": soft_accepted,
         "soft_boundary_landmarks": None,
         "soft_summary_json": None,
     }

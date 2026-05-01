@@ -22,6 +22,14 @@ resulting preview outputs and exported files.
 Run TPS soft alignment on two bundled polyp Xenium contour GeoJSON slices and
 inspect the overlay and diagnostic report.
 :::
+
+:::{grid-item-card} 3D Contour Stack Reconstruction
+:link: 3d_stack_reconstruction
+:link-type: doc
+
+Use GitHub pyXenium to read ordered Xenium slices, align a 32-slice contour
+stack, and export 3D points, PLY meshes, and an interactive HTML view.
+:::
 ::::
 
 ```{toctree}
@@ -30,4 +38,5 @@ inspect the overlay and diagnostic report.
 
 pattern1_isoline
 3d_soft_alignment
+3d_stack_reconstruction
 ```

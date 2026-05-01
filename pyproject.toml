@@ -33,6 +33,9 @@ he = [
     "opencv-python-headless",
     "rasterio",
 ]
+threed = [
+    "pyXenium @ git+https://github.com/hutaobo/pyXenium.git",
+]
 
 [project.scripts]
 histoseg-gui = "histoseg.gui.gui_app:main"

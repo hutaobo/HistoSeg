@@ -15,6 +15,8 @@ def test_feature_group_import_contracts():
     assert callable(contour.run_group_boundary_network)
     assert callable(contour.run_contour_adjacency)
     assert callable(threed.run_3d_contour_reconstruction)
+    assert callable(threed.run_3d_stack_reconstruction)
+    assert callable(threed.discover_xenium_slices)
 
 
 def test_top_level_exports_feature_group_namespaces():
