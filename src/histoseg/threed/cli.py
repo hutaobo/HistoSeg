@@ -163,6 +163,46 @@ def main(argv: Sequence[str] | None = None) -> None:
     stack.add_argument("--point-sample-distance-um", type=float, default=80.0)
     stack.add_argument("--voxel-size-um", type=float, default=80.0)
     stack.add_argument("--mesh-max-faces-for-html", type=int, default=25000)
+    stack.add_argument(
+        "--mesh-smoothing-sigma-um",
+        type=float,
+        default=40.0,
+        help="Physical sigma (um) for 3-D Gaussian smoothing before Marching Cubes. "
+        "Set to 0 to disable smoothing.",
+    )
+    stack.add_argument(
+        "--mesh-level",
+        type=float,
+        default=0.5,
+        help="Iso-surface level for Marching Cubes (0 < level < 1).",
+    )
+    stack.add_argument(
+        "--mesh-export-formats",
+        default="ply,obj",
+        help="Comma-separated list of mesh export formats, e.g. 'ply,obj'.",
+    )
+    stack.add_argument(
+        "--no-mesh-cleanup",
+        action="store_true",
+        help="Skip trimesh post-processing (degenerate face removal, vertex merge, hole fill).",
+    )
+    stack.add_argument(
+        "--min-mesh-component-volume-um3",
+        type=float,
+        default=None,
+        help="Remove mesh components smaller than this volume (um^3). "
+        "Omit to keep all components.",
+    )
+    stack.add_argument(
+        "--merged-h5ad",
+        default=None,
+        help="Path to a merged AnnData (.h5ad) file for cluster assignment.",
+    )
+    stack.add_argument(
+        "--merged-cluster-column",
+        default=None,
+        help="Column in merged AnnData obs to use as cluster labels.",
+    )
     stack.add_argument("--dpi", type=int, default=180)
     stack.add_argument(
         "--no-soft",
@@ -203,6 +243,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
     elif args.command == "reconstruct-stack":
+        mesh_smoothing = args.mesh_smoothing_sigma_um
+        if mesh_smoothing is not None and mesh_smoothing < 0:
+            parser.error("--mesh-smoothing-sigma-um must be >= 0 (use 0 to disable smoothing).")
+        if mesh_smoothing is not None and mesh_smoothing == 0:
+            mesh_smoothing = None
+        export_formats = tuple(
+            fmt.strip().lower()
+            for fmt in args.mesh_export_formats.split(",")
+            if fmt.strip()
+        )
         result = run_3d_stack_reconstruction(
             ThreeDStackReconstructionConfig(
                 xenium_root=args.xenium_root,
@@ -233,6 +283,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                 point_sample_distance_um=args.point_sample_distance_um,
                 voxel_size_um=args.voxel_size_um,
                 mesh_max_faces_for_html=args.mesh_max_faces_for_html,
+                mesh_smoothing_sigma_um=mesh_smoothing,
+                mesh_level=args.mesh_level,
+                mesh_export_formats=export_formats,
+                mesh_cleanup=not args.no_mesh_cleanup,
+                min_mesh_component_volume_um3=args.min_mesh_component_volume_um3,
+                merged_h5ad=args.merged_h5ad,
+                merged_cluster_column=args.merged_cluster_column,
                 overwrite=args.overwrite,
                 dpi=args.dpi,
             )

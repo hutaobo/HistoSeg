@@ -16,11 +16,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy.ndimage import gaussian_filter
 from scipy.optimize import minimize
 from shapely import affinity
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, mapping, shape
 from shapely.ops import unary_union
 from skimage import measure
+
+try:
+    import trimesh as _trimesh
+except ImportError:  # pragma: no cover - trimesh is optional
+    _trimesh = None  # type: ignore[assignment]
 
 from histoseg.contour import (
     MultiStructureContourConfig,
@@ -89,6 +95,16 @@ class ThreeDStackReconstructionConfig:
     point_sample_distance_um: float = 80.0
     voxel_size_um: float = 80.0
     mesh_max_faces_for_html: int = 25000
+    # Mesh generation options
+    mesh_method: str = "marching_cubes"
+    mesh_smoothing_sigma_um: float | None = 40.0
+    mesh_level: float = 0.5
+    mesh_export_formats: tuple[str, ...] = ("ply", "obj")
+    mesh_cleanup: bool = True
+    min_mesh_component_volume_um3: float | None = None
+    # Optional merged AnnData input (alternative to per-slice pyXenium reads)
+    merged_h5ad: PathLike | None = None
+    merged_cluster_column: str | None = None
     overwrite: bool = False
     dpi: int = 180
 
@@ -267,6 +283,11 @@ def run_3d_stack_reconstruction(
         z_spacing_um=cfg.z_spacing_um,
         xenium_pixel_size_um=cfg.xenium_pixel_size_um,
         max_faces_for_html=cfg.mesh_max_faces_for_html,
+        mesh_smoothing_sigma_um=cfg.mesh_smoothing_sigma_um,
+        mesh_level=cfg.mesh_level,
+        mesh_export_formats=cfg.mesh_export_formats,
+        mesh_cleanup=cfg.mesh_cleanup,
+        min_mesh_component_volume_um3=cfg.min_mesh_component_volume_um3,
     )
 
     visualization_path = out_dir / "histoseg_3d_contour_stack.html"
@@ -481,8 +502,21 @@ def reconstruct_3d_contour_meshes(
     z_spacing_um: float,
     xenium_pixel_size_um: float,
     max_faces_for_html: int = 25000,
+    mesh_smoothing_sigma_um: float | None = 40.0,
+    mesh_level: float = 0.5,
+    mesh_export_formats: Sequence[str] = ("ply", "obj"),
+    mesh_cleanup: bool = True,
+    min_mesh_component_volume_um3: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Voxelize aligned structure masks and export one PLY surface per structure."""
+    """Voxelize aligned structure masks and export surface meshes per structure.
+
+    Each structure is rasterized into a 3D binary volume, optionally smoothed
+    with a Gaussian filter, then converted to a triangular mesh via Marching
+    Cubes.  When *trimesh* is available the mesh is post-processed (degenerate
+    face removal, vertex merging, small-hole filling) and exported to all
+    requested formats.  QC metrics are written to ``mesh_manifest.csv`` and
+    ``mesh_qc_summary.json``.
+    """
 
     mesh_path = Path(mesh_dir)
     mesh_path.mkdir(parents=True, exist_ok=True)
@@ -501,6 +535,16 @@ def reconstruct_3d_contour_meshes(
     y_values = np.arange(y_min, y_max + voxel_size_um, voxel_size_um, dtype=float)
     xx, yy = np.meshgrid(x_values, y_values)
 
+    export_formats = [fmt.lower().strip() for fmt in mesh_export_formats]
+
+    # Compute per-axis Gaussian sigma in voxels from physical sigma.
+    if mesh_smoothing_sigma_um is not None and mesh_smoothing_sigma_um > 0:
+        sigma_z = mesh_smoothing_sigma_um / z_spacing_um
+        sigma_yx = mesh_smoothing_sigma_um / voxel_size_um
+        smooth_sigmas: tuple[float, float, float] | None = (sigma_z, sigma_yx, sigma_yx)
+    else:
+        smooth_sigmas = None
+
     mesh_payloads: list[dict[str, Any]] = []
     for structure in structures:
         volume = np.zeros((len(aligned_rows), len(y_values), len(x_values)), dtype=bool)
@@ -513,11 +557,16 @@ def reconstruct_3d_contour_meshes(
         if not volume.any():
             continue
 
-        padded = np.pad(volume.astype(np.float32), ((1, 1), (1, 1), (1, 1)))
+        # 3-D Gaussian smoothing to reduce staircase artefacts between slices.
+        float_vol = volume.astype(np.float32)
+        if smooth_sigmas is not None:
+            float_vol = gaussian_filter(float_vol, sigma=smooth_sigmas)
+
+        padded = np.pad(float_vol, ((1, 1), (1, 1), (1, 1)))
         try:
             vertices, faces, _, _ = measure.marching_cubes(
                 padded,
-                level=0.5,
+                level=mesh_level,
                 spacing=(z_spacing_um, voxel_size_um, voxel_size_um),
             )
         except ValueError:
@@ -530,38 +579,88 @@ def reconstruct_3d_contour_meshes(
                 vertices[:, 0] - z_spacing_um,
             ]
         )
-        ply_path = mesh_path / f"{_safe_name(structure)}.ply"
-        _write_ascii_ply(ply_path, xyz, faces)
-        payload = {
+
+        safe = _safe_name(structure)
+        qc = _build_mesh_qc(
+            xyz,
+            faces,
+            safe_name=safe,
+            mesh_dir=mesh_path,
+            export_formats=export_formats,
+            mesh_cleanup=mesh_cleanup,
+            min_component_volume_um3=min_mesh_component_volume_um3,
+        )
+
+        payload: dict[str, Any] = {
             "structure": structure,
-            "ply": str(ply_path),
-            "vertex_count": int(len(xyz)),
-            "face_count": int(len(faces)),
+            **{fmt: qc.get(f"{fmt}_path", "") for fmt in export_formats},
+            "vertex_count": qc["vertex_count"],
+            "face_count": qc["face_count"],
+            "surface_area_um2": qc.get("surface_area_um2"),
+            "volume_um3": qc.get("volume_um3"),
+            "is_watertight": qc.get("is_watertight"),
+            "euler_number": qc.get("euler_number"),
+            "component_count": qc.get("component_count"),
         }
-        if len(faces) <= max_faces_for_html:
+        # Keep backward compat: expose "ply" key at top level.
+        if "ply" in qc:
+            payload["ply"] = qc["ply"]
+
+        xyz_out = qc.get("xyz", xyz)
+        faces_out = qc.get("faces", faces)
+        if len(faces_out) <= max_faces_for_html:
             payload.update(
                 {
-                    "x": xyz[:, 0].round(3).tolist(),
-                    "y": xyz[:, 1].round(3).tolist(),
-                    "z": xyz[:, 2].round(3).tolist(),
-                    "i": faces[:, 0].astype(int).tolist(),
-                    "j": faces[:, 1].astype(int).tolist(),
-                    "k": faces[:, 2].astype(int).tolist(),
+                    "x": xyz_out[:, 0].round(3).tolist(),
+                    "y": xyz_out[:, 1].round(3).tolist(),
+                    "z": xyz_out[:, 2].round(3).tolist(),
+                    "i": faces_out[:, 0].astype(int).tolist(),
+                    "j": faces_out[:, 1].astype(int).tolist(),
+                    "k": faces_out[:, 2].astype(int).tolist(),
                 }
             )
         mesh_payloads.append(payload)
 
-    pd.DataFrame(
-        [
+    manifest_cols = [
+        "structure",
+        "vertex_count",
+        "face_count",
+        "surface_area_um2",
+        "volume_um3",
+        "is_watertight",
+        "euler_number",
+        "component_count",
+    ]
+    # Add one column per requested export format.
+    for fmt in export_formats:
+        manifest_cols.append(fmt)
+    manifest_rows = [
+        {col: item.get(col) for col in manifest_cols} for item in mesh_payloads
+    ]
+    pd.DataFrame(manifest_rows, columns=manifest_cols).to_csv(
+        mesh_path / "mesh_manifest.csv", index=False
+    )
+
+    qc_summary = {
+        "structure_count": len(mesh_payloads),
+        "structures": [
             {
                 "structure": item["structure"],
-                "ply": item["ply"],
-                "vertex_count": item["vertex_count"],
-                "face_count": item["face_count"],
+                "vertex_count": item.get("vertex_count"),
+                "face_count": item.get("face_count"),
+                "surface_area_um2": item.get("surface_area_um2"),
+                "volume_um3": item.get("volume_um3"),
+                "is_watertight": item.get("is_watertight"),
+                "euler_number": item.get("euler_number"),
+                "component_count": item.get("component_count"),
             }
             for item in mesh_payloads
-        ]
-    ).to_csv(mesh_path / "mesh_manifest.csv", index=False)
+        ],
+    }
+    (mesh_path / "mesh_qc_summary.json").write_text(
+        json.dumps(qc_summary, indent=2, ensure_ascii=False, default=_json_default),
+        encoding="utf-8",
+    )
     return mesh_payloads
 
 
@@ -677,6 +776,12 @@ def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
         raise ValueError("voxel_size_um must be greater than 0.")
     if cfg.point_sample_distance_um <= 0:
         raise ValueError("point_sample_distance_um must be greater than 0.")
+    if cfg.mesh_smoothing_sigma_um is not None and cfg.mesh_smoothing_sigma_um < 0:
+        raise ValueError("mesh_smoothing_sigma_um must be >= 0 (or None to disable).")
+    if not (0.0 < cfg.mesh_level < 1.0):
+        raise ValueError("mesh_level must be strictly between 0 and 1.")
+    if cfg.min_mesh_component_volume_um3 is not None and cfg.min_mesh_component_volume_um3 < 0:
+        raise ValueError("min_mesh_component_volume_um3 must be >= 0.")
 
 
 def _read_strategy_specs(cfg: ThreeDStackReconstructionConfig) -> list[MultiStructureSpec]:
@@ -1149,6 +1254,141 @@ def _write_ascii_ply(path: Path, vertices: np.ndarray, faces: np.ndarray) -> Non
 
 def _safe_name(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", text).strip("_") or "structure"
+
+
+def _write_ascii_obj(path: Path, vertices: np.ndarray, faces: np.ndarray) -> None:
+    """Write a minimal Wavefront OBJ file."""
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write("# HistoSeg 3D mesh\n")
+        for vertex in vertices:
+            handle.write(f"v {vertex[0]:.6f} {vertex[1]:.6f} {vertex[2]:.6f}\n")
+        for face in faces:
+            # OBJ face indices are 1-based.
+            handle.write(f"f {int(face[0]) + 1} {int(face[1]) + 1} {int(face[2]) + 1}\n")
+
+
+def _build_mesh_qc(
+    xyz: np.ndarray,
+    faces: np.ndarray,
+    *,
+    safe_name: str,
+    mesh_dir: Path,
+    export_formats: Sequence[str],
+    mesh_cleanup: bool,
+    min_component_volume_um3: float | None,
+) -> dict[str, Any]:
+    """Apply optional trimesh cleanup, filter components, export files, return QC dict."""
+
+    result: dict[str, Any] = {}
+
+    if _trimesh is not None:
+        mesh = _trimesh.Trimesh(vertices=xyz.copy(), faces=faces.copy(), process=False)
+
+        if mesh_cleanup:
+            mesh.process(validate=True)
+            mesh.fill_holes()
+
+        if min_component_volume_um3 is not None and min_component_volume_um3 > 0:
+            mesh = _filter_trimesh_components(mesh, min_component_volume_um3)
+
+        # Re-extract numpy arrays after cleanup.
+        xyz_out = np.asarray(mesh.vertices, dtype=float)
+        faces_out = np.asarray(mesh.faces, dtype=np.int64)
+
+        result["xyz"] = xyz_out
+        result["faces"] = faces_out
+        result["vertex_count"] = int(len(xyz_out))
+        result["face_count"] = int(len(faces_out))
+        result["surface_area_um2"] = float(mesh.area) if len(faces_out) > 0 else 0.0
+        result["is_watertight"] = bool(mesh.is_watertight)
+        result["euler_number"] = int(mesh.euler_number) if len(faces_out) > 0 else 0
+        try:
+            result["component_count"] = int(len(mesh.split(only_watertight=False)))
+        except Exception:  # pragma: no cover
+            result["component_count"] = None
+        if mesh.is_watertight:
+            result["volume_um3"] = float(abs(mesh.volume))
+        else:
+            result["volume_um3"] = None
+
+        for fmt in export_formats:
+            out_path = mesh_dir / f"{safe_name}.{fmt}"
+            try:
+                mesh.export(str(out_path))
+                result[fmt] = str(out_path)
+                result[f"{fmt}_path"] = str(out_path)
+            except Exception:  # pragma: no cover
+                pass
+    else:
+        # Fallback: no trimesh — basic PLY/OBJ writers, no QC metrics.
+        xyz_out = xyz
+        faces_out = faces
+        result["xyz"] = xyz_out
+        result["faces"] = faces_out
+        result["vertex_count"] = int(len(xyz_out))
+        result["face_count"] = int(len(faces_out))
+        result["surface_area_um2"] = None
+        result["volume_um3"] = None
+        result["is_watertight"] = None
+        result["euler_number"] = None
+        result["component_count"] = None
+
+        for fmt in export_formats:
+            out_path = mesh_dir / f"{safe_name}.{fmt}"
+            if fmt == "ply":
+                _write_ascii_ply(out_path, xyz_out, faces_out)
+            elif fmt == "obj":
+                _write_ascii_obj(out_path, xyz_out, faces_out)
+            result[fmt] = str(out_path)
+            result[f"{fmt}_path"] = str(out_path)
+
+    # Ensure "ply" key exists for backward compatibility even if trimesh export failed.
+    if "ply" not in result:
+        ply_path = mesh_dir / f"{safe_name}.ply"
+        _write_ascii_ply(ply_path, xyz_out, faces_out)
+        result["ply"] = str(ply_path)
+
+    return result
+
+
+def _filter_trimesh_components(
+    mesh: Any,
+    min_volume_um3: float,
+) -> Any:
+    """Return the mesh with small disconnected components removed."""
+    try:
+        components = mesh.split(only_watertight=False)
+    except Exception:  # pragma: no cover
+        return mesh
+    if not components:
+        return mesh
+    kept = []
+    for comp in components:
+        if comp.is_watertight:
+            vol = abs(float(comp.volume))
+        else:
+            try:
+                vol = abs(float(comp.convex_hull.volume))
+            except Exception:  # pragma: no cover
+                vol = 0.0
+        if vol >= min_volume_um3:
+            kept.append(comp)
+    if not kept:
+        return mesh  # Do not discard everything.
+    if len(kept) == 1:
+        return kept[0]
+    return _trimesh.util.concatenate(kept)
+
+
+def _json_default(obj: Any) -> Any:
+    """JSON serialiser fallback for numpy scalars and None-like values."""
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"Object of type {type(obj)} is not JSON serialisable")
 
 
 def _jsonable_config(cfg: ThreeDStackReconstructionConfig) -> dict[str, Any]:

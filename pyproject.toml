@@ -33,6 +33,9 @@ he = [
     "opencv-python-headless",
     "rasterio",
 ]
+threed = [
+    "trimesh>=4.0.0",
+]
 
 [project.scripts]
 histoseg-gui = "histoseg.gui.gui_app:main"
