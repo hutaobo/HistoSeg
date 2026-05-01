@@ -27,7 +27,7 @@ Use **HE Analysis** when your input is an H&E image such as PNG, JPG, TIFF, or G
 
 Use **Contour Analysis** when your input is spatial cell-coordinate data such as Xenium `cells.parquet` plus cluster assignments, and you want geometry extracted from cell neighborhoods or selected cluster groups.
 
-Use **3D Analysis** when you are preparing for multi-slice Xenium contour reconstruction from the same sample. The first released workflow soft-aligns a hard-aligned moving contour GeoJSON to a fixed reference slice with a conservative TPS displacement field.
+Use **3D Analysis** when you are preparing for multi-slice Xenium contour reconstruction from the same sample. It can soft-align a hard-aligned moving contour GeoJSON to a fixed reference slice, or build a pyXenium-backed multi-slice contour stack with 3D points, PLY meshes, and an interactive HTML view.
 
 ## Installation
 
@@ -48,6 +48,12 @@ git clone https://github.com/hutaobo/HistoSeg.git
 cd HistoSeg
 pip install -U pip
 pip install -e ".[he]"
+```
+
+For 3D Xenium stack reconstruction, install the GitHub pyXenium extra:
+
+```bash
+pip install -e ".[threed]"
 ```
 
 ## HE Analysis Quickstart
@@ -145,7 +151,21 @@ histoseg-3d reconstruct \
   --diagnostic-structure "Structure 5"
 ```
 
-3D Analysis currently performs the soft TPS registration/pre-reconstruction step. It does not yet generate a 3D mesh or volume.
+For a complete same-sample Xenium stack:
+
+```bash
+histoseg-3d reconstruct-stack \
+  --xenium-root polyp \
+  --segmentation-strategy "polyp/contour for alignment/segmentationstrategy.txt" \
+  --merged-h5ad "polyp/pdc_merge_leiden/polyp_32samples_processed_leiden.h5ad" \
+  --merged-cluster-column leiden_1_0 \
+  --out-dir outputs/polyp_3d_reconstruction \
+  --z-spacing-um 5
+```
+
+3D Analysis writes aligned per-slice GeoJSON files, pairwise alignment metrics,
+sampled 3D contour points, per-structure PLY meshes, and an interactive Plotly
+HTML visualization.
 
 ## Outputs
 
@@ -163,6 +183,7 @@ HistoSeg workflows write reviewable artifacts such as:
 - [Contour Analysis](https://histoseg.readthedocs.io/en/latest/contour_analysis.html)
 - [3D Analysis](https://histoseg.readthedocs.io/en/latest/3d_analysis.html)
 - [3D contour soft alignment tutorial](https://histoseg.readthedocs.io/en/latest/tutorials/3d_soft_alignment.html)
+- [3D contour stack reconstruction tutorial](https://histoseg.readthedocs.io/en/latest/tutorials/3d_stack_reconstruction.html)
 - [API Reference](https://histoseg.readthedocs.io/en/latest/api/index.html)
 
 ## License

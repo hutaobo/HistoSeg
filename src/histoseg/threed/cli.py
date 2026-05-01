@@ -147,14 +147,36 @@ def main(argv: Sequence[str] | None = None) -> None:
         default="analysis/clustering/gene_expression_graphclust/clusters.csv",
         help="Cluster CSV path relative to each Xenium output directory.",
     )
+    stack.add_argument(
+        "--merged-h5ad",
+        default=None,
+        help="Optional merged AnnData with unified per-cell clusters for all slices.",
+    )
+    stack.add_argument(
+        "--merged-cluster-column",
+        default=None,
+        help="Cluster column in merged AnnData obs. Defaults to leiden_1_0 or first leiden* column.",
+    )
+    stack.add_argument("--merged-sample-column", default="sample_id")
+    stack.add_argument("--merged-barcode-column", default="barcode")
     stack.add_argument("--bins-x", type=int, default=900, help="Contour raster bins in X.")
     stack.add_argument("--bins-y", type=int, default=700, help="Contour raster bins in Y.")
     stack.add_argument("--gaussian-sigma", type=float, default=2.25)
     stack.add_argument("--min-cells", type=int, default=500)
     stack.add_argument("--min-component-pixels", type=int, default=180)
     stack.add_argument("--hard-alignment-maxiter", type=int, default=80)
-    stack.add_argument("--sampling-distance-um", type=float, default=50.0)
-    stack.add_argument("--max-landmark-distance-um", type=float, default=180.0)
+    stack.add_argument(
+        "--sampling-distance-um",
+        type=float,
+        default=50.0,
+        help="TPS boundary sampling interval in GeoJSON coordinate units.",
+    )
+    stack.add_argument(
+        "--max-landmark-distance-um",
+        type=float,
+        default=180.0,
+        help="TPS nearest-boundary rejection distance in GeoJSON coordinate units.",
+    )
     stack.add_argument("--landmarks-per-structure", type=int, default=260)
     stack.add_argument("--diagnostic-structure-landmarks", type=int, default=620)
     stack.add_argument("--rbf-neighbors", type=int, default=96)
@@ -192,16 +214,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         default=None,
         help="Remove mesh components smaller than this volume (um^3). "
         "Omit to keep all components.",
-    )
-    stack.add_argument(
-        "--merged-h5ad",
-        default=None,
-        help="Path to a merged AnnData (.h5ad) file for cluster assignment.",
-    )
-    stack.add_argument(
-        "--merged-cluster-column",
-        default=None,
-        help="Column in merged AnnData obs to use as cluster labels.",
     )
     stack.add_argument("--dpi", type=int, default=180)
     stack.add_argument(
@@ -264,6 +276,10 @@ def main(argv: Sequence[str] | None = None) -> None:
                 group_property=args.group_property,
                 cluster_column_name=args.cluster_column_name,
                 clusters_relpath=args.clusters_relpath,
+                merged_h5ad=args.merged_h5ad,
+                merged_cluster_column=args.merged_cluster_column,
+                merged_sample_column=args.merged_sample_column,
+                merged_barcode_column=args.merged_barcode_column,
                 bins_x=args.bins_x,
                 bins_y=args.bins_y,
                 gaussian_sigma=args.gaussian_sigma,
@@ -288,8 +304,6 @@ def main(argv: Sequence[str] | None = None) -> None:
                 mesh_export_formats=export_formats,
                 mesh_cleanup=not args.no_mesh_cleanup,
                 min_mesh_component_volume_um3=args.min_mesh_component_volume_um3,
-                merged_h5ad=args.merged_h5ad,
-                merged_cluster_column=args.merged_cluster_column,
                 overwrite=args.overwrite,
                 dpi=args.dpi,
             )
