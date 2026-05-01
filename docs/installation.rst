@@ -2,8 +2,10 @@
 Installation
 ============
 
-HistoSeg ships as a Python package with a lightweight base install and an
-optional H&E extra for local MedSAM-backed workflows.
+.. raw:: html
+
+   <div class="hs-section-kicker">Getting Started</div>
+   <div class="hs-page-intro">HistoSeg ships as a Python package with a lightweight base install and an optional H&amp;E extra for local MedSAM-backed workflows. Install the base package for contour-first work, then add the H&amp;E extra when you need local image-model inference.</div>
 
 Quick Install
 -------------

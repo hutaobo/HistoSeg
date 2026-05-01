@@ -1,50 +1,50 @@
 # HistoSeg
 
-::::{div} hero-shell hero-layout
-:::{div} hero-copy
+```{toctree}
+:hidden:
+:maxdepth: 2
 
-### H&E images in. Spatial structure out.
-
-HistoSeg is a Python toolkit for teams working across **histology images**,
-**cell-coordinate tables**, and **spatial transcriptomics review workflows**.
-It combines image-first segmentation, contour generation, Xenium-ready exports,
-and reproducible CLI pipelines in a single package.
-
-- Use `histoseg.he` for H&E foreground extraction, component partitioning, and
-  aligned-image change detection.
-- Use `histoseg.contour` for Pattern1 isolines, multi-structure contours,
-  boundary topology analysis, and review-ready exports.
-- Move between Python APIs and CLI commands without changing the underlying
-  artifact model.
-
-```{button-ref} installation
-:color: primary
-:shadow:
-Install HistoSeg
+installation
+usage
+he_analysis
+contour_analysis
+workflows/index
+tutorials/index
+api/index
+history
 ```
 
-```{button-ref} usage
-:color: secondary
-:shadow:
-Open the quickstart
-```
+<div class="hs-hero">
+  <p class="hs-tagline">H&E imaging and spatial contour workflows in one documentation family.</p>
+  <p class="hs-lead">
+    HistoSeg is a Python toolkit for histology images, cell-coordinate tables,
+    and review-ready spatial transcriptomics exports. This site is organized
+    around two primary surfaces, <code>histoseg.he</code> and
+    <code>histoseg.contour</code>, then connects them to quickstarts,
+    workflow guides, tutorials, and API reference pages.
+  </p>
+  <div class="hs-link-row">
+    <a href="usage.html">Quickstart</a>
+    <a href="installation.html">Installation</a>
+    <a href="he_analysis.html">H&amp;E guide</a>
+    <a href="contour_analysis.html">Contour guide</a>
+    <a href="https://github.com/hutaobo/HistoSeg">GitHub</a>
+    <a href="https://pypi.org/project/histoseg/">PyPI</a>
+  </div>
+</div>
+
+:::{div} hs-metadata
+<span>Image-first H&amp;E segmentation</span>
+<span>Pattern1 and multi-structure contours</span>
+<span>Xenium Explorer-ready exports</span>
+<span>Python API and CLI parity</span>
 :::
-
-:::{div} hero-panel
-
-#### What the docs are built for
-
-- Getting from installation to a first successful run quickly.
-- Choosing the correct workflow based on the modality of your input data.
-- Understanding output artifacts before integrating them downstream.
-- Jumping into API details only when you need exact config and result types.
 
 ```{note}
 Start with **H&E Analysis** when the primary input is an image. Start with
 **Contour Analysis** when the primary input is a table of cells with
 coordinates and cluster assignments.
 ```
-::::
 
 ## Start Here
 
@@ -162,40 +162,18 @@ Track the package direction and the public feature groups exposed today.
 
 ```{toctree}
 :hidden:
-:maxdepth: 2
-:caption: Getting Started
+:maxdepth: 1
+:caption: Additional Guides
 
-installation
-usage
-```
-
-```{toctree}
-:hidden:
-:maxdepth: 2
-:caption: Guides
-
-he_analysis
-contour_analysis
 contour
-workflows/index
 ```
 
 ```{toctree}
 :hidden:
-:maxdepth: 2
-:caption: Tutorials
+:maxdepth: 1
+:caption: Reference Details
 
-tutorials/index
-```
-
-```{toctree}
-:hidden:
-:maxdepth: 2
-:caption: Reference
-
-api/index
 authors
-history
 contributing
 ```
 

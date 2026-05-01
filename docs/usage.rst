@@ -2,8 +2,10 @@
 Quickstart
 ==========
 
-HistoSeg exposes two public workflow surfaces. Choose the one that matches your
-primary input modality, then run the same configuration from Python or the CLI.
+.. raw:: html
+
+   <div class="hs-section-kicker">Quickstart</div>
+   <div class="hs-page-intro">HistoSeg exposes two public workflow surfaces. Choose the one that matches your primary input modality, then move between Python and CLI runs without changing the conceptual workflow or output artifact model.</div>
 
 HE Analysis
 -----------

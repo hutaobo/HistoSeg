@@ -23,7 +23,7 @@ autosummary_generate = True
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 
-html_theme = "sphinx_book_theme"
+html_theme = "pydata_sphinx_theme"
 html_title = "HistoSeg"
 templates_path = ["_templates"]
 html_static_path = ["_static"]
@@ -68,22 +68,38 @@ intersphinx_mapping = {
 }
 
 html_context = {
-    "display_github": True,
     "github_user": "hutaobo",
     "github_repo": "HistoSeg",
     "github_version": "main",
-    "conf_py_path": "/docs/",
+    "doc_path": "docs",
 }
 
 html_theme_options = {
-    "repository_url": "https://github.com/hutaobo/HistoSeg",
-    "repository_branch": "main",
-    "path_to_docs": "docs",
-    "use_repository_button": True,
-    "use_issues_button": True,
-    "use_edit_page_button": True,
-    "home_page_in_toc": True,
-    "show_toc_level": 2,
+    "navbar_start": ["navbar-logo"],
+    "navbar_center": ["navbar-nav"],
+    "navbar_end": ["theme-switcher", "navbar-icon-links"],
+    "navbar_align": "left",
+    "header_links_before_dropdown": 6,
     "navigation_with_keys": True,
+    "show_prev_next": False,
+    "secondary_sidebar_items": ["page-toc"],
+    "use_edit_page_button": True,
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/hutaobo/HistoSeg",
+            "icon": "fa-brands fa-github",
+        },
+        {
+            "name": "PyPI",
+            "url": "https://pypi.org/project/histoseg/",
+            "icon": "fa-solid fa-cube",
+        },
+        {
+            "name": "Read the Docs",
+            "url": "https://histoseg.readthedocs.io/en/latest/",
+            "icon": "fa-solid fa-book-open",
+        },
+    ],
     "announcement": "HistoSeg unifies H&E image analysis and spatial contour workflows in one Python toolkit.",
 }

@@ -1,9 +1,21 @@
 # HE Analysis
 
-HE Analysis is the image-first workflow family exposed as `histoseg.he`.
-Use it when the primary input is a histology image and the desired output is a
+:::{div} hs-section-kicker
+Guide
+:::
+
+:::{div} hs-page-intro
+HE Analysis is the image-first workflow family exposed as `histoseg.he`. Use
+it when the primary input is a histology image and the desired output is a
 mask, overlay, heatmap, GeoJSON polygon, or region table that can be reviewed
 or integrated downstream.
+:::
+
+:::{div} hs-metadata
+<span>Input: H&amp;E image</span>
+<span>Outputs: masks, overlays, polygons</span>
+<span>Surfaces: Python API and CLI</span>
+:::
 
 ## When To Use It
 

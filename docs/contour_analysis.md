@@ -1,8 +1,21 @@
 # Contour Analysis
 
-Contour Analysis is the spatial/cell-coordinate workflow group exposed as
+:::{div} hs-section-kicker
+Guide
+:::
+
+:::{div} hs-page-intro
+Contour Analysis is the spatial or cell-coordinate workflow group exposed as
 `histoseg.contour`. Use it when the primary input is a table of cells with
-spatial coordinates and cluster assignments.
+spatial coordinates and cluster assignments, and the goal is to generate
+review-ready spatial structures rather than image-first segmentation masks.
+:::
+
+:::{div} hs-metadata
+<span>Input: cells with x/y coordinates</span>
+<span>Outputs: contours, previews, exports</span>
+<span>Supports Pattern1 and named structures</span>
+:::
 
 ## When To Use It
 

@@ -1,6 +1,6 @@
-sphinx
+sphinx>=8
 myst-nb
-sphinx-book-theme
+pydata-sphinx-theme>=0.16
 sphinx-design
 sphinx-copybutton
 linkify-it-py
