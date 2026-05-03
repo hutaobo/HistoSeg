@@ -15,6 +15,9 @@ The flagship 3D surface currently has two public workflows:
   using GitHub `pyXenium`/`XeniumSlide` for IO, unified Leiden labels from a
   merged AnnData when available, sequential hard+soft alignment, and 3D
   contour surface mesh export.
+- 3D gene spatial module discovery from an aligned cell table and merged
+  AnnData: gene enrichment voxels, nested hotspot surfaces, voxel overlap/SDF
+  distance metrics, and gene-by-structure clustermaps.
 
 ## Current Scope
 
@@ -79,6 +82,25 @@ print(result.visualization_html)
 print(result.mesh_dir)
 ```
 
+For 3D gene spatial modules:
+
+```python
+from histoseg.threed import (
+    SpatialModuleDiscoveryConfig,
+    run_spatial_module_discovery,
+)
+
+cfg = SpatialModuleDiscoveryConfig(
+    h5ad="polyp/pdc_merge_leiden/polyp_32samples_processed_leiden.h5ad",
+    aligned_cells_parquet="outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet",
+    stack_root="outputs/polyp_3d_reconstruction",
+    genes=("GREM1", "COL1A1", "FAP", "EPCAM", "MUC2", "LGR5"),
+)
+
+result = run_spatial_module_discovery(cfg)
+print(result.fraction_inside_matrix_csv)
+```
+
 ## CLI
 
 ```bash
@@ -111,6 +133,30 @@ histoseg-3d reconstruct-stack \
 Set `--mesh-smoothing-sigma-um 0` to disable the 3D Gaussian smoothing step.
 `--mesh-level` must stay between `0` and `1` for the Marching Cubes surface.
 
+For end-to-end gene spatial module discovery:
+
+```bash
+histoseg-3d discover-spatial-modules \
+  --h5ad polyp/pdc_merge_leiden/polyp_32samples_processed_leiden.h5ad \
+  --aligned-cells-parquet outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --genes GREM1 COL1A1 COL1A2 ACTA2 PDGFRA TAGLN FAP EPCAM MUC2 OLFM4 LGR5 MKI67
+```
+
+Advanced users can rerun only the downstream steps:
+
+```bash
+histoseg-3d quantify-gene-structure \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --gene-density-dir outputs/polyp_3d_reconstruction/gene_overlays/batch_3d_genes/GREM1_density \
+  --gene GREM1
+
+histoseg-3d plot-spatial-modules \
+  --batch-dir outputs/polyp_3d_reconstruction/gene_overlays/batch_3d_genes \
+  --matrix fraction_inside \
+  --hotspot top05
+```
+
 ## Outputs
 
 - `soft_aligned_contours.geojson`
@@ -134,6 +180,18 @@ Multi-slice reconstruction writes:
 - `meshes/Structure_*.obj`
 - `meshes/mesh_manifest.csv`
 - `meshes/mesh_qc_summary.json`
+
+Spatial module discovery writes:
+
+- `<GENE>_density/<GENE>_3d_enrichment_voxels.csv`
+- `<GENE>_density/isosurfaces/<GENE>_enrichment_top*.ply`
+- `<GENE>_density/structure_relationships/<GENE>_structure_3d_overlap_metrics.csv`
+- `<GENE>_density/structure_relationships/<GENE>_structure_3d_distance_metrics.csv`
+- `batch_gene_status.csv`
+- `gene_structure_overlap_fraction_matrix.csv`
+- `gene_structure_signed_distance_matrix.csv`
+- `gene_structure_fraction_inside_matrix.csv`
+- `fraction_inside_top05_spatial_clustermap.png`
 
 See the [3D contour soft alignment tutorial](tutorials/3d_soft_alignment)
 for a complete polyp contour example with bundled data and rendered QC figures.

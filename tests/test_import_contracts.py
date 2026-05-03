@@ -16,6 +16,9 @@ def test_feature_group_import_contracts():
     assert callable(contour.run_contour_adjacency)
     assert callable(threed.run_3d_contour_reconstruction)
     assert callable(threed.run_3d_stack_reconstruction)
+    assert callable(threed.run_spatial_module_discovery)
+    assert callable(threed.quantify_gene_structure_relationships)
+    assert callable(threed.plot_spatial_module_clustermap)
     assert callable(threed.discover_xenium_slices)
 
 

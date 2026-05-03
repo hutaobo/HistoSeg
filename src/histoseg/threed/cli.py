@@ -6,10 +6,16 @@ from dataclasses import asdict
 from typing import Sequence
 
 from . import (
+    GeneStructureQuantificationConfig,
+    SpatialModuleDiscoveryConfig,
+    SpatialModulePlotConfig,
     ThreeDContourReconstructionConfig,
     ThreeDStackReconstructionConfig,
+    plot_spatial_module_clustermap,
+    quantify_gene_structure_relationships,
     run_3d_contour_reconstruction,
     run_3d_stack_reconstruction,
+    run_spatial_module_discovery,
 )
 
 
@@ -227,6 +233,66 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     stack.add_argument("--overwrite", action="store_true", help="Recompute existing artifacts.")
 
+    discover = subparsers.add_parser(
+        "discover-spatial-modules",
+        help="Batch-map genes into 3D enrichment fields, surfaces, SDF metrics, and spatial module matrices.",
+    )
+    discover.add_argument("--h5ad", required=True, help="Merged AnnData .h5ad with gene expression.")
+    discover.add_argument(
+        "--aligned-cells-parquet",
+        required=True,
+        help="Aligned 3D cell table, usually aligned_leiden_3d_cells.parquet.",
+    )
+    discover.add_argument("--stack-root", required=True, help="HistoSeg 3D reconstruction output directory.")
+    discover.add_argument("--out-dir", default=None, help="Batch output directory.")
+    discover.add_argument("--genes", nargs="*", default=(), help="Gene names or comma-separated gene chunks.")
+    discover.add_argument("--gene-file", default=None, help="Optional newline-delimited gene list.")
+    discover.add_argument("--sample-column", default="sample_id")
+    discover.add_argument("--barcode-column", default="barcode")
+    discover.add_argument("--skip-order-check", action="store_true")
+    discover.add_argument("--template-density-summary", default=None)
+    discover.add_argument("--xy-voxel-size-um", type=float, default=80.0)
+    discover.add_argument("--z-voxel-size-um", type=float, default=5.0)
+    discover.add_argument("--smoothing-sigma-xy-um", type=float, default=120.0)
+    discover.add_argument("--smoothing-sigma-z-um", type=float, default=10.0)
+    discover.add_argument("--surface-smoothing-sigma-voxels", default="1.0,0.9,0.9")
+    discover.add_argument("--valid-min-cell-count", type=float, default=8.0)
+    discover.add_argument("--min-positive-cells", type=int, default=200)
+    discover.add_argument("--min-expression-sum", type=float, default=0.0)
+    discover.add_argument("--min-surface-voxels", type=int, default=20)
+    discover.add_argument("--mesh-export-formats", default="ply,obj")
+    discover.add_argument("--structures", nargs="*", default=None)
+    discover.add_argument("--group-property", default="structure")
+    discover.add_argument("--pixel-size-um", type=float, default=0.2125)
+    discover.add_argument("--force-rebuild-masks", action="store_true")
+
+    quantify = subparsers.add_parser(
+        "quantify-gene-structure",
+        help="Quantify an existing gene density output against 3D structure masks.",
+    )
+    quantify.add_argument("--stack-root", required=True)
+    quantify.add_argument("--gene-density-dir", required=True)
+    quantify.add_argument("--gene", required=True)
+    quantify.add_argument("--structures", nargs="*", default=None)
+    quantify.add_argument("--group-property", default="structure")
+    quantify.add_argument("--pixel-size-um", type=float, default=0.2125)
+    quantify.add_argument("--force-rebuild-masks", action="store_true")
+
+    plot = subparsers.add_parser(
+        "plot-spatial-modules",
+        help="Plot clustered gene-by-structure heatmaps from spatial module matrices.",
+    )
+    plot.add_argument("--batch-dir", required=True)
+    plot.add_argument("--hotspot", default="top05", choices=["top15", "top10", "top05"])
+    plot.add_argument(
+        "--matrix",
+        default="fraction_inside",
+        choices=["fraction_inside", "overlap_fraction", "signed_distance"],
+    )
+    plot.add_argument("--out-png", default=None)
+    plot.add_argument("--raw-values", action="store_true", help="Plot raw values instead of row z-scores.")
+    plot.add_argument("--cmap", default=None)
+
     args = parser.parse_args(argv)
     if args.command == "reconstruct":
         result = run_3d_contour_reconstruction(
@@ -245,6 +311,85 @@ def main(argv: Sequence[str] | None = None) -> None:
                 diagnostic_structure=args.diagnostic_structure or None,
                 dpi=args.dpi,
                 save_preview_png=not args.no_preview,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "discover-spatial-modules":
+        surface_sigma = tuple(
+            float(part.strip())
+            for part in args.surface_smoothing_sigma_voxels.split(",")
+            if part.strip()
+        )
+        mesh_export_formats = tuple(
+            fmt.strip().lower()
+            for fmt in args.mesh_export_formats.split(",")
+            if fmt.strip()
+        )
+        structures = tuple(args.structures) if args.structures else (
+            "Structure 1",
+            "Structure 2",
+            "Structure 3",
+            "Structure 4",
+            "Structure 5",
+        )
+        result = run_spatial_module_discovery(
+            SpatialModuleDiscoveryConfig(
+                h5ad=args.h5ad,
+                aligned_cells_parquet=args.aligned_cells_parquet,
+                stack_root=args.stack_root,
+                out_dir=args.out_dir,
+                genes=tuple(args.genes),
+                gene_file=args.gene_file,
+                sample_column=args.sample_column,
+                barcode_column=args.barcode_column,
+                skip_order_check=args.skip_order_check,
+                template_density_summary=args.template_density_summary,
+                xy_voxel_size_um=args.xy_voxel_size_um,
+                z_voxel_size_um=args.z_voxel_size_um,
+                smoothing_sigma_xy_um=args.smoothing_sigma_xy_um,
+                smoothing_sigma_z_um=args.smoothing_sigma_z_um,
+                surface_smoothing_sigma_voxels_zyx=surface_sigma,
+                valid_min_cell_count=args.valid_min_cell_count,
+                min_positive_cells=args.min_positive_cells,
+                min_expression_sum=args.min_expression_sum,
+                min_surface_voxels=args.min_surface_voxels,
+                mesh_export_formats=mesh_export_formats,
+                structures=structures,
+                group_property=args.group_property,
+                pixel_size_um=args.pixel_size_um,
+                force_rebuild_masks=args.force_rebuild_masks,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "quantify-gene-structure":
+        structures = tuple(args.structures) if args.structures else (
+            "Structure 1",
+            "Structure 2",
+            "Structure 3",
+            "Structure 4",
+            "Structure 5",
+        )
+        result = quantify_gene_structure_relationships(
+            GeneStructureQuantificationConfig(
+                stack_root=args.stack_root,
+                gene_density_dir=args.gene_density_dir,
+                gene=args.gene,
+                structures=structures,
+                group_property=args.group_property,
+                pixel_size_um=args.pixel_size_um,
+                force_rebuild_masks=args.force_rebuild_masks,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "plot-spatial-modules":
+        result = plot_spatial_module_clustermap(
+            SpatialModulePlotConfig(
+                batch_dir=args.batch_dir,
+                hotspot=args.hotspot,
+                matrix=args.matrix,
+                out_png=args.out_png,
+                row_zscore=not args.raw_values,
+                cmap=args.cmap,
             )
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))

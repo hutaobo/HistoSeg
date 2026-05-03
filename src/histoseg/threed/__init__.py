@@ -23,8 +23,25 @@ from .multislice import (
     write_3d_contour_points,
     write_3d_visualization_html,
 )
+from .spatial_modules import (
+    GeneStructureQuantificationConfig,
+    GeneStructureQuantificationResult,
+    SpatialModuleDiscoveryConfig,
+    SpatialModuleDiscoveryResult,
+    SpatialModulePlotConfig,
+    SpatialModulePlotResult,
+    plot_spatial_module_clustermap,
+    quantify_gene_structure_relationships,
+    run_spatial_module_discovery,
+)
 
 __all__ = [
+    "GeneStructureQuantificationConfig",
+    "GeneStructureQuantificationResult",
+    "SpatialModuleDiscoveryConfig",
+    "SpatialModuleDiscoveryResult",
+    "SpatialModulePlotConfig",
+    "SpatialModulePlotResult",
     "ThreeDContourReconstructionConfig",
     "ThreeDContourReconstructionResult",
     "ThreeDFeatureUnavailableError",
@@ -32,8 +49,11 @@ __all__ = [
     "ThreeDStackReconstructionResult",
     "discover_xenium_slices",
     "hard_align_geojson",
+    "plot_spatial_module_clustermap",
+    "quantify_gene_structure_relationships",
     "reconstruct_3d_contour_meshes",
     "run_3d_contour_reconstruction",
+    "run_spatial_module_discovery",
     "run_3d_stack_reconstruction",
     "write_3d_contour_points",
     "write_3d_visualization_html",
