@@ -48,6 +48,12 @@ For flagship 3D Xenium stack reconstruction, install the pyXenium-backed 3D extr
 pip install -U "histoseg[threed]"
 ```
 
+For reproducible static 3D figure rendering and local documentation builds:
+
+```bash
+pip install -U "histoseg[threed,viz,docs]"
+```
+
 For development:
 
 ```bash
@@ -56,6 +62,19 @@ cd HistoSeg
 pip install -U pip
 pip install -e ".[threed,he]"
 ```
+
+Conda environments and Docker targets are provided for reproducible runs:
+
+```bash
+conda env create -f environment.yml
+conda env create -f environment-viz.yml
+
+docker build --target core -t histoseg:core .
+docker build --target viz -t histoseg:viz .
+```
+
+The `core` Docker target is for CPU/headless 3D analysis. The `viz` target adds
+Mesa/Xvfb and PyVista for static documentation or paper figure rendering.
 
 For local Hugging Face MedSAM-backed HE segmentation only:
 
@@ -113,6 +132,21 @@ metrics, and an interactive Plotly HTML visualization. Use
 `--mesh-smoothing-sigma-um 0` to disable 3D smoothing for direct Marching Cubes
 output.
 
+Render an aligned 3D cell cloud as a browser-shareable Plotly HTML:
+
+```bash
+histoseg-3d render-cell-cloud \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --aligned-cells-parquet outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet \
+  --out-html outputs/polyp_3d_reconstruction/leiden_3d_cells.html \
+  --label-column leiden_1_0 \
+  --max-points 300000
+```
+
+If the aligned cell table does not exist yet, `render-cell-cloud` can project a
+merged AnnData first by replacing `--aligned-cells-parquet` with `--h5ad` and
+`--out-parquet`.
+
 ## HE Analysis Quickstart
 
 ```python
@@ -163,17 +197,40 @@ print(result.preview_png)
 print(len(result.contours))
 ```
 
+For Xenium transcript-defined niches such as GREM1-positive regions:
+
+```python
+from histoseg.contour import GeneTranscriptIsolineConfig, run_gene_transcript_isoline
+
+result = run_gene_transcript_isoline(
+    GeneTranscriptIsolineConfig(
+        xenium_root="/path/to/polyp",
+        out_dir="outputs/gene_isolines",
+        genes=("GREM1",),
+        sample_glob="A079-C-008_*",
+    )
+)
+print(result.run_log_csv)
+```
+
 ```bash
 histoseg-contour pattern1 \
   --clusters-csv clusters.csv \
   --cells-parquet cells.parquet \
   --out-dir outputs/pattern1 \
   --pattern1-clusters 10,23,19
+
+histoseg-contour gene-isoline \
+  --xenium-root polyp \
+  --sample-glob "A079-C-008_*" \
+  --genes GREM1,COL1A1 \
+  --out-dir outputs/gene_isolines
 ```
 
 Contour Analysis currently supports:
 
 - Pattern1 isoline contour generation from clustered cell coordinates
+- gene/transcript isoline contour generation from Xenium transcript tables
 - multi-structure contour partitioning
 - Xenium Explorer annotation exports
 - Hugging Face dataset helper workflows for Xenium-style inputs
@@ -194,6 +251,7 @@ HistoSeg workflows write reviewable artifacts such as:
 ## Documentation
 
 - [3D Reconstruction](https://histoseg.readthedocs.io/en/latest/3d_analysis.html)
+- [Polyp 24-gene 3D spatial modules tutorial](https://histoseg.readthedocs.io/en/latest/tutorials/polyp_24_gene_3d_spatial_modules.html)
 - [3D contour stack reconstruction tutorial](https://histoseg.readthedocs.io/en/latest/tutorials/3d_stack_reconstruction.html)
 - [3D contour soft alignment tutorial](https://histoseg.readthedocs.io/en/latest/tutorials/3d_soft_alignment.html)
 - [Contour Analysis](https://histoseg.readthedocs.io/en/latest/contour_analysis.html)

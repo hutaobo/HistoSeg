@@ -34,8 +34,23 @@ he = [
     "rasterio",
 ]
 threed = [
+    "anndata",
     "pyXenium @ git+https://github.com/hutaobo/pyXenium.git",
     "trimesh>=4.0.0",
+]
+viz = [
+    "pyvista>=0.43",
+    "imageio",
+]
+docs = [
+    "sphinx>=8",
+    "myst-nb",
+    "pydata-sphinx-theme>=0.16",
+    "sphinx-design",
+    "sphinx-copybutton",
+    "linkify-it-py",
+    "myst-parser",
+    "sphinx-rtd-theme",
 ]
 
 [project.scripts]

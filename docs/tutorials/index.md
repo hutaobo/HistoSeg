@@ -7,6 +7,14 @@ artifacts, and outputs in one place.
 :gutter: 2
 :class-container: link-grid
 
+:::{grid-item-card} Polyp 24-Gene 3D Spatial Modules
+:link: polyp_24_gene_3d_spatial_modules
+:link-type: doc
+
+Map a 24-gene starter panel onto a 32-slice polyp 3D reconstruction, extract
+GREM1 hotspot surfaces, quantify SDF distances, and cluster spatial modules.
+:::
+
 :::{grid-item-card} 3D Contour Stack Reconstruction
 :link: 3d_stack_reconstruction
 :link-type: doc
@@ -36,6 +44,7 @@ resulting preview outputs and exported files.
 :hidden:
 :maxdepth: 1
 
+polyp_24_gene_3d_spatial_modules
 3d_stack_reconstruction
 3d_soft_alignment
 pattern1_isoline

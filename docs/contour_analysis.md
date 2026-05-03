@@ -14,7 +14,7 @@ review-ready spatial structures rather than image-first segmentation masks.
 :::{div} hs-metadata
 <span>Input: cells with x/y coordinates</span>
 <span>Outputs: contours, previews, exports</span>
-<span>Supports Pattern1 and named structures</span>
+<span>Supports Pattern1, gene isolines, and named structures</span>
 :::
 
 ## When To Use It
@@ -22,6 +22,7 @@ review-ready spatial structures rather than image-first segmentation masks.
 Choose this workflow group when you want to:
 
 - extract Pattern1 isolines from clustered cell coordinates;
+- extract gene/transcript-defined isolines from Xenium transcript tables;
 - partition cells into multiple named structures with non-overlapping contours;
 - export Xenium Explorer-compatible review layers; or
 - analyze how generated structures touch, overlap, or enclose one another.
@@ -29,6 +30,7 @@ Choose this workflow group when you want to:
 ## Workflows
 
 - Pattern1 isoline contours from clustered cell coordinates.
+- Gene/transcript isoline contours from Xenium transcript tables.
 - Multi-structure contour partitioning.
 - Xenium Explorer annotation exports.
 - Hugging Face dataset helper workflows for Xenium-style public datasets.
@@ -46,6 +48,10 @@ Pattern1 and multi-structure contour workflows use:
 - Xenium Explorer-compatible GeoJSON/CSV exports for multi-structure contours.
 - `params.json`, summary CSVs, and metrics JSON files.
 
+Gene/transcript isolines use Xenium `transcripts.parquet` plus `cells.parquet`.
+Selected transcripts are adapted into the Pattern1 engine as the target class,
+with cell centroids providing the background.
+
 ## Pattern1 Python API
 
 ```python
@@ -59,6 +65,23 @@ cfg = Pattern1IsolineConfig(
     pattern1_clusters=(10, 23, 19, 27, 14, 20, 25, 26),
 )
 result = run_pattern1_isoline(cfg)
+```
+
+## Gene/Transcript Isoline Python API
+
+```python
+from histoseg.contour import GeneTranscriptIsolineConfig, run_gene_transcript_isoline
+
+result = run_gene_transcript_isoline(
+    GeneTranscriptIsolineConfig(
+        xenium_root="/path/to/polyp",
+        out_dir="outputs/gene_isolines",
+        genes=("GREM1", "COL1A1"),
+        sample_glob="A079-C-008_*",
+        qv_min=20,
+    )
+)
+print(result.run_log_csv)
 ```
 
 ## Multi-Structure Python API
@@ -127,6 +150,7 @@ pipeline:
 
 ```bash
 histoseg-contour pattern1 --clusters-csv clusters.csv --cells-parquet cells.parquet --out-dir outputs/p1 --pattern1-clusters 10,23,19
+histoseg-contour gene-isoline --xenium-root polyp --sample-glob "A079-C-008_*" --genes GREM1,COL1A1 --out-dir outputs/gene_isolines
 histoseg-contour multi-structure --clusters-csv clusters.csv --cells-parquet cells.parquet --out-dir outputs/ms --structures-json structures.json
 histoseg-contour boundary-network --boundary-csv group_boundary_overlap_filtered.csv --out-dir outputs/boundary_network
 histoseg-contour adjacency --contours-csv contours.csv --groupby structure --out-dir outputs/contour_adjacency

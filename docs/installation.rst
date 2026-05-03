@@ -19,13 +19,25 @@ Install HistoSeg from PyPI:
 Flagship 3D Extra
 -----------------
 
-3D Reconstruction uses GitHub ``pyXenium`` for Xenium slide IO and ``trimesh``
-for mesh export. Install the extra when you want the
-``histoseg-3d reconstruct-stack`` workflow:
+3D Reconstruction uses GitHub ``pyXenium`` for Xenium slide IO, ``anndata``
+for merged cell tables, and ``trimesh`` for mesh export. Install the extra
+when you want ``histoseg-3d reconstruct-stack``, ``project-cells``,
+``render-cell-cloud``, or ``discover-spatial-modules``:
 
 .. code-block:: console
 
     pip install -U "histoseg[threed]"
+
+Visualization And Docs Extras
+-----------------------------
+
+``render-cell-cloud`` writes Plotly HTML without requiring PyVista. PyVista is
+only needed for local static tutorial or publication figure rendering, such as
+the Polyp 24-gene hero images:
+
+.. code-block:: console
+
+    pip install -U "histoseg[threed,viz,docs]"
 
 Optional H&E Extra
 ------------------
@@ -52,8 +64,39 @@ Clone the repository and install it in editable mode:
 .. note::
 
    Install ``[threed]`` for the main 3D Xenium contour reconstruction workflow.
-   Add ``[he]`` when you need image-first H&E analysis with the MedSAM backend
-   available locally.
+   Add ``[viz,docs]`` when you need static PyVista figure rendering or local
+   documentation builds. Add ``[he]`` when you need image-first H&E analysis
+   with the MedSAM backend available locally.
+
+Conda Environments
+------------------
+
+The repository includes two environment files:
+
+.. code-block:: console
+
+    conda env create -f environment.yml
+    conda env create -f environment-viz.yml
+
+``environment.yml`` is the CPU/headless 3D analysis environment.
+``environment-viz.yml`` adds PyVista, VTK, and documentation dependencies for
+reproducing static tutorial figures.
+
+Docker Targets
+--------------
+
+The Dockerfile exposes separate production and visualization targets:
+
+.. code-block:: console
+
+    docker build --target core -t histoseg:core .
+    docker build --target viz -t histoseg:viz .
+
+``core`` installs ``histoseg[threed]`` for headless 3D analysis. ``viz`` adds
+Mesa/Xvfb system libraries and ``histoseg[viz,docs]`` so PyVista can render
+static figures without a desktop display. The Docker context ignores local
+large data products such as ``data/``, ``output/``, ``tmp/``, ``*.h5ad``, and
+``*.parquet``.
 
 Feature Groups
 --------------

@@ -1,0 +1,19 @@
+name: histoseg
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - numpy
+  - pandas
+  - pyarrow
+  - scipy
+  - scikit-image
+  - scikit-learn
+  - seaborn
+  - shapely
+  - matplotlib
+  - networkx
+  - anndata
+  - pip:
+      - -e .[threed]

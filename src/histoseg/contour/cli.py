@@ -8,6 +8,7 @@ from typing import Sequence
 
 from .boundary_network import BoundaryNetworkConfig, run_group_boundary_network
 from .contour_adjacency import ContourAdjacencyConfig, run_contour_adjacency
+from .gene_isoline import GeneTranscriptIsolineConfig, run_gene_transcript_isoline
 from .multi_structure import MultiStructureContourConfig, run_multi_structure_contours
 from .pattern1_isoline import Pattern1IsolineConfig, run_pattern1_isoline
 
@@ -30,6 +31,40 @@ def main(argv: Sequence[str] | None = None) -> None:
     pattern1.add_argument("--knn-k", type=int, default=30, help="KNN neighbors.")
     pattern1.add_argument("--smooth-sigma", type=float, default=5.0, help="Gaussian smoothing sigma.")
     pattern1.add_argument("--min-cells-inside", type=int, default=10, help="Minimum target cells per loop.")
+
+    gene = subparsers.add_parser(
+        "gene-isoline",
+        help="Generate gene/transcript isoline contours from Xenium transcript tables.",
+    )
+    gene.add_argument("--xenium-root", required=True, help="Folder containing Xenium sample folders.")
+    gene.add_argument("--out-dir", required=True, help="Output directory.")
+    gene.add_argument("--genes", required=True, help="Comma-separated gene/feature names, for example GREM1,COL1A1.")
+    gene.add_argument("--sample-glob", default="*", help="Glob used to discover sample folders.")
+    gene.add_argument("--xenium-output-glob", default="output-*", help="Glob for Xenium output folders below each sample.")
+    gene.add_argument("--qv-min", type=float, default=20, help="Minimum transcript QV.")
+    gene.add_argument("--min-transcripts", type=int, default=10, help="Minimum transcripts required for a gene.")
+    gene.add_argument("--grid-n", type=int, default=1200, help="Square grid size.")
+    gene.add_argument("--knn-k", type=int, default=30, help="KNN neighbors.")
+    gene.add_argument("--smooth-sigma", type=float, default=5.0, help="Gaussian smoothing sigma.")
+    gene.add_argument("--min-cells-inside", type=int, default=10, help="Minimum target transcripts per loop.")
+    gene.add_argument("--alpha", type=float, default=0.05, help="Alpha-shape parameter for tissue boundary generation.")
+    gene.add_argument("--xenium-pixel-size-um", type=float, default=0.2125, help="Microns per Xenium Explorer pixel.")
+    gene.add_argument(
+        "--compute-confidence-score",
+        action="store_true",
+        help="Compute the pseudo-cluster confidence score for each gene.",
+    )
+    gene.add_argument(
+        "--keep-prepared-inputs",
+        action="store_true",
+        help="Keep generated pseudo cells.parquet, clusters.csv, and tissue_boundary.csv inputs.",
+    )
+    gene.add_argument(
+        "--no-synth-bg",
+        action="store_true",
+        help="Disable synthetic background points in the underlying Pattern1 run.",
+    )
+    gene.add_argument("--fail-fast", action="store_true", help="Stop on the first sample/gene error.")
 
     multi = subparsers.add_parser("multi-structure", help="Generate multi-structure contours.")
     multi.add_argument("--clusters-csv", required=True, help="GraphClust clusters.csv path.")
@@ -136,6 +171,28 @@ def main(argv: Sequence[str] | None = None) -> None:
                 knn_k=args.knn_k,
                 smooth_sigma=args.smooth_sigma,
                 min_cells_inside=args.min_cells_inside,
+            )
+        )
+    elif args.command == "gene-isoline":
+        result = run_gene_transcript_isoline(
+            GeneTranscriptIsolineConfig(
+                xenium_root=args.xenium_root,
+                out_dir=args.out_dir,
+                genes=_parse_csv_list(args.genes),
+                sample_glob=args.sample_glob,
+                xenium_output_glob=args.xenium_output_glob,
+                qv_min=args.qv_min,
+                min_transcripts=args.min_transcripts,
+                grid_n=args.grid_n,
+                knn_k=args.knn_k,
+                smooth_sigma=args.smooth_sigma,
+                min_cells_inside=args.min_cells_inside,
+                use_synth_bg=not args.no_synth_bg,
+                alpha=args.alpha,
+                xenium_pixel_size_um=args.xenium_pixel_size_um,
+                compute_confidence_score=args.compute_confidence_score,
+                keep_prepared_inputs=args.keep_prepared_inputs,
+                fail_fast=args.fail_fast,
             )
         )
     elif args.command == "multi-structure":

@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.interpolate import RBFInterpolator
+from scipy.spatial import cKDTree
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, mapping, shape
 from shapely.ops import transform as shapely_transform
 from shapely.ops import unary_union
@@ -43,9 +44,16 @@ class ThreeDContourReconstructionConfig:
     max_landmark_distance_um: float = 180.0
     landmarks_per_structure: int | None = 260
     diagnostic_structure_landmarks: int | None = 620
+    landmark_candidate_count: int = 8
+    landmark_candidate_spacing_um: float | None = None
+    landmark_normal_weight_um: float = 0.0
+    landmark_normal_step_um: float | None = None
     rbf_kernel: str = "thin_plate_spline"
     rbf_neighbors: int | None = 96
     rbf_smoothing: float = 1e-4
+    topology_grid_size: int = 24
+    topology_min_area_ratio: float = 0.5
+    topology_max_area_ratio: float = 2.0
     diagnostic_structure: str | None = "Structure 5"
     dpi: int = 200
     save_preview_png: bool = True
@@ -91,6 +99,13 @@ class _TPSModel:
         return np.asarray(xy, dtype=float) + self.displacement(xy)
 
 
+@dataclass(frozen=True)
+class _BoundaryCandidates:
+    xy: np.ndarray
+    normals: np.ndarray
+    tree: cKDTree
+
+
 def run_3d_contour_reconstruction(
     cfg: ThreeDContourReconstructionConfig,
 ) -> ThreeDContourReconstructionResult:
@@ -126,6 +141,7 @@ def run_3d_contour_reconstruction(
         model,
         cfg.group_property,
     )
+    topology = _check_tps_topology(moving_records, model, cfg)
 
     soft_geojson_path = out_dir / "soft_aligned_contours.geojson"
     soft_geojson_path.write_text(json.dumps(soft_geojson, ensure_ascii=False), encoding="utf-8")
@@ -169,6 +185,7 @@ def run_3d_contour_reconstruction(
         metrics=metrics,
         residuals=residuals,
         geometry_status=geometry_status,
+        topology=topology,
         model=model,
         out_dir=out_dir,
         soft_geojson_path=soft_geojson_path,
@@ -210,6 +227,23 @@ def _validate_config(cfg: ThreeDContourReconstructionConfig) -> None:
         raise ValueError("rbf_neighbors must be at least 3 when provided.")
     if cfg.rbf_smoothing < 0:
         raise ValueError("rbf_smoothing must be non-negative.")
+    if cfg.landmark_candidate_count < 1:
+        raise ValueError("landmark_candidate_count must be at least 1.")
+    if (
+        cfg.landmark_candidate_spacing_um is not None
+        and cfg.landmark_candidate_spacing_um <= 0
+    ):
+        raise ValueError("landmark_candidate_spacing_um must be positive when provided.")
+    if cfg.landmark_normal_weight_um < 0:
+        raise ValueError("landmark_normal_weight_um must be non-negative.")
+    if cfg.landmark_normal_step_um is not None and cfg.landmark_normal_step_um <= 0:
+        raise ValueError("landmark_normal_step_um must be positive when provided.")
+    if cfg.topology_grid_size < 0:
+        raise ValueError("topology_grid_size must be non-negative.")
+    if cfg.topology_min_area_ratio <= 0:
+        raise ValueError("topology_min_area_ratio must be greater than 0.")
+    if cfg.topology_max_area_ratio <= cfg.topology_min_area_ratio:
+        raise ValueError("topology_max_area_ratio must be greater than topology_min_area_ratio.")
 
 
 def _read_geojson(path: Path) -> dict[str, Any]:
@@ -254,6 +288,11 @@ def _generate_landmarks(
     moving_records: list[_FeatureRecord],
     cfg: ThreeDContourReconstructionConfig,
 ) -> pd.DataFrame:
+    if cfg.landmark_normal_weight_um > 0:
+        landmarks = _generate_normal_aware_landmarks(fixed_records, moving_records, cfg)
+        if len(landmarks) >= 3:
+            return _limit_landmarks_per_group(landmarks, cfg)
+
     rows: list[dict[str, float | str]] = []
     fixed_by_group = _union_by_group(fixed_records)
     moving_by_group = _union_by_group(moving_records)
@@ -280,12 +319,181 @@ def _generate_landmarks(
                     "dx": float(dst.x - src.x),
                     "dy": float(dst.y - src.y),
                     "source_distance_um": source_distance,
+                    "match_cost_um": source_distance,
+                    "normal_dot_abs": math.nan,
+                    "match_method": "nearest_projection",
                 }
             )
     landmarks = pd.DataFrame(rows)
     if landmarks.empty:
         return landmarks
     return _limit_landmarks_per_group(landmarks, cfg)
+
+
+def _generate_normal_aware_landmarks(
+    fixed_records: list[_FeatureRecord],
+    moving_records: list[_FeatureRecord],
+    cfg: ThreeDContourReconstructionConfig,
+) -> pd.DataFrame:
+    rows: list[dict[str, float | str]] = []
+    fixed_by_group = _union_by_group(fixed_records)
+    moving_by_group = _union_by_group(moving_records)
+    candidate_spacing = cfg.landmark_candidate_spacing_um
+    if candidate_spacing is None:
+        candidate_spacing = max(min(cfg.sampling_distance_um / 2.0, 25.0), 1e-6)
+
+    for group in sorted(set(fixed_by_group) & set(moving_by_group)):
+        fixed_boundary = fixed_by_group[group].boundary
+        moving_boundary = moving_by_group[group].boundary
+        if fixed_boundary.is_empty or moving_boundary.is_empty:
+            continue
+        fixed_candidates = _sample_boundary_candidates(
+            fixed_boundary,
+            spacing_um=candidate_spacing,
+            normal_step_um=cfg.landmark_normal_step_um or max(candidate_spacing / 2.0, 1e-6),
+        )
+        if fixed_candidates is None:
+            continue
+        for src_xy, src_normal in _iter_boundary_samples(
+            moving_boundary,
+            spacing_um=cfg.sampling_distance_um,
+            normal_step_um=cfg.landmark_normal_step_um or max(cfg.sampling_distance_um / 2.0, 1e-6),
+        ):
+            match = _match_normal_aware_candidate(src_xy, src_normal, fixed_candidates, cfg)
+            if match is None:
+                continue
+            dst_xy, distance, cost, normal_dot_abs, method = match
+            if distance > cfg.max_landmark_distance_um:
+                continue
+            rows.append(
+                {
+                    "kind": "boundary",
+                    "structure": group,
+                    "src_x": float(src_xy[0]),
+                    "src_y": float(src_xy[1]),
+                    "dst_x": float(dst_xy[0]),
+                    "dst_y": float(dst_xy[1]),
+                    "dx": float(dst_xy[0] - src_xy[0]),
+                    "dy": float(dst_xy[1] - src_xy[1]),
+                    "source_distance_um": float(distance),
+                    "match_cost_um": float(cost),
+                    "normal_dot_abs": float(normal_dot_abs) if np.isfinite(normal_dot_abs) else math.nan,
+                    "match_method": method,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _sample_boundary_candidates(
+    boundary: Any,
+    *,
+    spacing_um: float,
+    normal_step_um: float,
+) -> _BoundaryCandidates | None:
+    xy_values: list[np.ndarray] = []
+    normal_values: list[np.ndarray] = []
+    for xy, normal in _iter_boundary_samples(
+        boundary,
+        spacing_um=spacing_um,
+        normal_step_um=normal_step_um,
+    ):
+        xy_values.append(xy)
+        normal_values.append(normal)
+    if not xy_values:
+        return None
+    xy = np.vstack(xy_values).astype(float)
+    normals = np.vstack(normal_values).astype(float)
+    return _BoundaryCandidates(xy=xy, normals=normals, tree=cKDTree(xy))
+
+
+def _iter_boundary_samples(
+    boundary: Any,
+    *,
+    spacing_um: float,
+    normal_step_um: float,
+) -> Iterable[tuple[np.ndarray, np.ndarray]]:
+    for line in _iter_line_parts(boundary):
+        length = float(line.length)
+        if length <= 0:
+            continue
+        distances = np.arange(0.0, length, max(spacing_um, 1e-6))
+        if len(distances) == 0:
+            distances = np.array([0.0])
+        for distance in distances:
+            point = line.interpolate(float(distance))
+            normal = _line_normal(line, float(distance), normal_step_um)
+            yield np.array([float(point.x), float(point.y)], dtype=float), normal
+
+
+def _iter_line_parts(geom: Any) -> Iterable[Any]:
+    if geom.is_empty:
+        return
+    if geom.geom_type in {"LineString", "LinearRing"}:
+        yield geom
+        return
+    if hasattr(geom, "geoms"):
+        for part in geom.geoms:
+            yield from _iter_line_parts(part)
+
+
+def _line_normal(line: Any, distance: float, step: float) -> np.ndarray:
+    length = float(line.length)
+    if length <= 0:
+        return np.array([math.nan, math.nan], dtype=float)
+    coords = list(line.coords)
+    closed = len(coords) > 2 and np.allclose(coords[0], coords[-1])
+    if closed:
+        d0 = (distance - step) % length
+        d1 = (distance + step) % length
+    else:
+        d0 = min(max(distance - step, 0.0), length)
+        d1 = min(max(distance + step, 0.0), length)
+    p0 = line.interpolate(float(d0))
+    p1 = line.interpolate(float(d1))
+    tangent = np.array([float(p1.x - p0.x), float(p1.y - p0.y)], dtype=float)
+    norm = float(np.linalg.norm(tangent))
+    if norm <= 1e-12:
+        return np.array([math.nan, math.nan], dtype=float)
+    tangent /= norm
+    return np.array([-tangent[1], tangent[0]], dtype=float)
+
+
+def _match_normal_aware_candidate(
+    src_xy: np.ndarray,
+    src_normal: np.ndarray,
+    fixed_candidates: _BoundaryCandidates,
+    cfg: ThreeDContourReconstructionConfig,
+) -> tuple[np.ndarray, float, float, float, str] | None:
+    k = min(int(cfg.landmark_candidate_count), len(fixed_candidates.xy))
+    distances, indexes = fixed_candidates.tree.query(src_xy, k=k)
+    distances = np.atleast_1d(distances).astype(float)
+    indexes = np.atleast_1d(indexes).astype(int)
+    finite = np.isfinite(distances) & (indexes >= 0) & (indexes < len(fixed_candidates.xy))
+    if not np.any(finite):
+        return None
+
+    candidate_distances = distances[finite]
+    candidate_indexes = indexes[finite]
+    candidate_normals = fixed_candidates.normals[candidate_indexes]
+    costs = candidate_distances.copy()
+    normal_dots = np.full(len(candidate_indexes), math.nan, dtype=float)
+    if np.all(np.isfinite(src_normal)):
+        valid_normals = np.isfinite(candidate_normals).all(axis=1)
+        if np.any(valid_normals):
+            dots = np.abs(candidate_normals[valid_normals] @ src_normal)
+            dots = np.clip(dots, 0.0, 1.0)
+            normal_dots[valid_normals] = dots
+            costs[valid_normals] += cfg.landmark_normal_weight_um * (1.0 - dots)
+
+    best_position = int(np.argmin(costs))
+    best_index = int(candidate_indexes[best_position])
+    return (
+        fixed_candidates.xy[best_index],
+        float(candidate_distances[best_position]),
+        float(costs[best_position]),
+        float(normal_dots[best_position]),
+        "normal_aware_kdtree",
+    )
 
 
 def _limit_landmarks_per_group(
@@ -367,6 +575,112 @@ def _fit_tps_model(
         neighbors=neighbors,
     )
     return _TPSModel(interpolator=interpolator, center_xy=center, scale=scale)
+
+
+def _check_tps_topology(
+    moving_records: list[_FeatureRecord],
+    model: Any,
+    cfg: ThreeDContourReconstructionConfig,
+) -> dict[str, Any]:
+    if cfg.topology_grid_size <= 1:
+        return {
+            "enabled": False,
+            "valid": True,
+            "reason": "disabled",
+        }
+    moving_union = unary_union([record.geometry for record in moving_records])
+    if moving_union.is_empty:
+        return {
+            "enabled": True,
+            "valid": False,
+            "reason": "empty_moving_geometry",
+        }
+
+    minx, miny, maxx, maxy = moving_union.bounds
+    width = max(maxx - minx, 1e-9)
+    height = max(maxy - miny, 1e-9)
+    x_values = np.linspace(minx, maxx, int(cfg.topology_grid_size))
+    y_values = np.linspace(miny, maxy, int(cfg.topology_grid_size))
+    xx, yy = np.meshgrid(x_values, y_values)
+    original = np.column_stack([xx.ravel(), yy.ravel()])
+    warped = np.asarray(model.warp(original), dtype=float).reshape(xx.shape + (2,))
+    warped_x = warped[:, :, 0]
+    warped_y = warped[:, :, 1]
+
+    base_area = (width / (len(x_values) - 1)) * (height / (len(y_values) - 1))
+    ratios: list[float] = []
+    folded = 0
+    compressed = 0
+    expanded = 0
+    checked = 0
+    for y_index in range(len(y_values) - 1):
+        for x_index in range(len(x_values) - 1):
+            center_x = float((x_values[x_index] + x_values[x_index + 1]) / 2.0)
+            center_y = float((y_values[y_index] + y_values[y_index + 1]) / 2.0)
+            if not _geometry_contains_xy(moving_union, center_x, center_y):
+                continue
+            polygon_xy = np.array(
+                [
+                    [warped_x[y_index, x_index], warped_y[y_index, x_index]],
+                    [warped_x[y_index, x_index + 1], warped_y[y_index, x_index + 1]],
+                    [warped_x[y_index + 1, x_index + 1], warped_y[y_index + 1, x_index + 1]],
+                    [warped_x[y_index + 1, x_index], warped_y[y_index + 1, x_index]],
+                ],
+                dtype=float,
+            )
+            signed_area = _signed_polygon_area(polygon_xy)
+            ratio = signed_area / base_area
+            ratios.append(float(ratio))
+            checked += 1
+            if ratio <= 0:
+                folded += 1
+            if ratio < cfg.topology_min_area_ratio:
+                compressed += 1
+            if ratio > cfg.topology_max_area_ratio:
+                expanded += 1
+
+    if checked == 0:
+        return {
+            "enabled": True,
+            "valid": True,
+            "reason": "no_grid_cells_inside_geometry",
+            "grid_size": int(cfg.topology_grid_size),
+            "checked_cells": 0,
+        }
+
+    ratio_array = np.asarray(ratios, dtype=float)
+    valid = folded == 0 and compressed == 0 and expanded == 0
+    return {
+        "enabled": True,
+        "valid": bool(valid),
+        "grid_size": int(cfg.topology_grid_size),
+        "checked_cells": int(checked),
+        "folded_cell_count": int(folded),
+        "compressed_cell_count": int(compressed),
+        "expanded_cell_count": int(expanded),
+        "min_area_ratio": float(np.min(ratio_array)),
+        "median_area_ratio": float(np.median(ratio_array)),
+        "max_area_ratio": float(np.max(ratio_array)),
+        "min_area_ratio_threshold": float(cfg.topology_min_area_ratio),
+        "max_area_ratio_threshold": float(cfg.topology_max_area_ratio),
+    }
+
+
+def _geometry_contains_xy(geom: Any, x: float, y: float) -> bool:
+    try:
+        from shapely import contains_xy
+
+        return bool(contains_xy(geom, x, y))
+    except Exception:
+        from shapely.geometry import Point
+
+        return bool(geom.contains(Point(x, y)))
+
+
+def _signed_polygon_area(xy: np.ndarray) -> float:
+    x = xy[:, 0]
+    y = xy[:, 1]
+    return float(0.5 * np.sum(x * np.roll(y, -1) - y * np.roll(x, -1)))
 
 
 def _warp_geojson(
@@ -808,6 +1122,7 @@ def _build_summary(
     metrics: dict[str, Any],
     residuals: pd.DataFrame,
     geometry_status: Counter[str],
+    topology: dict[str, Any],
     model: _TPSModel,
     out_dir: Path,
     soft_geojson_path: Path,
@@ -832,11 +1147,27 @@ def _build_summary(
         "method": {
             "type": "local_tps_rbf_displacement_field",
             "source": "hard-aligned moving boundary landmarks",
-            "target": "nearest fixed boundary landmarks by matching structure",
+            "target": (
+                "normal-aware fixed boundary candidates by matching structure"
+                if cfg.landmark_normal_weight_um > 0
+                else "nearest fixed boundary landmarks by matching structure"
+            ),
             "group_property": cfg.group_property,
+            "landmark_matching": (
+                "normal_aware_kdtree"
+                if cfg.landmark_normal_weight_um > 0
+                else "nearest_projection"
+            ),
+            "landmark_candidate_count": cfg.landmark_candidate_count,
+            "landmark_candidate_spacing_um": cfg.landmark_candidate_spacing_um,
+            "landmark_normal_weight_um": cfg.landmark_normal_weight_um,
+            "landmark_normal_step_um": cfg.landmark_normal_step_um,
             "rbf_kernel": cfg.rbf_kernel,
             "rbf_neighbors": cfg.rbf_neighbors,
             "rbf_smoothing": cfg.rbf_smoothing,
+            "topology_grid_size": cfg.topology_grid_size,
+            "topology_min_area_ratio": cfg.topology_min_area_ratio,
+            "topology_max_area_ratio": cfg.topology_max_area_ratio,
             "landmarks_per_structure": cfg.landmarks_per_structure,
             "diagnostic_structure": cfg.diagnostic_structure,
             "diagnostic_structure_landmarks": cfg.diagnostic_structure_landmarks,
@@ -860,6 +1191,7 @@ def _build_summary(
             "union_iou_soft_after": float(metrics["union_iou_soft_after"]),
             "delta_union_iou_soft": float(metrics["delta_union_iou_soft"]),
             "geometry_status_counts": dict(geometry_status),
+            "topology_check": topology,
             "displacement_magnitude_um": _distribution_summary(displacement),
             "post_warp_residual_um": _distribution_summary(residual_um),
             "per_structure": per_structure,

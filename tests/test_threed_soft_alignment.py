@@ -6,6 +6,7 @@ from shapely.geometry import box, mapping, shape
 
 from histoseg.threed import ThreeDContourReconstructionConfig, run_3d_contour_reconstruction
 from histoseg.threed.cli import main
+from histoseg.threed.soft_alignment import _FeatureRecord, _check_tps_topology
 
 
 def test_3d_soft_alignment_preserves_geojson_properties_and_improves_iou(tmp_path):
@@ -46,6 +47,60 @@ def test_3d_soft_alignment_preserves_geojson_properties_and_improves_iou(tmp_pat
     )
     assert summary["landmarks"]["boundary_landmark_count"] > 0
     assert summary["landmarks"]["zero_anchor_count"] == 8
+    assert summary["qc"]["topology_check"]["valid"] is True
+    assert summary["qc"]["topology_check"]["checked_cells"] > 0
+
+
+def test_3d_soft_alignment_can_use_normal_aware_landmark_matching(tmp_path):
+    fixed_path, moving_path = _write_pair(tmp_path)
+
+    result = run_3d_contour_reconstruction(
+        ThreeDContourReconstructionConfig(
+            fixed_geojson=fixed_path,
+            moving_hard_aligned_geojson=moving_path,
+            out_dir=tmp_path / "normal_aware",
+            sampling_distance_um=5.0,
+            max_landmark_distance_um=3.0,
+            landmark_normal_weight_um=10.0,
+            landmark_candidate_count=4,
+            rbf_neighbors=None,
+            save_preview_png=False,
+        )
+    )
+
+    landmarks = result.landmarks_csv.read_text(encoding="utf-8")
+    summary = json.loads(result.summary_json.read_text(encoding="utf-8"))
+    assert "normal_aware_kdtree" in landmarks
+    assert summary["method"]["landmark_matching"] == "normal_aware_kdtree"
+    assert summary["qc"]["topology_check"]["valid"] is True
+
+
+def test_tps_topology_check_rejects_grid_fold():
+    geom = box(0, 0, 10, 10)
+    record = _FeatureRecord(
+        feature={"type": "Feature", "properties": {"structure": "Structure 1"}},
+        group="Structure 1",
+        geometry=geom,
+    )
+
+    class FlipModel:
+        def warp(self, xy):
+            arr = xy.copy()
+            arr[:, 0] *= -1.0
+            return arr
+
+    topology = _check_tps_topology(
+        [record],
+        FlipModel(),
+        ThreeDContourReconstructionConfig(
+            fixed_geojson="fixed.geojson",
+            moving_hard_aligned_geojson="moving.geojson",
+            topology_grid_size=6,
+        ),
+    )
+
+    assert topology["valid"] is False
+    assert topology["folded_cell_count"] > 0
 
 
 def test_3d_cli_help_exits_successfully(capsys):
