@@ -9,7 +9,7 @@
   <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/License-PolyForm--Noncommercial%201.0.0-blue.svg"></a>
 </p>
 
-**3D Xenium contour reconstruction toolkit with H&E image analysis and 2D spatial contour workflows.**
+**HistoSeg: A robust framework for 3D reconstruction of tissue architecture via Signed Distance Fields (SDFs).**
 
 </div>
 
@@ -257,6 +257,49 @@ HistoSeg workflows write reviewable artifacts such as:
 - [Contour Analysis](https://histoseg.readthedocs.io/en/latest/contour_analysis.html)
 - [HE Analysis](https://histoseg.readthedocs.io/en/latest/he_analysis.html)
 - [API Reference](https://histoseg.readthedocs.io/en/latest/api/index.html)
+
+## Scientific Foundation & Reproducibility
+
+HistoSeg's 3D methods are documented as an implementation-faithful manuscript
+draft in [Online Methods: SDF Quantification And Topology-Aware Alignment](docs/manuscripts/histoseg_online_methods_sdf_alignment.md).
+The draft describes the exact anisotropic SDF contract used by the package:
+`scipy.ndimage.distance_transform_edt(..., sampling=(z_um, y_um, x_um))`,
+negative distances inside structure masks, and positive distances outside.
+
+The manuscript figure roadmap is maintained in
+[docs/manuscripts/figure_plan.md](docs/manuscripts/figure_plan.md). It defines
+the proof target for workflow infrastructure, SDF robustness, and the 32-slice
+polyp biological discovery case. Users can recreate the visualization-oriented
+outputs locally with:
+
+```bash
+pip install -U "histoseg[threed,viz]"
+```
+
+or with the reproducible viz environment:
+
+```bash
+conda env create -f environment-viz.yml
+docker build --target viz -t histoseg:viz .
+```
+
+See [reproducibility/README.md](reproducibility/README.md) for the paper
+environment, tutorial artifact map, and alignment-hash provenance checks.
+The local wrapper `python reproducibility/run_paper_pipeline.py` regenerates
+the paper-facing cell-cloud HTML and spatial-module clustermaps from the
+validated 32-slice polyp paths and writes `reproducibility/results_manifest.json`.
+
+Citation placeholder for the HistoSeg methods paper:
+
+```bibtex
+@article{histoseg_method_paper,
+  title   = {HistoSeg: robust 3D reconstruction of tissue architecture from multi-slice spatial transcriptomics},
+  author  = {Hu, Taobo and HistoSeg contributors},
+  journal = {Manuscript in preparation},
+  year    = {2026},
+  note    = {Zenodo DOI pending}
+}
+```
 
 ## License
 

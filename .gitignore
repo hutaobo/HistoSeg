@@ -118,3 +118,7 @@ ENV/
 /docs/patent_figures/
 /docs/patent_package/
 
+# Local paper reproduction outputs.
+/reproducibility/results/
+/reproducibility/results_manifest.json
+
