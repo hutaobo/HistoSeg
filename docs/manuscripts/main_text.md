@@ -13,11 +13,70 @@ multi-slice spatial transcriptomics tissue architecture
 
 ## Abstract
 
-[To be written after the Results section is finalized.]
+Spatial transcriptomics is typically analyzed as a set of two-dimensional
+fields, even when tissue architecture is inherently three-dimensional.
+HistoSeg reconstructs ordered multi-slice Xenium data into auditable 3D tissue
+objects by combining topology-aware contour alignment, deterministic cell-cloud
+projection and physically sampled signed-distance fields (SDFs). SDF metrics
+are computed directly from 3D structure masks with anisotropic voxel spacing,
+enabling stable gene-structure quantification across sparse slice sampling. In
+synthetic validation, increasing \(z\)-spacing tenfold changed fraction-inside
+summaries by at most 0.248 percentage points and median signed distance by at
+most 0.566 \(\mu m\). Applied to a 32-slice polyp stack with 2,785,128 aligned
+cells, HistoSeg resolved marker-supported stromal-immune, epithelial and
+macrophage/perivascular-associated compartments, including a GREM1-associated
+Structure 5 niche.
 
 ## Introduction
 
-[To be written after the Results claims and figure panels are finalized.]
+Spatial transcriptomics has made it possible to profile gene expression in
+histological context, but most computational workflows still treat each tissue
+section as a self-contained two-dimensional plane. This is a practical
+simplification rather than a biological truth. Epithelial folds, stromal
+interfaces, vascular tracts and immune niches extend through depth, and their
+interpretation can change when a marker is viewed as an isolated 2D signal
+instead of as part of a 3D anatomical neighborhood. Multi-slice assays therefore
+create an opportunity: if serial sections can be registered, quantified and
+audited in physical coordinates, spatial transcriptomics can begin to describe
+tissue architecture as a volume rather than as a gallery of adjacent images.
+
+This opportunity is technically difficult. Spatial transcriptomics slices are
+sparse along the \(z\)-axis relative to their in-plane resolution, and
+section-to-section deformation can be large enough that simple stacking
+produces misleading geometry. Registration errors are especially harmful when
+they are propagated into downstream gene-structure statistics: a visually
+plausible surface can still assign a hotspot to the wrong tissue compartment,
+and a missing or empty structure can silently become a false distance. A
+methods framework for 3D spatial transcriptomics must therefore do more than
+render a volume. It must preserve slice provenance, guard against topological
+fold-over, expose its alignment state, and define gene-structure association in
+physical units that remain interpretable under anisotropic sampling.
+
+HistoSeg addresses this problem by treating 3D reconstruction as a set of
+explicit contracts. Ordered 2D contours are aligned with conservative
+hard-alignment and optional thin-plate spline soft-alignment steps, each
+accepted only when objective geometry and topology checks pass. Accepted
+contours define a stack manifest that anchors downstream cell-cloud projection,
+surface visualization and gene-structure quantification. For quantification,
+HistoSeg rasterizes aligned contours into 3D structure masks and computes
+signed-distance fields using `scipy.ndimage.distance_transform_edt` with
+physical sampling `(z_um, y_um, x_um)`. Distances are negative inside a
+structure, positive outside it, and undefined empty-mask cases are reported as
+NaN summaries with zero inside/touching fractions rather than as hidden
+failures.
+
+Here we describe the HistoSeg 3D workflow and validate its core SDF
+quantification contract. We first show how topology-aware alignment and
+manifest-based provenance convert a serial Xenium stack into an auditable 3D
+analysis object. We then demonstrate that the implemented SDF metrics have
+stable behavior in unit-scale truth tables, empty-mask edge cases and a
+synthetic anisotropy sweep. Finally, we apply the workflow to a 32-slice polyp
+dataset containing 2,785,128 aligned cells and a 24-gene marker panel. The
+analysis resolves interpretable 3D compartments, including a mixed
+stromal-immune Structure 5 niche with embedded GREM1, fibroblast, extracellular
+matrix, T-cell and B-cell marker signals. These results position HistoSeg as a
+reproducible foundation for moving spatial transcriptomics analysis from
+section-level visualization toward volumetric tissue architecture.
 
 ## Results
 
@@ -224,7 +283,8 @@ The implementation-faithful Online Methods draft is maintained in
 
 ## Figure Legends
 
-[To be written after final figure assembly.]
+The current draft legends are maintained in
+`docs/manuscripts/figure_legends.md`.
 
 ## References
 
