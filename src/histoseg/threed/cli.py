@@ -74,6 +74,30 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="Landmark cap for the diagnostic structure. Use 0 to use the regular cap.",
     )
     reconstruct.add_argument(
+        "--landmark-candidate-count",
+        type=int,
+        default=8,
+        help="K nearest fixed-boundary candidates for normal-aware landmark matching.",
+    )
+    reconstruct.add_argument(
+        "--landmark-candidate-spacing-um",
+        type=float,
+        default=None,
+        help="Fixed-boundary candidate sampling interval. Defaults to a conservative auto value.",
+    )
+    reconstruct.add_argument(
+        "--landmark-normal-weight-um",
+        type=float,
+        default=0.0,
+        help="Normal-alignment penalty weight. Use 0 for legacy nearest-projection matching.",
+    )
+    reconstruct.add_argument(
+        "--landmark-normal-step-um",
+        type=float,
+        default=None,
+        help="Arc-length step used to estimate boundary normals. Defaults to an auto value.",
+    )
+    reconstruct.add_argument(
         "--rbf-kernel",
         default="thin_plate_spline",
         help="SciPy RBFInterpolator kernel.",
@@ -89,6 +113,24 @@ def main(argv: Sequence[str] | None = None) -> None:
         type=float,
         default=1e-4,
         help="RBF smoothing parameter.",
+    )
+    reconstruct.add_argument(
+        "--topology-grid-size",
+        type=int,
+        default=24,
+        help="Sparse grid size for TPS topology checks. Use 0 to disable.",
+    )
+    reconstruct.add_argument(
+        "--topology-min-area-ratio",
+        type=float,
+        default=0.5,
+        help="Reject soft TPS when any checked grid cell shrinks below this area ratio.",
+    )
+    reconstruct.add_argument(
+        "--topology-max-area-ratio",
+        type=float,
+        default=2.0,
+        help="Reject soft TPS when any checked grid cell expands above this area ratio.",
     )
     reconstruct.add_argument(
         "--diagnostic-structure",
@@ -185,8 +227,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     stack.add_argument("--landmarks-per-structure", type=int, default=260)
     stack.add_argument("--diagnostic-structure-landmarks", type=int, default=620)
+    stack.add_argument("--landmark-candidate-count", type=int, default=8)
+    stack.add_argument("--landmark-candidate-spacing-um", type=float, default=None)
+    stack.add_argument("--landmark-normal-weight-um", type=float, default=0.0)
+    stack.add_argument("--landmark-normal-step-um", type=float, default=None)
     stack.add_argument("--rbf-neighbors", type=int, default=96)
     stack.add_argument("--rbf-smoothing", type=float, default=1e-4)
+    stack.add_argument("--topology-grid-size", type=int, default=24)
+    stack.add_argument("--topology-min-area-ratio", type=float, default=0.5)
+    stack.add_argument("--topology-max-area-ratio", type=float, default=2.0)
     stack.add_argument("--diagnostic-structure", default="Structure 5")
     stack.add_argument("--point-sample-distance-um", type=float, default=80.0)
     stack.add_argument("--voxel-size-um", type=float, default=80.0)
@@ -305,9 +354,16 @@ def main(argv: Sequence[str] | None = None) -> None:
                 max_landmark_distance_um=args.max_landmark_distance_um,
                 landmarks_per_structure=args.landmarks_per_structure or None,
                 diagnostic_structure_landmarks=args.diagnostic_structure_landmarks or None,
+                landmark_candidate_count=args.landmark_candidate_count,
+                landmark_candidate_spacing_um=args.landmark_candidate_spacing_um,
+                landmark_normal_weight_um=args.landmark_normal_weight_um,
+                landmark_normal_step_um=args.landmark_normal_step_um,
                 rbf_kernel=args.rbf_kernel,
                 rbf_neighbors=args.rbf_neighbors or None,
                 rbf_smoothing=args.rbf_smoothing,
+                topology_grid_size=args.topology_grid_size,
+                topology_min_area_ratio=args.topology_min_area_ratio,
+                topology_max_area_ratio=args.topology_max_area_ratio,
                 diagnostic_structure=args.diagnostic_structure or None,
                 dpi=args.dpi,
                 save_preview_png=not args.no_preview,
@@ -431,8 +487,15 @@ def main(argv: Sequence[str] | None = None) -> None:
                 max_landmark_distance_um=args.max_landmark_distance_um,
                 landmarks_per_structure=args.landmarks_per_structure or None,
                 diagnostic_structure_landmarks=args.diagnostic_structure_landmarks or None,
+                landmark_candidate_count=args.landmark_candidate_count,
+                landmark_candidate_spacing_um=args.landmark_candidate_spacing_um,
+                landmark_normal_weight_um=args.landmark_normal_weight_um,
+                landmark_normal_step_um=args.landmark_normal_step_um,
                 rbf_neighbors=args.rbf_neighbors or None,
                 rbf_smoothing=args.rbf_smoothing,
+                topology_grid_size=args.topology_grid_size,
+                topology_min_area_ratio=args.topology_min_area_ratio,
+                topology_max_area_ratio=args.topology_max_area_ratio,
                 diagnostic_structure=args.diagnostic_structure or None,
                 save_alignment_preview_png=not args.no_alignment_preview,
                 point_sample_distance_um=args.point_sample_distance_um,

@@ -87,8 +87,15 @@ class ThreeDStackReconstructionConfig:
     max_landmark_distance_um: float = 180.0
     landmarks_per_structure: int | None = 260
     diagnostic_structure_landmarks: int | None = 620
+    landmark_candidate_count: int = 8
+    landmark_candidate_spacing_um: float | None = None
+    landmark_normal_weight_um: float = 0.0
+    landmark_normal_step_um: float | None = None
     rbf_neighbors: int | None = 96
     rbf_smoothing: float = 1e-4
+    topology_grid_size: int = 24
+    topology_min_area_ratio: float = 0.5
+    topology_max_area_ratio: float = 2.0
     diagnostic_structure: str | None = "Structure 5"
     save_alignment_preview_png: bool = True
     point_sample_distance_um: float = 80.0
@@ -232,8 +239,15 @@ def run_3d_stack_reconstruction(
                     max_landmark_distance_um=cfg.max_landmark_distance_um,
                     landmarks_per_structure=cfg.landmarks_per_structure,
                     diagnostic_structure_landmarks=cfg.diagnostic_structure_landmarks,
+                    landmark_candidate_count=cfg.landmark_candidate_count,
+                    landmark_candidate_spacing_um=cfg.landmark_candidate_spacing_um,
+                    landmark_normal_weight_um=cfg.landmark_normal_weight_um,
+                    landmark_normal_step_um=cfg.landmark_normal_step_um,
                     rbf_neighbors=cfg.rbf_neighbors,
                     rbf_smoothing=cfg.rbf_smoothing,
+                    topology_grid_size=cfg.topology_grid_size,
+                    topology_min_area_ratio=cfg.topology_min_area_ratio,
+                    topology_max_area_ratio=cfg.topology_max_area_ratio,
                     diagnostic_structure=cfg.diagnostic_structure,
                     dpi=cfg.dpi,
                     save_preview_png=cfg.save_alignment_preview_png,
@@ -244,9 +258,12 @@ def run_3d_stack_reconstruction(
                 soft_summary["qc"]["union_iou_soft_after"]
                 >= soft_summary["qc"]["union_iou_hard_before_soft"]
             )
+            topology_valid = bool(soft_summary["qc"].get("topology_check", {}).get("valid", True))
+            geometry_valid = int(soft_summary["qc"].get("geometry_status_counts", {}).get("invalid", 0)) == 0
+            soft_accepted = soft_improved and topology_valid and geometry_valid
             if cfg.overwrite or not aligned_path.exists():
                 shutil.copy2(
-                    soft_result.soft_aligned_geojson if soft_improved else hard_path,
+                    soft_result.soft_aligned_geojson if soft_accepted else hard_path,
                     aligned_path,
                 )
             pairwise_rows.append(
@@ -255,7 +272,7 @@ def run_3d_stack_reconstruction(
                     hard_summary,
                     soft_summary,
                     soft_result,
-                    soft_accepted=soft_improved,
+                    soft_accepted=soft_accepted,
                 )
             )
         else:
@@ -833,6 +850,23 @@ def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
         raise ValueError("voxel_size_um must be greater than 0.")
     if cfg.point_sample_distance_um <= 0:
         raise ValueError("point_sample_distance_um must be greater than 0.")
+    if cfg.landmark_candidate_count < 1:
+        raise ValueError("landmark_candidate_count must be at least 1.")
+    if (
+        cfg.landmark_candidate_spacing_um is not None
+        and cfg.landmark_candidate_spacing_um <= 0
+    ):
+        raise ValueError("landmark_candidate_spacing_um must be positive when provided.")
+    if cfg.landmark_normal_weight_um < 0:
+        raise ValueError("landmark_normal_weight_um must be non-negative.")
+    if cfg.landmark_normal_step_um is not None and cfg.landmark_normal_step_um <= 0:
+        raise ValueError("landmark_normal_step_um must be positive when provided.")
+    if cfg.topology_grid_size < 0:
+        raise ValueError("topology_grid_size must be non-negative.")
+    if cfg.topology_min_area_ratio <= 0:
+        raise ValueError("topology_min_area_ratio must be greater than 0.")
+    if cfg.topology_max_area_ratio <= cfg.topology_min_area_ratio:
+        raise ValueError("topology_max_area_ratio must be greater than topology_min_area_ratio.")
     if cfg.mesh_method != "marching_cubes":
         raise ValueError("mesh_method currently supports only 'marching_cubes'.")
     if cfg.mesh_smoothing_sigma_um is not None and cfg.mesh_smoothing_sigma_um < 0:
@@ -1305,6 +1339,11 @@ def _pairwise_row(
         "soft_union_iou_before": None,
         "soft_union_iou_after": None,
         "soft_accepted": soft_accepted,
+        "soft_geometry_valid": None,
+        "soft_topology_valid": None,
+        "soft_topology_min_area_ratio": None,
+        "soft_topology_max_area_ratio": None,
+        "soft_topology_folded_cells": None,
         "soft_boundary_landmarks": None,
         "soft_summary_json": None,
     }
@@ -1313,6 +1352,20 @@ def _pairwise_row(
             {
                 "soft_union_iou_before": soft_summary["qc"]["union_iou_hard_before_soft"],
                 "soft_union_iou_after": soft_summary["qc"]["union_iou_soft_after"],
+                "soft_geometry_valid": int(
+                    soft_summary["qc"].get("geometry_status_counts", {}).get("invalid", 0)
+                )
+                == 0,
+                "soft_topology_valid": soft_summary["qc"].get("topology_check", {}).get("valid"),
+                "soft_topology_min_area_ratio": soft_summary["qc"]
+                .get("topology_check", {})
+                .get("min_area_ratio"),
+                "soft_topology_max_area_ratio": soft_summary["qc"]
+                .get("topology_check", {})
+                .get("max_area_ratio"),
+                "soft_topology_folded_cells": soft_summary["qc"]
+                .get("topology_check", {})
+                .get("folded_cell_count"),
                 "soft_boundary_landmarks": soft_summary["landmarks"]["boundary_landmark_count"],
                 "soft_summary_json": str(soft_result.summary_json),
             }
