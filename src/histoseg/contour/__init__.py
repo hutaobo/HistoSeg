@@ -26,6 +26,11 @@ from .contour_adjacency import (
     load_contours_csv,
     run_contour_adjacency,
 )
+from .gene_isoline import (
+    GeneTranscriptIsolineConfig,
+    GeneTranscriptIsolineResult,
+    run_gene_transcript_isoline,
+)
 from .multi_structure import (
     MultiStructureContourConfig,
     MultiStructureContourResult,
@@ -54,6 +59,8 @@ __all__ = [
     "ContourAdjacencyResult",
     "ContourTopologyConfig",
     "ContourTopologyResult",
+    "GeneTranscriptIsolineConfig",
+    "GeneTranscriptIsolineResult",
     "MultiStructureContourConfig",
     "MultiStructureContourResult",
     "MultiStructureSpec",
@@ -76,6 +83,7 @@ __all__ = [
     "normalize_group_boundary_overlap",
     "plot_cophenetic_heatmap",
     "run_contour_adjacency",
+    "run_gene_transcript_isoline",
     "run_group_boundary_network",
     "run_multi_structure_contours",
     "run_pattern1_isoline",

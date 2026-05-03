@@ -163,17 +163,40 @@ print(result.preview_png)
 print(len(result.contours))
 ```
 
+For Xenium transcript-defined niches such as GREM1-positive regions:
+
+```python
+from histoseg.contour import GeneTranscriptIsolineConfig, run_gene_transcript_isoline
+
+result = run_gene_transcript_isoline(
+    GeneTranscriptIsolineConfig(
+        xenium_root="/path/to/polyp",
+        out_dir="outputs/gene_isolines",
+        genes=("GREM1",),
+        sample_glob="A079-C-008_*",
+    )
+)
+print(result.run_log_csv)
+```
+
 ```bash
 histoseg-contour pattern1 \
   --clusters-csv clusters.csv \
   --cells-parquet cells.parquet \
   --out-dir outputs/pattern1 \
   --pattern1-clusters 10,23,19
+
+histoseg-contour gene-isoline \
+  --xenium-root polyp \
+  --sample-glob "A079-C-008_*" \
+  --genes GREM1,COL1A1 \
+  --out-dir outputs/gene_isolines
 ```
 
 Contour Analysis currently supports:
 
 - Pattern1 isoline contour generation from clustered cell coordinates
+- gene/transcript isoline contour generation from Xenium transcript tables
 - multi-structure contour partitioning
 - Xenium Explorer annotation exports
 - Hugging Face dataset helper workflows for Xenium-style inputs

@@ -11,6 +11,7 @@ def test_feature_group_import_contracts():
     assert callable(he.run_he_segmentation)
     assert callable(he.run_he_change_detection)
     assert callable(contour.run_pattern1_isoline)
+    assert callable(contour.run_gene_transcript_isoline)
     assert callable(contour.run_multi_structure_contours)
     assert callable(contour.run_group_boundary_network)
     assert callable(contour.run_contour_adjacency)
