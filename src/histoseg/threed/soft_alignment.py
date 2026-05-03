@@ -50,13 +50,29 @@ class ThreeDContourReconstructionConfig:
     landmark_normal_step_um: float | None = None
     rbf_kernel: str = "thin_plate_spline"
     rbf_neighbors: int | None = 96
-    rbf_smoothing: float = 1e-4
+    rbf_smoothing: float | str = 1e-4
+    rbf_smoothing_candidates: tuple[float, ...] = (1e-5, 1e-4, 1e-3, 1e-2)
     topology_grid_size: int = 24
     topology_min_area_ratio: float = 0.5
     topology_max_area_ratio: float = 2.0
     diagnostic_structure: str | None = "Structure 5"
     dpi: int = 200
     save_preview_png: bool = True
+    # Curvature-weighted landmark sampling: fraction of boundary length sampled at high-curvature
+    # regions. 0.0 disables, values between 0 and 1 control how much extra density high-curvature
+    # areas receive.
+    curvature_landmark_weight: float = 0.5
+    # Mutual nearest-neighbour consistency check to remove cross-matched landmarks.
+    mutual_nn_check: bool = True
+    # Number of ICP-style iterative refinement passes after the initial TPS fit (1 = no ICP).
+    icp_iterations: int = 2
+    # Number of zero-displacement anchors placed on the padded convex-hull perimeter.
+    zero_anchor_count: int = 16
+    # Reject boundary landmarks whose displacement deviates by more than this many MAD units from
+    # their neighbourhood median. None disables outlier rejection.
+    landmark_outlier_mad_threshold: float | None = 3.5
+    # Accept soft alignment per structure independently instead of globally.
+    per_structure_soft_acceptance: bool = True
 
 
 @dataclass
@@ -131,7 +147,7 @@ def run_3d_contour_reconstruction(
     if len(boundary_landmarks) < 3:
         raise ValueError("At least three boundary landmarks are required for TPS alignment.")
 
-    anchors = _zero_anchor_landmarks(fixed_records + moving_records)
+    anchors = _zero_anchor_landmarks(fixed_records + moving_records, cfg.zero_anchor_count)
     model_landmarks = pd.concat([boundary_landmarks, anchors], ignore_index=True)
     model = _fit_tps_model(model_landmarks, cfg)
 
@@ -141,6 +157,18 @@ def run_3d_contour_reconstruction(
         model,
         cfg.group_property,
     )
+
+    # ICP-style iterative refinement: re-generate landmarks from warped positions and apply
+    # a correction TPS model, stopping early if IoU stops improving.
+    icp_iterations_executed = 1
+    if cfg.icp_iterations > 1:
+        soft_geojson, soft_records, geometry_status, icp_iterations_executed = _icp_refine(
+            fixed_records=fixed_records,
+            initial_soft_geojson=soft_geojson,
+            initial_soft_records=soft_records,
+            cfg=cfg,
+        )
+
     topology = _check_tps_topology(moving_records, model, cfg)
 
     soft_geojson_path = out_dir / "soft_aligned_contours.geojson"
@@ -187,6 +215,7 @@ def run_3d_contour_reconstruction(
         geometry_status=geometry_status,
         topology=topology,
         model=model,
+        icp_iterations_executed=icp_iterations_executed,
         out_dir=out_dir,
         soft_geojson_path=soft_geojson_path,
         landmarks_path=landmarks_path,
@@ -225,7 +254,10 @@ def _validate_config(cfg: ThreeDContourReconstructionConfig) -> None:
         raise ValueError("diagnostic_structure_landmarks must be at least 3 when provided.")
     if cfg.rbf_neighbors is not None and cfg.rbf_neighbors < 3:
         raise ValueError("rbf_neighbors must be at least 3 when provided.")
-    if cfg.rbf_smoothing < 0:
+    if isinstance(cfg.rbf_smoothing, str):
+        if cfg.rbf_smoothing != "auto":
+            raise ValueError("rbf_smoothing must be a non-negative float or 'auto'.")
+    elif cfg.rbf_smoothing < 0:
         raise ValueError("rbf_smoothing must be non-negative.")
     if cfg.landmark_candidate_count < 1:
         raise ValueError("landmark_candidate_count must be at least 1.")
@@ -244,6 +276,14 @@ def _validate_config(cfg: ThreeDContourReconstructionConfig) -> None:
         raise ValueError("topology_min_area_ratio must be greater than 0.")
     if cfg.topology_max_area_ratio <= cfg.topology_min_area_ratio:
         raise ValueError("topology_max_area_ratio must be greater than topology_min_area_ratio.")
+    if cfg.curvature_landmark_weight < 0 or cfg.curvature_landmark_weight > 1:
+        raise ValueError("curvature_landmark_weight must be between 0 and 1.")
+    if cfg.icp_iterations < 1:
+        raise ValueError("icp_iterations must be at least 1.")
+    if cfg.zero_anchor_count < 4:
+        raise ValueError("zero_anchor_count must be at least 4.")
+    if cfg.landmark_outlier_mad_threshold is not None and cfg.landmark_outlier_mad_threshold <= 0:
+        raise ValueError("landmark_outlier_mad_threshold must be positive when provided.")
 
 
 def _read_geojson(path: Path) -> dict[str, Any]:
@@ -291,6 +331,9 @@ def _generate_landmarks(
     if cfg.landmark_normal_weight_um > 0:
         landmarks = _generate_normal_aware_landmarks(fixed_records, moving_records, cfg)
         if len(landmarks) >= 3:
+            landmarks = _postprocess_landmarks(landmarks, fixed_records, moving_records, cfg)
+            if landmarks.empty:
+                return landmarks
             return _limit_landmarks_per_group(landmarks, cfg)
 
     rows: list[dict[str, float | str]] = []
@@ -325,6 +368,9 @@ def _generate_landmarks(
                 }
             )
     landmarks = pd.DataFrame(rows)
+    if landmarks.empty:
+        return landmarks
+    landmarks = _postprocess_landmarks(landmarks, fixed_records, moving_records, cfg)
     if landmarks.empty:
         return landmarks
     return _limit_landmarks_per_group(landmarks, cfg)
@@ -516,24 +562,36 @@ def _limit_landmarks_per_group(
     return pd.concat(limited, ignore_index=True)
 
 
-def _zero_anchor_landmarks(records: list[_FeatureRecord]) -> pd.DataFrame:
-    minx, miny, maxx, maxy = _combined_bounds(records)
-    width = max(maxx - minx, 1.0)
-    height = max(maxy - miny, 1.0)
-    pad = 0.15 * max(width, height)
-    x0, x1 = minx - pad, maxx + pad
-    y0, y1 = miny - pad, maxy + pad
-    xm, ym = (x0 + x1) / 2.0, (y0 + y1) / 2.0
-    points = [
-        (x0, y0),
-        (xm, y0),
-        (x1, y0),
-        (x1, ym),
-        (x1, y1),
-        (xm, y1),
-        (x0, y1),
-        (x0, ym),
-    ]
+def _zero_anchor_landmarks(
+    records: list[_FeatureRecord],
+    zero_anchor_count: int = 16,
+) -> pd.DataFrame:
+    """Place zero-displacement anchor landmarks on the padded convex-hull perimeter.
+
+    Anchors are evenly spaced along the exterior of the convex hull of all record
+    geometries, buffered outward by 15 % of the characteristic span. This constrains
+    the TPS to near-identity far from the data region, replacing the previous
+    hard-coded 8-point bounding-box corners with a denser, shape-adaptive ring.
+    """
+    all_geom = unary_union([r.geometry for r in records])
+    minx, miny, maxx, maxy = all_geom.bounds
+    pad = 0.15 * max(maxx - minx, maxy - miny, 1.0)
+    try:
+        hull = all_geom.convex_hull
+        boundary = hull.buffer(pad, join_style="mitre").exterior
+    except Exception:
+        from shapely.geometry import box as _box
+
+        boundary = _box(minx - pad, miny - pad, maxx + pad, maxy + pad).exterior
+
+    count = max(int(zero_anchor_count), 4)
+    length = float(boundary.length)
+    step = length / count
+    points = []
+    for i in range(count):
+        pt = boundary.interpolate(i * step)
+        points.append((float(pt.x), float(pt.y)))
+
     return pd.DataFrame(
         [
             {
@@ -567,11 +625,15 @@ def _fit_tps_model(
     neighbors = None
     if cfg.rbf_neighbors is not None and len(src_norm) > cfg.rbf_neighbors:
         neighbors = cfg.rbf_neighbors
+    if isinstance(cfg.rbf_smoothing, str) and cfg.rbf_smoothing == "auto":
+        smoothing = _select_rbf_smoothing_cv(src_norm, displacement_norm, cfg, neighbors)
+    else:
+        smoothing = float(cfg.rbf_smoothing)
     interpolator = RBFInterpolator(
         src_norm,
         displacement_norm,
         kernel=cfg.rbf_kernel,
-        smoothing=cfg.rbf_smoothing,
+        smoothing=smoothing,
         neighbors=neighbors,
     )
     return _TPSModel(interpolator=interpolator, center_xy=center, scale=scale)
@@ -1124,6 +1186,7 @@ def _build_summary(
     geometry_status: Counter[str],
     topology: dict[str, Any],
     model: _TPSModel,
+    icp_iterations_executed: int,
     out_dir: Path,
     soft_geojson_path: Path,
     landmarks_path: Path,
@@ -1173,6 +1236,12 @@ def _build_summary(
             "diagnostic_structure_landmarks": cfg.diagnostic_structure_landmarks,
             "normalization_center_xy": [float(v) for v in model.center_xy],
             "normalization_scale": float(model.scale),
+            "icp_iterations_configured": cfg.icp_iterations,
+            "icp_iterations_executed": icp_iterations_executed,
+            "curvature_landmark_weight": cfg.curvature_landmark_weight,
+            "mutual_nn_check": cfg.mutual_nn_check,
+            "zero_anchor_count": cfg.zero_anchor_count,
+            "landmark_outlier_mad_threshold": cfg.landmark_outlier_mad_threshold,
         },
         "landmarks": {
             "boundary_landmark_count": int(len(boundary_landmarks)),
@@ -1249,3 +1318,323 @@ def _iou(a, b) -> float:
     if union_area <= 0:
         return math.nan
     return float(a.intersection(b).area / union_area)
+
+
+# ---------------------------------------------------------------------------
+# Landmark post-processing pipeline
+# ---------------------------------------------------------------------------
+
+
+def _postprocess_landmarks(
+    landmarks: pd.DataFrame,
+    fixed_records: list[_FeatureRecord],
+    moving_records: list[_FeatureRecord],
+    cfg: ThreeDContourReconstructionConfig,
+) -> pd.DataFrame:
+    """Apply curvature landmarks, mutual-NN filter, and outlier rejection."""
+    # 1. Augment with extra landmarks at high-curvature boundary regions.
+    if cfg.curvature_landmark_weight > 0:
+        extra = _generate_curvature_landmarks(fixed_records, moving_records, cfg)
+        if not extra.empty:
+            landmarks = pd.concat([landmarks, extra], ignore_index=True)
+
+    if landmarks.empty or len(landmarks) < 3:
+        return landmarks
+
+    # 2. Mutual nearest-neighbour consistency filter.
+    if cfg.mutual_nn_check and len(landmarks) >= 4:
+        filtered = _filter_mutual_nn_landmarks(landmarks, moving_records, cfg)
+        if len(filtered) >= 3:
+            landmarks = filtered
+
+    # 3. MAD-based outlier rejection on displacement vectors.
+    if cfg.landmark_outlier_mad_threshold is not None and len(landmarks) >= 8:
+        filtered = _filter_landmark_outliers(
+            landmarks, float(cfg.landmark_outlier_mad_threshold)
+        )
+        if len(filtered) >= 3:
+            landmarks = filtered
+
+    return landmarks
+
+
+def _compute_boundary_curvature(
+    boundary: Any,
+    spacing: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (N, 2) points and (N,) absolute angle-change curvature values."""
+    all_pts: list[list[float]] = []
+    for line in _iter_line_parts(boundary):
+        length = float(line.length)
+        if length <= 0:
+            continue
+        distances = np.arange(0.0, length, max(spacing, 1e-6))
+        for d in distances:
+            pt = line.interpolate(float(d))
+            all_pts.append([float(pt.x), float(pt.y)])
+
+    if len(all_pts) < 3:
+        pts = np.array(all_pts, dtype=float) if all_pts else np.empty((0, 2), dtype=float)
+        return pts, np.zeros(len(pts), dtype=float)
+
+    pts = np.array(all_pts, dtype=float)
+    n = len(pts)
+    curvatures = np.zeros(n, dtype=float)
+    for i in range(1, n - 1):
+        v1 = pts[i] - pts[i - 1]
+        v2 = pts[i + 1] - pts[i]
+        n1 = float(np.linalg.norm(v1))
+        n2 = float(np.linalg.norm(v2))
+        if n1 > 1e-12 and n2 > 1e-12:
+            cos_angle = float(np.clip(np.dot(v1 / n1, v2 / n2), -1.0, 1.0))
+            curvatures[i] = abs(math.acos(cos_angle))
+    return pts, curvatures
+
+
+def _generate_curvature_landmarks(
+    fixed_records: list[_FeatureRecord],
+    moving_records: list[_FeatureRecord],
+    cfg: ThreeDContourReconstructionConfig,
+) -> pd.DataFrame:
+    """Add extra landmarks concentrated at high-curvature boundary points."""
+    from shapely.geometry import Point
+
+    rows: list[dict[str, Any]] = []
+    fixed_by_group = _union_by_group(fixed_records)
+    moving_by_group = _union_by_group(moving_records)
+    dense_spacing = max(cfg.sampling_distance_um / 5.0, 1e-6)
+
+    for group in sorted(set(fixed_by_group) & set(moving_by_group)):
+        moving_boundary = moving_by_group[group].boundary
+        fixed_boundary = fixed_by_group[group].boundary
+        if moving_boundary.is_empty or fixed_boundary.is_empty:
+            continue
+
+        pts, curvatures = _compute_boundary_curvature(moving_boundary, dense_spacing)
+        if len(curvatures) < 4:
+            continue
+
+        # Select the top (curvature_landmark_weight) fraction of high-curvature points.
+        # Use strict inequality so that zero-curvature flat segments are excluded.
+        threshold = float(np.quantile(curvatures, 1.0 - cfg.curvature_landmark_weight))
+        high_idx = np.where((curvatures > threshold) & (curvatures > 1e-6))[0]
+        if len(high_idx) == 0:
+            continue
+
+        for idx in high_idx:
+            src_xy = pts[idx]
+            src_pt = Point(float(src_xy[0]), float(src_xy[1]))
+            dst = fixed_boundary.interpolate(fixed_boundary.project(src_pt))
+            dist = float(src_pt.distance(dst))
+            if dist > cfg.max_landmark_distance_um:
+                continue
+            rows.append(
+                {
+                    "kind": "boundary",
+                    "structure": group,
+                    "src_x": float(src_xy[0]),
+                    "src_y": float(src_xy[1]),
+                    "dst_x": float(dst.x),
+                    "dst_y": float(dst.y),
+                    "dx": float(dst.x - src_xy[0]),
+                    "dy": float(dst.y - src_xy[1]),
+                    "source_distance_um": dist,
+                    "match_cost_um": dist,
+                    "normal_dot_abs": math.nan,
+                    "match_method": "curvature_nearest_projection",
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _filter_mutual_nn_landmarks(
+    landmarks: pd.DataFrame,
+    moving_records: list[_FeatureRecord],
+    cfg: ThreeDContourReconstructionConfig,
+) -> pd.DataFrame:
+    """Keep only landmarks where the reverse projection is also approximately consistent.
+
+    For each moving→fixed landmark pair, we project the fixed (target) point back
+    onto the moving boundary and check that the resulting point is within
+    ``2 × sampling_distance_um`` of the original source point.  This removes
+    non-bijective correspondences (e.g. landmarks that cross contour features) that
+    tend to cause TPS fold artefacts.
+    """
+    from shapely.geometry import Point
+
+    moving_by_group = _union_by_group(moving_records)
+    keep_mask = []
+    # Use a spacing-based absolute tolerance so that the check is independent
+    # of the forward displacement magnitude.
+    abs_tolerance = 2.0 * cfg.sampling_distance_um
+
+    for _, row in landmarks.iterrows():
+        group = str(row["structure"])
+        if group not in moving_by_group:
+            keep_mask.append(True)
+            continue
+        moving_boundary = moving_by_group[group].boundary
+        if moving_boundary.is_empty:
+            keep_mask.append(True)
+            continue
+        dst_pt = Point(float(row["dst_x"]), float(row["dst_y"]))
+        rev = moving_boundary.interpolate(moving_boundary.project(dst_pt))
+        rev_dist = float(
+            np.linalg.norm(
+                [
+                    float(rev.x) - float(row["src_x"]),
+                    float(rev.y) - float(row["src_y"]),
+                ]
+            )
+        )
+        keep_mask.append(rev_dist <= abs_tolerance)
+
+    return landmarks.loc[keep_mask].reset_index(drop=True)
+
+
+def _filter_landmark_outliers(
+    landmarks: pd.DataFrame,
+    mad_threshold: float,
+) -> pd.DataFrame:
+    """Remove landmarks whose displacement vector deviates beyond *mad_threshold* × MAD."""
+    dx = landmarks["dx"].to_numpy(dtype=float)
+    dy = landmarks["dy"].to_numpy(dtype=float)
+
+    median_dx = float(np.median(dx))
+    median_dy = float(np.median(dy))
+    mad_dx = float(np.median(np.abs(dx - median_dx)))
+    mad_dy = float(np.median(np.abs(dy - median_dy)))
+
+    # Gaussian-consistency scale factor (1.4826 ≈ 1/Φ⁻¹(0.75)).
+    scale_dx = max(mad_dx * 1.4826, 1e-9)
+    scale_dy = max(mad_dy * 1.4826, 1e-9)
+
+    z_score = np.sqrt(((dx - median_dx) / scale_dx) ** 2 + ((dy - median_dy) / scale_dy) ** 2)
+    keep = z_score <= mad_threshold
+    return landmarks.loc[keep].reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------------
+# Adaptive RBF smoothing selection via k-fold cross-validation
+# ---------------------------------------------------------------------------
+
+
+def _select_rbf_smoothing_cv(
+    src_norm: np.ndarray,
+    displacement_norm: np.ndarray,
+    cfg: ThreeDContourReconstructionConfig,
+    neighbors: int | None,
+    max_cv_points: int = 200,
+    n_folds: int = 5,
+) -> float:
+    """Choose RBF smoothing via k-fold CV on a random subset of landmarks."""
+    candidates = list(cfg.rbf_smoothing_candidates) if cfg.rbf_smoothing_candidates else [1e-4]
+    n = len(src_norm)
+    if n < 8 or len(candidates) == 0:
+        return 1e-4
+
+    rng = np.random.default_rng(42)
+    idx = np.sort(rng.choice(n, size=min(n, max_cv_points), replace=False))
+    X = src_norm[idx]
+    Y = displacement_norm[idx]
+    n_cv = len(X)
+    actual_folds = min(n_folds, n_cv)
+    fold_boundaries = np.array_split(np.arange(n_cv), actual_folds)
+
+    best_s = float(candidates[0])
+    best_err = math.inf
+
+    for s in candidates:
+        cv_errors: list[float] = []
+        for fold_i, val_idx in enumerate(fold_boundaries):
+            train_idx = np.concatenate(
+                [fold_boundaries[j] for j in range(actual_folds) if j != fold_i]
+            )
+            if len(train_idx) < 3:
+                continue
+            nb = neighbors if neighbors is not None and len(train_idx) > neighbors else None
+            try:
+                interp = RBFInterpolator(
+                    X[train_idx],
+                    Y[train_idx],
+                    kernel=cfg.rbf_kernel,
+                    smoothing=float(s),
+                    neighbors=nb,
+                )
+                pred = interp(X[val_idx])
+                cv_errors.append(
+                    float(np.mean(np.linalg.norm(pred - Y[val_idx], axis=1)))
+                )
+            except Exception:
+                pass
+        if cv_errors:
+            err = float(np.mean(cv_errors))
+            if err < best_err:
+                best_err = err
+                best_s = float(s)
+
+    return best_s
+
+
+# ---------------------------------------------------------------------------
+# ICP-style iterative TPS refinement
+# ---------------------------------------------------------------------------
+
+
+def _icp_refine(
+    *,
+    fixed_records: list[_FeatureRecord],
+    initial_soft_geojson: dict[str, Any],
+    initial_soft_records: list[_FeatureRecord],
+    cfg: ThreeDContourReconstructionConfig,
+) -> tuple[dict[str, Any], list[_FeatureRecord], Counter[str], int]:
+    """Iteratively refine TPS alignment by re-generating landmarks from warped positions.
+
+    Each iteration fits a *correction* TPS from the currently warped contour to the
+    fixed contour, composes with the previous warp, and accepts only if IoU improves.
+    Returns ``(best_geojson, best_records, best_geometry_status, iterations_executed)``.
+    """
+    fixed_union = unary_union([r.geometry for r in fixed_records])
+    best_geojson = initial_soft_geojson
+    best_records = initial_soft_records
+    best_geometry_status: Counter[str] = Counter()
+    best_iou = _iou(fixed_union, unary_union([r.geometry for r in initial_soft_records]))
+
+    current_geojson: dict[str, Any] = initial_soft_geojson
+    current_records: list[_FeatureRecord] = initial_soft_records
+    icp_executed = 1
+
+    for _ in range(cfg.icp_iterations - 1):
+        new_landmarks = _generate_landmarks(fixed_records, current_records, cfg)
+        if new_landmarks.empty:
+            break
+        new_bnd = new_landmarks.loc[new_landmarks["kind"] == "boundary"].copy()
+        if len(new_bnd) < 3:
+            break
+        new_anchors = _zero_anchor_landmarks(fixed_records + current_records, cfg.zero_anchor_count)
+        new_model_lms = pd.concat([new_bnd, new_anchors], ignore_index=True)
+        try:
+            correction = _fit_tps_model(new_model_lms, cfg)
+        except Exception:
+            break
+
+        topo = _check_tps_topology(current_records, correction, cfg)
+        if not topo.get("valid", True):
+            break
+
+        new_geojson, new_records, new_status = _warp_geojson(
+            current_geojson, current_records, correction, cfg.group_property
+        )
+        new_iou = _iou(fixed_union, unary_union([r.geometry for r in new_records]))
+        icp_executed += 1
+        if new_iou >= best_iou:
+            best_geojson = new_geojson
+            best_records = new_records
+            best_geometry_status = new_status
+            best_iou = new_iou
+            current_geojson = new_geojson
+            current_records = new_records
+        else:
+            break
+
+    return best_geojson, best_records, best_geometry_status, icp_executed

@@ -82,6 +82,14 @@ class ThreeDStackReconstructionConfig:
     min_component_pixels: int = 180
     save_slice_preview_png: bool = False
     hard_alignment_maxiter: int = 80
+    # Enable multi-start similarity search (tries PCA rotation + 0/90/180/270° seeds).
+    hard_alignment_multistart: bool = True
+    # When similarity IoU after hard alignment falls below this threshold, try a 6-DOF affine
+    # fallback and use it if it improves IoU.  Set to 0.0 to disable.
+    affine_fallback_iou_threshold: float = 0.0
+    # Apply a linear drift correction after the full pairwise alignment chain to reduce
+    # cumulative translation drift across the stack.
+    global_drift_correction: bool = False
     run_soft_alignment: bool = True
     sampling_distance_um: float = 50.0
     max_landmark_distance_um: float = 180.0
@@ -92,12 +100,21 @@ class ThreeDStackReconstructionConfig:
     landmark_normal_weight_um: float = 0.0
     landmark_normal_step_um: float | None = None
     rbf_neighbors: int | None = 96
-    rbf_smoothing: float = 1e-4
+    rbf_smoothing: float | str = 1e-4
+    rbf_smoothing_candidates: tuple[float, ...] = (1e-5, 1e-4, 1e-3, 1e-2)
     topology_grid_size: int = 24
     topology_min_area_ratio: float = 0.5
     topology_max_area_ratio: float = 2.0
     diagnostic_structure: str | None = "Structure 5"
     save_alignment_preview_png: bool = True
+    curvature_landmark_weight: float = 0.5
+    mutual_nn_check: bool = True
+    icp_iterations: int = 2
+    zero_anchor_count: int = 16
+    landmark_outlier_mad_threshold: float | None = 3.5
+    # Accept soft alignment per structure independently: structures where soft IoU ≥ hard IoU
+    # use the soft-aligned geometry; others fall back to hard-aligned geometry.
+    per_structure_soft_acceptance: bool = True
     point_sample_distance_um: float = 80.0
     voxel_size_um: float = 80.0
     mesh_method: str = "marching_cubes"
@@ -226,6 +243,8 @@ def run_3d_stack_reconstruction(
             group_property=cfg.group_property,
             maxiter=cfg.hard_alignment_maxiter,
             overwrite=cfg.overwrite,
+            multistart=cfg.hard_alignment_multistart,
+            affine_fallback_iou_threshold=cfg.affine_fallback_iou_threshold,
         )
 
         if cfg.run_soft_alignment:
@@ -245,27 +264,53 @@ def run_3d_stack_reconstruction(
                     landmark_normal_step_um=cfg.landmark_normal_step_um,
                     rbf_neighbors=cfg.rbf_neighbors,
                     rbf_smoothing=cfg.rbf_smoothing,
+                    rbf_smoothing_candidates=cfg.rbf_smoothing_candidates,
                     topology_grid_size=cfg.topology_grid_size,
                     topology_min_area_ratio=cfg.topology_min_area_ratio,
                     topology_max_area_ratio=cfg.topology_max_area_ratio,
                     diagnostic_structure=cfg.diagnostic_structure,
                     dpi=cfg.dpi,
                     save_preview_png=cfg.save_alignment_preview_png,
+                    curvature_landmark_weight=cfg.curvature_landmark_weight,
+                    mutual_nn_check=cfg.mutual_nn_check,
+                    icp_iterations=cfg.icp_iterations,
+                    zero_anchor_count=cfg.zero_anchor_count,
+                    landmark_outlier_mad_threshold=cfg.landmark_outlier_mad_threshold,
+                    per_structure_soft_acceptance=cfg.per_structure_soft_acceptance,
                 )
             )
             soft_summary = json.loads(soft_result.summary_json.read_text(encoding="utf-8"))
-            soft_improved = (
-                soft_summary["qc"]["union_iou_soft_after"]
-                >= soft_summary["qc"]["union_iou_hard_before_soft"]
-            )
             topology_valid = bool(soft_summary["qc"].get("topology_check", {}).get("valid", True))
             geometry_valid = int(soft_summary["qc"].get("geometry_status_counts", {}).get("invalid", 0)) == 0
-            soft_accepted = soft_improved and topology_valid and geometry_valid
             if cfg.overwrite or not aligned_path.exists():
-                shutil.copy2(
-                    soft_result.soft_aligned_geojson if soft_accepted else hard_path,
-                    aligned_path,
+                if topology_valid and geometry_valid and cfg.per_structure_soft_acceptance:
+                    # Build a per-structure mixed GeoJSON: use soft geometry for structures
+                    # where soft IoU ≥ hard IoU, hard geometry for regressed structures.
+                    hard_payload = _read_geojson(hard_path)
+                    soft_payload = _read_geojson(soft_result.soft_aligned_geojson)
+                    mixed_payload = _build_per_structure_soft_geojson(
+                        hard_payload, soft_payload, cfg.group_property, soft_summary
+                    )
+                    aligned_path.write_text(
+                        json.dumps(mixed_payload, ensure_ascii=False), encoding="utf-8"
+                    )
+                    soft_accepted = True
+                else:
+                    soft_improved = (
+                        soft_summary["qc"]["union_iou_soft_after"]
+                        >= soft_summary["qc"]["union_iou_hard_before_soft"]
+                    )
+                    soft_accepted = soft_improved and topology_valid and geometry_valid
+                    shutil.copy2(
+                        soft_result.soft_aligned_geojson if soft_accepted else hard_path,
+                        aligned_path,
+                    )
+            else:
+                soft_improved = (
+                    soft_summary["qc"]["union_iou_soft_after"]
+                    >= soft_summary["qc"]["union_iou_hard_before_soft"]
                 )
+                soft_accepted = soft_improved and topology_valid and geometry_valid
             pairwise_rows.append(
                 _pairwise_row(
                     slice_input,
@@ -297,6 +342,14 @@ def run_3d_stack_reconstruction(
 
     pairwise_metrics_path = out_dir / "pairwise_alignment_metrics.csv"
     pd.DataFrame(pairwise_rows).to_csv(pairwise_metrics_path, index=False)
+
+    # Global drift correction: remove linear centroid drift accumulated along the chain.
+    if cfg.global_drift_correction and len(aligned_paths) > 2:
+        _apply_global_drift_correction(
+            aligned_paths,
+            aligned_rows,
+            group_property=cfg.group_property,
+        )
 
     contour_points_path = out_dir / "aligned_contour_3d_points.csv"
     contour_points = write_3d_contour_points(
@@ -415,6 +468,8 @@ def hard_align_geojson(
     group_property: str = "structure",
     maxiter: int = 80,
     overwrite: bool = False,
+    multistart: bool = True,
+    affine_fallback_iou_threshold: float = 0.0,
 ) -> dict[str, Any]:
     """Hard-align one contour GeoJSON to another with a similarity transform."""
 
@@ -434,11 +489,27 @@ def hard_align_geojson(
         fixed_union,
         moving_union,
         maxiter=maxiter,
+        multistart=multistart,
+        fixed_records=fixed_records,
+        moving_records=moving_records,
     )
     aligned_union = _apply_similarity_to_geometry(moving_union, transform)
     before_iou = _iou(fixed_union, moving_union)
     after_iou = _iou(fixed_union, aligned_union)
-    accepted = after_iou >= before_iou
+
+    # Affine fallback: if similarity alignment is insufficient, try a 6-DOF affine transform.
+    affine_params: np.ndarray | None = None
+    if affine_fallback_iou_threshold > 0 and after_iou < affine_fallback_iou_threshold:
+        affine_params, after_iou_affine = _try_affine_alignment(
+            fixed_union, moving_union, after_iou, maxiter=maxiter
+        )
+        if affine_params is not None:
+            after_iou = after_iou_affine
+            aligned_union = affinity.affine_transform(moving_union, affine_params.tolist())
+
+    accepted = (affine_params is not None and after_iou >= before_iou) or (
+        affine_params is None and after_iou >= before_iou
+    )
     if not accepted:
         transform = _SimilarityTransform(
             origin_x=float(moving_union.centroid.x),
@@ -448,6 +519,7 @@ def hard_align_geojson(
             translate_x=0.0,
             translate_y=0.0,
         )
+        affine_params = None
         optimization = {
             **optimization,
             "accepted": False,
@@ -458,7 +530,10 @@ def hard_align_geojson(
     else:
         optimization = {**optimization, "accepted": True}
 
-    aligned_payload = _apply_similarity_to_geojson(moving_payload, transform)
+    if affine_params is not None:
+        aligned_payload = _apply_affine_to_geojson(moving_payload, affine_params)
+    else:
+        aligned_payload = _apply_similarity_to_geojson(moving_payload, transform)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(aligned_payload, ensure_ascii=False), encoding="utf-8")
 
@@ -471,6 +546,7 @@ def hard_align_geojson(
         "moving_geojson": str(Path(moving_geojson)),
         "output_geojson": str(output_path),
         "transform": asdict(transform),
+        "affine_params": affine_params.tolist() if affine_params is not None else None,
         "optimization": optimization,
         "union_iou_before_hard": before_iou,
         "union_iou_after_hard": after_iou,
@@ -879,6 +955,19 @@ def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
     ):
         raise ValueError("min_mesh_component_volume_um3 must be non-negative.")
     _normalize_mesh_export_formats(cfg.mesh_export_formats)
+    if isinstance(cfg.rbf_smoothing, str):
+        if cfg.rbf_smoothing != "auto":
+            raise ValueError("rbf_smoothing must be a non-negative float or 'auto'.")
+    elif cfg.rbf_smoothing < 0:
+        raise ValueError("rbf_smoothing must be non-negative.")
+    if cfg.curvature_landmark_weight < 0 or cfg.curvature_landmark_weight > 1:
+        raise ValueError("curvature_landmark_weight must be between 0 and 1.")
+    if cfg.icp_iterations < 1:
+        raise ValueError("icp_iterations must be at least 1.")
+    if cfg.zero_anchor_count < 4:
+        raise ValueError("zero_anchor_count must be at least 4.")
+    if cfg.landmark_outlier_mad_threshold is not None and cfg.landmark_outlier_mad_threshold <= 0:
+        raise ValueError("landmark_outlier_mad_threshold must be positive when provided.")
 
 
 def _read_strategy_specs(cfg: ThreeDStackReconstructionConfig) -> list[MultiStructureSpec]:
@@ -1179,10 +1268,15 @@ def _estimate_similarity_transform(
     moving_union: Any,
     *,
     maxiter: int,
+    multistart: bool = True,
+    fixed_records: Sequence[Any] | None = None,
+    moving_records: Sequence[Any] | None = None,
 ) -> tuple[_SimilarityTransform, dict[str, Any]]:
     origin = moving_union.centroid
     scale0 = math.sqrt(max(fixed_union.area, 1e-9) / max(moving_union.area, 1e-9))
     rotation0 = _principal_axis_angle(fixed_union) - _principal_axis_angle(moving_union)
+
+    # --- Phase 1: Smooth centroid proxy to get a good translation seed ---
     initial = _SimilarityTransform(
         origin_x=float(origin.x),
         origin_y=float(origin.y),
@@ -1192,8 +1286,36 @@ def _estimate_similarity_transform(
         translate_y=0.0,
     )
     initial_aligned = _apply_similarity_to_geometry(moving_union, initial)
-    centroid_dx = float(fixed_union.centroid.x - initial_aligned.centroid.x)
-    centroid_dy = float(fixed_union.centroid.y - initial_aligned.centroid.y)
+
+    # Per-structure area-weighted centroid translation init (falls back to union centroid).
+    if fixed_records is not None and moving_records is not None:
+        fixed_by_group = _group_union(list(fixed_records))
+        moving_by_group = _group_union(list(moving_records))
+        common_groups = sorted(set(fixed_by_group) & set(moving_by_group))
+        if common_groups:
+            total_weight = 0.0
+            dx_sum = 0.0
+            dy_sum = 0.0
+            for grp in common_groups:
+                fg = fixed_by_group[grp]
+                mg_t = _apply_similarity_to_geometry(moving_by_group[grp], initial)
+                weight = float(fg.area)
+                dx_sum += weight * (float(fg.centroid.x) - float(mg_t.centroid.x))
+                dy_sum += weight * (float(fg.centroid.y) - float(mg_t.centroid.y))
+                total_weight += weight
+            if total_weight > 0:
+                centroid_dx = dx_sum / total_weight
+                centroid_dy = dy_sum / total_weight
+            else:
+                centroid_dx = float(fixed_union.centroid.x) - float(initial_aligned.centroid.x)
+                centroid_dy = float(fixed_union.centroid.y) - float(initial_aligned.centroid.y)
+        else:
+            centroid_dx = float(fixed_union.centroid.x) - float(initial_aligned.centroid.x)
+            centroid_dy = float(fixed_union.centroid.y) - float(initial_aligned.centroid.y)
+    else:
+        centroid_dx = float(fixed_union.centroid.x) - float(initial_aligned.centroid.x)
+        centroid_dy = float(fixed_union.centroid.y) - float(initial_aligned.centroid.y)
+
     initial = _SimilarityTransform(
         origin_x=initial.origin_x,
         origin_y=initial.origin_y,
@@ -1214,8 +1336,82 @@ def _estimate_similarity_transform(
             "union_iou_final": initial_iou,
         }
 
-    def objective(params: np.ndarray) -> float:
-        transform = _SimilarityTransform(
+    # Smooth centroid proxy pre-optimisation: quickly drive the translation close to optimum.
+    params_after_proxy = _smooth_proxy_optimise(
+        fixed_union, moving_union, initial, maxiter=max(maxiter // 4, 8)
+    )
+    # Initialise Nelder-Mead IoU optimisation from the proxy-refined starting point.
+    initial_from_proxy = _SimilarityTransform(
+        origin_x=initial.origin_x,
+        origin_y=initial.origin_y,
+        rotation_degrees=float(params_after_proxy[0]),
+        scale=float(math.exp(params_after_proxy[1])),
+        translate_x=float(params_after_proxy[2]),
+        translate_y=float(params_after_proxy[3]),
+    )
+
+    # Build candidate starting rotations for multi-start.
+    start_rotations: list[float] = [initial_from_proxy.rotation_degrees]
+    if multistart:
+        for extra_deg in (0.0, 90.0, 180.0, 270.0):
+            r = rotation0 + extra_deg
+            if not any(abs(r - s) < 5.0 for s in start_rotations):
+                start_rotations.append(r)
+
+    best_transform = initial_from_proxy
+    best_iou = _iou(fixed_union, _apply_similarity_to_geometry(moving_union, initial_from_proxy))
+    best_result_meta: dict[str, Any] = {}
+
+    for rot_seed in start_rotations:
+        # Per-rotation centroid re-initialisation.
+        seed_transform = _SimilarityTransform(
+            origin_x=initial.origin_x,
+            origin_y=initial.origin_y,
+            rotation_degrees=float(rot_seed),
+            scale=float(scale0),
+            translate_x=0.0,
+            translate_y=0.0,
+        )
+        seed_aligned = _apply_similarity_to_geometry(moving_union, seed_transform)
+        seed_dx = float(fixed_union.centroid.x) - float(seed_aligned.centroid.x)
+        seed_dy = float(fixed_union.centroid.y) - float(seed_aligned.centroid.y)
+        seed_transform = _SimilarityTransform(
+            origin_x=seed_transform.origin_x,
+            origin_y=seed_transform.origin_y,
+            rotation_degrees=seed_transform.rotation_degrees,
+            scale=seed_transform.scale,
+            translate_x=seed_dx,
+            translate_y=seed_dy,
+        )
+        params0_seed = np.array(
+            [
+                seed_transform.rotation_degrees,
+                math.log(max(seed_transform.scale, 1e-9)),
+                seed_transform.translate_x,
+                seed_transform.translate_y,
+            ],
+            dtype=float,
+        )
+
+        def objective(params: np.ndarray) -> float:
+            transform = _SimilarityTransform(
+                origin_x=initial.origin_x,
+                origin_y=initial.origin_y,
+                rotation_degrees=float(params[0]),
+                scale=float(math.exp(params[1])),
+                translate_x=float(params[2]),
+                translate_y=float(params[3]),
+            )
+            return -_iou(fixed_union, _apply_similarity_to_geometry(moving_union, transform))
+
+        result = minimize(
+            objective,
+            params0_seed,
+            method="Nelder-Mead",
+            options={"maxiter": int(maxiter), "xatol": 1e-3, "fatol": 1e-5},
+        )
+        params = result.x if result.fun <= objective(params0_seed) else params0_seed
+        candidate = _SimilarityTransform(
             origin_x=initial.origin_x,
             origin_y=initial.origin_y,
             rotation_degrees=float(params[0]),
@@ -1223,41 +1419,24 @@ def _estimate_similarity_transform(
             translate_x=float(params[2]),
             translate_y=float(params[3]),
         )
-        return -_iou(fixed_union, _apply_similarity_to_geometry(moving_union, transform))
+        candidate_iou = _iou(fixed_union, _apply_similarity_to_geometry(moving_union, candidate))
+        if candidate_iou > best_iou:
+            best_iou = candidate_iou
+            best_transform = candidate
+            best_result_meta = {
+                "success": bool(result.success) or candidate_iou >= initial_iou,
+                "message": str(result.message),
+                "iterations": int(getattr(result, "nit", 0)),
+                "rotation_seed_deg": float(rot_seed),
+            }
 
-    params0 = np.array(
-        [
-            initial.rotation_degrees,
-            math.log(max(initial.scale, 1e-9)),
-            initial.translate_x,
-            initial.translate_y,
-        ],
-        dtype=float,
-    )
-    result = minimize(
-        objective,
-        params0,
-        method="Nelder-Mead",
-        options={"maxiter": int(maxiter), "xatol": 1e-3, "fatol": 1e-5},
-    )
-    params = result.x if result.fun <= objective(params0) else params0
-    transform = _SimilarityTransform(
-        origin_x=initial.origin_x,
-        origin_y=initial.origin_y,
-        rotation_degrees=float(params[0]),
-        scale=float(math.exp(params[1])),
-        translate_x=float(params[2]),
-        translate_y=float(params[3]),
-    )
-    final_iou = _iou(fixed_union, _apply_similarity_to_geometry(moving_union, transform))
-    return transform, {
-        "method": "pca_centroid_nelder_mead",
-        "success": bool(result.success) or final_iou >= initial_iou,
-        "message": str(result.message),
-        "iterations": int(getattr(result, "nit", 0)),
+    return best_transform, {
+        "method": "pca_centroid_multistart_nelder_mead" if multistart else "pca_centroid_nelder_mead",
+        "multistart_seeds": len(start_rotations),
         "union_iou_before": before,
         "union_iou_initial": initial_iou,
-        "union_iou_final": final_iou,
+        "union_iou_final": best_iou,
+        **best_result_meta,
     }
 
 
@@ -1647,3 +1826,216 @@ def _jsonable_config(cfg: ThreeDStackReconstructionConfig) -> dict[str, Any]:
     if payload.get("slice_dirs") is not None:
         payload["slice_dirs"] = [str(path) for path in payload["slice_dirs"]]
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Hard-alignment helpers: smooth proxy, affine fallback, drift correction,
+# per-structure mixed soft/hard acceptance
+# ---------------------------------------------------------------------------
+
+
+def _smooth_proxy_optimise(
+    fixed_union: Any,
+    moving_union: Any,
+    initial: _SimilarityTransform,
+    maxiter: int,
+) -> np.ndarray:
+    """Pre-optimise using a smooth centroid-distance proxy to warm up the main IoU search.
+
+    Returns the 4-element parameter array [rotation_deg, log_scale, tx, ty].
+    """
+    params0 = np.array(
+        [
+            initial.rotation_degrees,
+            math.log(max(initial.scale, 1e-9)),
+            initial.translate_x,
+            initial.translate_y,
+        ],
+        dtype=float,
+    )
+
+    def proxy_objective(params: np.ndarray) -> float:
+        transform = _SimilarityTransform(
+            origin_x=initial.origin_x,
+            origin_y=initial.origin_y,
+            rotation_degrees=float(params[0]),
+            scale=float(math.exp(params[1])),
+            translate_x=float(params[2]),
+            translate_y=float(params[3]),
+        )
+        aligned = _apply_similarity_to_geometry(moving_union, transform)
+        dx = float(fixed_union.centroid.x) - float(aligned.centroid.x)
+        dy = float(fixed_union.centroid.y) - float(aligned.centroid.y)
+        return dx * dx + dy * dy
+
+    result = minimize(
+        proxy_objective,
+        params0,
+        method="Nelder-Mead",
+        options={"maxiter": int(maxiter), "xatol": 1e-3, "fatol": 1e-5},
+    )
+    return result.x if proxy_objective(result.x) <= proxy_objective(params0) else params0
+
+
+def _group_union(records: Sequence[Any]) -> dict[str, Any]:
+    """Return per-group union of record geometries (records have .group and .geometry)."""
+    grouped: dict[str, list[Any]] = {}
+    for record in records:
+        grouped.setdefault(record.group, []).append(record.geometry)
+    return {group: unary_union(geoms) for group, geoms in grouped.items()}
+
+
+def _try_affine_alignment(
+    fixed_union: Any,
+    moving_union: Any,
+    similarity_iou: float,
+    maxiter: int = 80,
+) -> tuple[np.ndarray | None, float]:
+    """Try a 6-DOF affine transform as fallback.
+
+    Returns (affine_params, iou) where affine_params is a 6-element vector
+    [a, b, d, e, xoff, yoff] for Shapely's affine_transform, or None if the
+    affine transform did not improve over the similarity result.
+    """
+    tx0 = float(fixed_union.centroid.x) - float(moving_union.centroid.x)
+    ty0 = float(fixed_union.centroid.y) - float(moving_union.centroid.y)
+    params0 = np.array([1.0, 0.0, 0.0, 1.0, tx0, ty0], dtype=float)
+
+    def objective(params: np.ndarray) -> float:
+        try:
+            aligned = affinity.affine_transform(moving_union, params.tolist())
+            iou = _iou(fixed_union, aligned)
+            return -iou if math.isfinite(iou) else 0.0
+        except Exception:
+            return 0.0
+
+    result = minimize(
+        objective,
+        params0,
+        method="Nelder-Mead",
+        options={"maxiter": int(maxiter), "xatol": 1e-3, "fatol": 1e-5},
+    )
+    best_params = result.x if objective(result.x) <= objective(params0) else params0
+    try:
+        affine_iou = _iou(fixed_union, affinity.affine_transform(moving_union, best_params.tolist()))
+    except Exception:
+        return None, similarity_iou
+
+    if math.isfinite(affine_iou) and affine_iou > similarity_iou:
+        return best_params, affine_iou
+    return None, similarity_iou
+
+
+def _apply_affine_to_geojson(
+    geojson: dict[str, Any],
+    params: np.ndarray,
+) -> dict[str, Any]:
+    """Apply a 6-DOF affine transform to all features in a GeoJSON FeatureCollection."""
+    payload = copy.deepcopy(geojson)
+    param_list = params.tolist()
+    for feature in payload["features"]:
+        geom = affinity.affine_transform(shape(feature["geometry"]), param_list)
+        feature["geometry"] = mapping(geom)
+    return payload
+
+
+def _build_per_structure_soft_geojson(
+    hard_payload: dict[str, Any],
+    soft_payload: dict[str, Any],
+    group_property: str,
+    soft_summary: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a mixed GeoJSON using soft geometry for structures where IoU improved.
+
+    For each structure in *hard_payload*, if the per-structure IoU after soft
+    alignment is ≥ that before soft alignment, the feature geometry is replaced
+    with the soft-aligned version; otherwise the hard-aligned geometry is kept.
+    """
+    per_structure_qc = soft_summary.get("qc", {}).get("per_structure", {})
+    soft_by_group: dict[str, dict[str, Any]] = {}
+    for feature in soft_payload.get("features", []):
+        group = str(_feature_group(feature.get("properties") or {}, group_property))
+        soft_by_group[group] = feature
+
+    mixed = copy.deepcopy(hard_payload)
+    for feature in mixed.get("features", []):
+        group = str(_feature_group(feature.get("properties") or {}, group_property))
+        if group not in soft_by_group:
+            continue
+        qc = per_structure_qc.get(group, {})
+        iou_hard = float(qc.get("iou_hard_before_soft", 0.0))
+        iou_soft = float(qc.get("iou_soft_after", 0.0))
+        if iou_soft >= iou_hard:
+            feature["geometry"] = soft_by_group[group]["geometry"]
+    return mixed
+
+
+def _apply_global_drift_correction(
+    aligned_paths: Sequence[Path],
+    aligned_rows: Sequence[Mapping[str, Any]],
+    group_property: str,
+) -> None:
+    """Remove linear centroid drift accumulated along the pairwise alignment chain.
+
+    Computes the centroid of the union of all structures for each slice, fits a
+    linear trend in x and y as a function of slice index, then translates each
+    slice by the negative of the residual linear drift (anchored at slice 1, the
+    reference).  The aligned GeoJSON files are updated in-place.
+    """
+    if len(aligned_paths) < 3:
+        return
+
+    centroids_x: list[float] = []
+    centroids_y: list[float] = []
+    for path in aligned_paths:
+        try:
+            payload = _read_geojson(path)
+            geoms = [
+                shape(f["geometry"])
+                for f in payload.get("features", [])
+                if f.get("geometry") is not None
+            ]
+            if not geoms:
+                centroids_x.append(float("nan"))
+                centroids_y.append(float("nan"))
+                continue
+            centroid = unary_union(geoms).centroid
+            centroids_x.append(float(centroid.x))
+            centroids_y.append(float(centroid.y))
+        except Exception:
+            centroids_x.append(float("nan"))
+            centroids_y.append(float("nan"))
+
+    n = len(aligned_paths)
+    indices = np.arange(n, dtype=float)
+    cx = np.array(centroids_x, dtype=float)
+    cy = np.array(centroids_y, dtype=float)
+    valid = np.isfinite(cx) & np.isfinite(cy)
+    if valid.sum() < 3:
+        return
+
+    # Fit linear trend anchored at index 0 (reference slice).
+    x_valid, cx_valid = indices[valid], cx[valid]
+    y_valid, cy_valid = indices[valid], cy[valid]
+    cx_trend = np.polyfit(x_valid, cx_valid, 1)
+    cy_trend = np.polyfit(y_valid, cy_valid, 1)
+
+    for i, path in enumerate(aligned_paths):
+        if i == 0:
+            continue  # reference slice: no correction.
+        if not valid[i]:
+            continue
+        drift_x = float(np.polyval(cx_trend, i) - np.polyval(cx_trend, 0))
+        drift_y = float(np.polyval(cy_trend, i) - np.polyval(cy_trend, 0))
+        if abs(drift_x) < 1e-6 and abs(drift_y) < 1e-6:
+            continue
+        try:
+            payload = _read_geojson(path)
+            for feature in payload.get("features", []):
+                if feature.get("geometry") is None:
+                    continue
+                geom = affinity.translate(shape(feature["geometry"]), xoff=-drift_x, yoff=-drift_y)
+                feature["geometry"] = mapping(geom)
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
