@@ -7,6 +7,14 @@ artifacts, and outputs in one place.
 :gutter: 2
 :class-container: link-grid
 
+:::{grid-item-card} 32-Slice Polyp Full Workflow
+:link: polyp_32_slice_full_workflow
+:link-type: doc
+
+Follow the manuscript-scale 32-slice, 2.7M-cell polyp workflow from Xenium
+contours through 3D reconstruction, cell projection, and gene spatial modules.
+:::
+
 :::{grid-item-card} Polyp 24-Gene 3D Spatial Modules
 :link: polyp_24_gene_3d_spatial_modules
 :link-type: doc
@@ -44,6 +52,7 @@ resulting preview outputs and exported files.
 :hidden:
 :maxdepth: 1
 
+polyp_32_slice_full_workflow
 polyp_24_gene_3d_spatial_modules
 3d_stack_reconstruction
 3d_soft_alignment
