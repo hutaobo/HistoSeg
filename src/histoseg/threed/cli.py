@@ -6,6 +6,7 @@ from dataclasses import asdict
 from typing import Sequence
 
 from . import (
+    CellCloudProjectionConfig,
     GeneStructureQuantificationConfig,
     SpatialModuleDiscoveryConfig,
     SpatialModulePlotConfig,
@@ -15,6 +16,7 @@ from . import (
     quantify_gene_structure_relationships,
     run_3d_contour_reconstruction,
     run_3d_stack_reconstruction,
+    run_cell_cloud_projection,
     run_spatial_module_discovery,
 )
 
@@ -282,6 +284,51 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     stack.add_argument("--overwrite", action="store_true", help="Recompute existing artifacts.")
 
+    project_cells = subparsers.add_parser(
+        "project-cells",
+        help="Project merged AnnData cells into a HistoSeg 3D reconstruction.",
+    )
+    project_cells.add_argument("--h5ad", required=True, help="Merged AnnData .h5ad path.")
+    project_cells.add_argument("--stack-root", required=True, help="HistoSeg 3D reconstruction output directory.")
+    project_cells.add_argument("--out-parquet", required=True, help="Output aligned 3D cell Parquet path.")
+    project_cells.add_argument("--sample-column", default="sample_id")
+    project_cells.add_argument("--barcode-column", default="barcode")
+    project_cells.add_argument("--x-column", default="x_centroid")
+    project_cells.add_argument("--y-column", default="y_centroid")
+    project_cells.add_argument(
+        "--label-columns",
+        nargs="*",
+        default=(),
+        help="Optional obs columns to carry into the output table. Comma-separated chunks are accepted.",
+    )
+    project_cells.add_argument("--pixel-size-um", type=float, default=0.2125)
+    project_cells.add_argument("--chunk-size", type=int, default=100000)
+    project_cells.add_argument(
+        "--ignore-cache",
+        action="store_true",
+        help="Ignore AnnData HistoSeg coordinate cache and recompute coordinates.",
+    )
+    project_cells.add_argument(
+        "--fail-on-stale-cache",
+        action="store_true",
+        help="Raise an error instead of recomputing when cached coordinates have a stale alignment hash.",
+    )
+    project_cells.add_argument(
+        "--write-cache",
+        action="store_true",
+        help="Write HistoSeg 3D coordinates and provenance back to AnnData.",
+    )
+    project_cells.add_argument(
+        "--cache-h5ad",
+        default=None,
+        help="Optional output .h5ad for --write-cache. Defaults to overwriting --h5ad.",
+    )
+    project_cells.add_argument(
+        "--write-scanpy-spatial",
+        action="store_true",
+        help="With --write-cache, also write aligned XY to .obsm['spatial'].",
+    )
+
     discover = subparsers.add_parser(
         "discover-spatial-modules",
         help="Batch-map genes into 3D enrichment fields, surfaces, SDF metrics, and spatial module matrices.",
@@ -367,6 +414,27 @@ def main(argv: Sequence[str] | None = None) -> None:
                 diagnostic_structure=args.diagnostic_structure or None,
                 dpi=args.dpi,
                 save_preview_png=not args.no_preview,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "project-cells":
+        result = run_cell_cloud_projection(
+            CellCloudProjectionConfig(
+                h5ad=args.h5ad,
+                stack_root=args.stack_root,
+                out_parquet=args.out_parquet,
+                sample_column=args.sample_column,
+                barcode_column=args.barcode_column,
+                x_column=args.x_column,
+                y_column=args.y_column,
+                label_columns=tuple(_parse_cli_chunks(args.label_columns)),
+                pixel_size_um=args.pixel_size_um,
+                chunk_size=args.chunk_size,
+                ignore_cache=args.ignore_cache,
+                fail_on_stale_cache=args.fail_on_stale_cache,
+                write_cache=args.write_cache,
+                cache_h5ad=args.cache_h5ad,
+                write_scanpy_spatial=args.write_scanpy_spatial,
             )
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
@@ -512,6 +580,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+
+
+def _parse_cli_chunks(values: Sequence[str]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        result.extend(part.strip() for part in str(value).split(",") if part.strip())
+    return result
 
 
 if __name__ == "__main__":
