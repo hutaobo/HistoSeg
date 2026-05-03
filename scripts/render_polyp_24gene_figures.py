@@ -13,6 +13,14 @@ STRUCTURE_COLORS = {
     "Structure 5": "#fb7185",
 }
 
+STRUCTURE_ANNOTATIONS = {
+    "Structure 1": ("S1", "normal surface mucosa"),
+    "Structure 2": ("S2", "tumor surface mucosa"),
+    "Structure 3": ("S3", "normal gland mucosa"),
+    "Structure 4": ("S4", "tumor gland"),
+    "Structure 5": ("S5", "stromal"),
+}
+
 GREM1_SURFACES = {
     "top15": {"color": "#f97316", "opacity": 0.22},
     "top10": {"color": "#dc2626", "opacity": 0.42},
@@ -61,6 +69,16 @@ def _mesh_bounds(meshes):
     return (xmin, xmax, ymin, ymax, zmin, zmax), center, size
 
 
+def _structure_label(name: str) -> str:
+    short, display = STRUCTURE_ANNOTATIONS.get(name, (name, name))
+    return f"{short} {display}"
+
+
+def _structure_short_label(name: str) -> str:
+    short, _display = STRUCTURE_ANNOTATIONS.get(name, (name, name))
+    return short
+
+
 def _camera(meshes, preset: str):
     bounds, center, size = _mesh_bounds(meshes)
     if preset == "dorsal":
@@ -96,8 +114,53 @@ def _add_structures(plotter, structure_meshes, *, opacity: float, show_edges: bo
             specular=0.18,
             roughness=0.55,
             show_edges=show_edges,
-            label=name,
+            label=_structure_label(name),
         )
+
+
+def _add_structure_labels(plotter, structure_meshes, *, text_color: str):
+    import numpy as np
+
+    if not structure_meshes:
+        return
+    _, _, size = _mesh_bounds(structure_meshes.values())
+    points = []
+    labels = []
+    for name, mesh in structure_meshes.items():
+        xmin, xmax, ymin, ymax, _zmin, zmax = mesh.bounds
+        points.append(
+            [
+                (xmin + xmax) / 2,
+                (ymin + ymax) / 2,
+                zmax + size * 0.025,
+            ]
+        )
+        labels.append(_structure_short_label(name))
+    plotter.add_point_labels(
+        np.asarray(points, dtype=float),
+        labels,
+        font_size=22,
+        text_color=text_color,
+        point_color="#111827",
+        point_size=8,
+        shape_color="#ffffff",
+        shape_opacity=0.88,
+        margin=6,
+        always_visible=True,
+        render_points_as_spheres=True,
+    )
+
+
+def _add_structure_legend(plotter, *, text_color: str):
+    text = "\n".join(_structure_label(name) for name in STRUCTURE_ANNOTATIONS)
+    plotter.add_text(
+        text,
+        position=(0.70, 0.78),
+        viewport=True,
+        font_size=10,
+        color=text_color,
+    )
+
 
 
 def _add_grem1(plotter, grem1_meshes, levels):
@@ -116,9 +179,36 @@ def _add_grem1(plotter, grem1_meshes, levels):
         )
 
 
+def _add_grem1_label(plotter, grem1_meshes, *, text_color: str):
+    import numpy as np
+
+    if "top05" not in grem1_meshes:
+        return
+    mesh = grem1_meshes["top05"]
+    xmin, xmax, ymin, ymax, _zmin, zmax = mesh.bounds
+    _, _, size = _mesh_bounds([mesh])
+    point = np.asarray(
+        [[(xmin + xmax) / 2, (ymin + ymax) / 2, zmax + size * 0.10]],
+        dtype=float,
+    )
+    plotter.add_point_labels(
+        point,
+        ["GREM1+ muscularis mucosae"],
+        font_size=21,
+        text_color=text_color,
+        point_color="#7f1d1d",
+        point_size=10,
+        shape_color="#fff7ed",
+        shape_opacity=0.88,
+        margin=8,
+        always_visible=True,
+        render_points_as_spheres=True,
+    )
+
+
 def _render(plotter, meshes, out_path: Path, preset: str, transparent: bool):
     plotter.camera_position = _camera(meshes, preset)
-    plotter.camera.zoom(1.08)
+    plotter.camera.zoom(0.94)
     plotter.enable_anti_aliasing("ssaa")
     plotter.add_axes(line_width=2, labels_off=False)
     plotter.screenshot(out_path, transparent_background=transparent)
@@ -152,7 +242,9 @@ def render_figures(args) -> list[Path]:
         out = args.out_dir / "polyp_3d_structure_surfaces.png"
         plotter = _new_plotter(pv, args)
         _add_structures(plotter, structure_meshes, opacity=0.44, show_edges=False)
-        plotter.add_text("Polyp 3D contour surfaces", font_size=18, color=args.text_color)
+        _add_structure_labels(plotter, structure_meshes, text_color=args.text_color)
+        _add_structure_legend(plotter, text_color=args.text_color)
+        plotter.add_text("Polyp 3D contour surfaces with biological annotations", font_size=16, color=args.text_color)
         _render(plotter, list(structure_meshes.values()), out, args.camera_preset, args.transparent_background)
         outputs.append(out)
 
@@ -160,8 +252,11 @@ def render_figures(args) -> list[Path]:
         out = args.out_dir / f"{args.gene}_nested_3d_hotspot_surfaces.png"
         plotter = _new_plotter(pv, args)
         _add_structures(plotter, structure_meshes, opacity=0.13, show_edges=False)
+        _add_structure_labels(plotter, structure_meshes, text_color=args.text_color)
+        _add_structure_legend(plotter, text_color=args.text_color)
         _add_grem1(plotter, grem1_meshes, ["top15", "top10", "top05"])
-        plotter.add_text(f"{args.gene} nested enrichment hotspots", font_size=18, color=args.text_color)
+        _add_grem1_label(plotter, grem1_meshes, text_color=args.text_color)
+        plotter.add_text(f"{args.gene} nested enrichment hotspots", font_size=16, color=args.text_color)
         _render(plotter, all_meshes, out, args.camera_preset, args.transparent_background)
         outputs.append(out)
 
@@ -169,16 +264,18 @@ def render_figures(args) -> list[Path]:
         out = args.out_dir / f"{args.gene}_structure5_focus.png"
         plotter = _new_plotter(pv, args)
         _add_structures(plotter, {"Structure 5": structure_meshes["Structure 5"]}, opacity=0.24, show_edges=False)
+        _add_structure_labels(plotter, {"Structure 5": structure_meshes["Structure 5"]}, text_color=args.text_color)
         if "Structure 3" in structure_meshes:
             plotter.add_mesh(
                 structure_meshes["Structure 3"],
                 color=STRUCTURE_COLORS["Structure 3"],
                 opacity=0.08,
                 smooth_shading=True,
-                label="Structure 3",
-            )
+                label=_structure_label("Structure 3"),
+        )
         _add_grem1(plotter, grem1_meshes, ["top15", "top10", "top05"])
-        plotter.add_text(f"{args.gene} hotspot embedded in Structure 5", font_size=18, color=args.text_color)
+        _add_grem1_label(plotter, grem1_meshes, text_color=args.text_color)
+        plotter.add_text(f"{args.gene}+ muscularis mucosae isosurface in S5 stromal", font_size=15, color=args.text_color)
         _render(plotter, [structure_meshes["Structure 5"], *grem1_meshes.values()], out, "structure5_focus", args.transparent_background)
         outputs.append(out)
 

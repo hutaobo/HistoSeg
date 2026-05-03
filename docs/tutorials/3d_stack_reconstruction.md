@@ -23,6 +23,14 @@ were discovered in numeric order:
 `A079-C-008_1` through `A079-C-008_16`, then `A079-C-008_25` through
 `A079-C-008_40`.
 
+The dataset comes from the Snyder Lab
+[Space-map study page](https://snyderlabs.stanford.edu/spacemap/), which links
+the 3D Xenium Spatial Transcriptomics input data through the
+[HTAN Data Portal](https://data.humantumoratlas.org/publications/hta6_2025_tbd_rongduo-han?tab=10x-xenium-iss).
+Space-map describes atlas-level single-cell 3D tissue reconstruction from
+serial sections; HistoSeg uses the ordered Xenium slices as input for contour
+extraction, topology-aware alignment, and surface reconstruction.
+
 The structure definition came from a segmentation strategy file with one line
 per structure:
 

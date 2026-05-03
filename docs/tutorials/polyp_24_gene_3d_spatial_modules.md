@@ -23,6 +23,14 @@ registered 32-slice contour stack:
 - `meshes/Structure_1.ply` through `meshes/Structure_5.ply`
 - a merged AnnData `.h5ad` containing expression for all aligned cells
 
+The 32-slice Xenium input is from the Snyder Lab
+[Space-map study page](https://snyderlabs.stanford.edu/spacemap/), with the 3D
+Xenium Spatial Transcriptomics input data linked through the
+[HTAN Data Portal](https://data.humantumoratlas.org/publications/hta6_2025_tbd_rongduo-han?tab=10x-xenium-iss).
+The Space-map documentation describes serial-section single-cell 3D tissue
+reconstruction; this HistoSeg tutorial starts from the aligned contour stack and
+focuses on gene-structure spatial modules.
+
 The starter panel covers stromal, epithelial, proliferative, immune, vascular,
 and perivascular signals:
 
@@ -55,6 +63,16 @@ For this starter panel all 24 genes completed successfully.
 
 The structure surfaces are reconstructed by voxelizing aligned 2D contour
 polygons, smoothing the 3D volume, and extracting a Marching Cubes surface.
+The computational `Structure N` labels are annotated in this polyp tutorial as
+biological tissue compartments:
+
+| Short label | Computational label | Biological annotation |
+| --- | --- | --- |
+| S1 | Structure 1 | Normal surface mucosa |
+| S2 | Structure 2 | Tumor surface mucosa |
+| S3 | Structure 3 | Normal gland mucosa |
+| S4 | Structure 4 | Tumor gland |
+| S5 | Structure 5 | Stromal |
 
 ![Polyp 3D contour surfaces](../_static/threed/polyp/24gene/polyp_3d_structure_surfaces.png)
 
@@ -70,7 +88,9 @@ enrichment field.
 
 ![GREM1 nested 3D hotspot surfaces](../_static/threed/polyp/24gene/GREM1_nested_3d_hotspot_surfaces.png)
 
-The GREM1 top 5% core is visually embedded inside Structure 5.
+The GREM1 top 5% core is visually embedded inside the S5 stromal compartment,
+supporting the interpretation of a GREM1+ muscularis mucosae-associated
+isosurface in this reconstruction.
 
 ![GREM1 Structure 5 focus](../_static/threed/polyp/24gene/GREM1_structure5_focus.png)
 
@@ -107,13 +127,14 @@ inside each 3D structure.
 In this run:
 
 - `GREM1`, `FAP`, `TAGLN`, `ACTA2`, and `COL1A1/COL1A2` localize strongly to
-  Structure 5, matching a stromal/fibrotic compartment.
+  S5 / Structure 5, matching a stromal compartment with a GREM1+ muscularis
+  mucosae-associated isosurface.
 - `MUC2`, `OLFM4`, and `MKI67` are enriched around Structure 3, matching a
-  differentiated/proliferative epithelial compartment.
+  normal gland mucosa-associated epithelial compartment.
 - `LGR5` and `EPCAM` are prominent around Structure 4, consistent with an
-  epithelial/stem-like niche.
+  epithelial/stem-like tumor gland niche.
 - `C1QA` and `PDGFRA` show a Structure 2 signal, suggesting a macrophage or
-  perivascular-associated compartment.
+  perivascular-associated tumor surface mucosa compartment.
 
 The signed-distance matrix gives a complementary view. Negative row-normalized
 values indicate structures where the hotspot is physically embedded rather than
