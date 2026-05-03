@@ -450,8 +450,8 @@ def _compute_tissue_mask(
     mask = (od_mean > threshold) & (gray < 0.93)
     mask = morphology.closing(mask, morphology.disk(3))
     mask = ndi.binary_fill_holes(mask)
-    mask = morphology.remove_small_objects(mask.astype(bool), max_size=max(1, int(min_area_px)))
-    mask = morphology.remove_small_holes(mask.astype(bool), max_size=max(1, int(min_area_px)))
+    mask = morphology.remove_small_objects(mask.astype(bool), min_size=max(1, int(min_area_px)))
+    mask = morphology.remove_small_holes(mask.astype(bool), area_threshold=max(1, int(min_area_px)))
     return mask.astype(bool)
 
 
@@ -542,7 +542,7 @@ def _run_single_region_segmentation(
             point_radius_px=int(cfg.point_radius_px),
         )
         mask = np.asarray(mask, dtype=bool) & tissue_mask
-        mask = morphology.remove_small_objects(mask, max_size=max(1, int(cfg.min_region_area_px)))
+        mask = morphology.remove_small_objects(mask, min_size=max(1, int(cfg.min_region_area_px)))
         if int(mask.sum()) < int(cfg.min_region_area_px):
             continue
         label_value = int(spec["label_value"])
@@ -653,7 +653,7 @@ def _clean_component_label_map(label_map: np.ndarray, min_area_px: int) -> np.nd
     next_label = 1
     for label_value in [int(value) for value in np.unique(label_map) if int(value) > 0]:
         mask = label_map == label_value
-        mask = morphology.remove_small_objects(mask, max_size=min_area_px)
+        mask = morphology.remove_small_objects(mask, min_size=min_area_px)
         components = measure.label(mask, connectivity=1)
         for component in [int(value) for value in np.unique(components) if int(value) > 0]:
             component_mask = components == component
@@ -1022,7 +1022,7 @@ def _threshold_change_score(
         pass
     mask = (score >= threshold) & tissue_mask
     mask = morphology.closing(mask, morphology.disk(2))
-    mask = morphology.remove_small_objects(mask.astype(bool), max_size=max(1, int(min_area_px)))
+    mask = morphology.remove_small_objects(mask.astype(bool), min_size=max(1, int(min_area_px)))
     return mask.astype(bool)
 
 
