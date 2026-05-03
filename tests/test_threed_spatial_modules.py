@@ -2,15 +2,99 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
 import pandas as pd
+import pytest
 from shapely.geometry import box, mapping
 
 from histoseg.threed import (
     GeneStructureQuantificationConfig,
     SpatialModulePlotConfig,
+    compute_hotspot_overlap_metrics,
+    compute_hotspot_sdf_metrics,
     plot_spatial_module_clustermap,
     quantify_gene_structure_relationships,
 )
+
+
+def test_compute_hotspot_overlap_metrics_uses_exact_voxel_counts():
+    gene_mask = np.zeros((5, 5, 5), dtype=bool)
+    structure_mask = np.zeros_like(gene_mask)
+    gene_mask[2, 2, 2] = True
+    gene_mask[2, 2, 3] = True
+    gene_mask[1, 1, 1] = True
+    gene_mask[0, 0, 0] = True
+    structure_mask[2, 2, 2] = True
+    structure_mask[2, 2, 3] = True
+    structure_mask[4, 4, 4] = True
+
+    metrics = compute_hotspot_overlap_metrics(
+        gene_mask,
+        structure_mask,
+        voxel_volume_um3=10.0,
+    )
+
+    assert metrics["gene_hotspot_voxels"] == 4
+    assert metrics["structure_voxels"] == 3
+    assert metrics["overlap_voxels"] == 2
+    assert metrics["overlap_volume_um3"] == 20.0
+    assert metrics["fraction_of_gene_in_structure"] == 0.5
+    assert metrics["fraction_of_structure_covered_by_gene"] == pytest.approx(2 / 3)
+
+
+def test_compute_hotspot_sdf_metrics_respects_anisotropic_zyx_spacing():
+    structure_mask = np.zeros((5, 5, 5), dtype=bool)
+    gene_mask = np.zeros_like(structure_mask)
+    structure_mask[2, 2, 2] = True
+    gene_mask[2, 2, 2] = True  # Inside; boundary voxel is not clamped to zero.
+    gene_mask[2, 2, 3] = True  # One x-step outside.
+    gene_mask[3, 2, 2] = True  # One z-step outside.
+
+    metrics = compute_hotspot_sdf_metrics(
+        gene_mask,
+        structure_mask,
+        spacing_zyx_um=(5.0, 1.0, 1.0),
+    )
+
+    assert metrics["n_hotspot_voxels"] == 3
+    assert metrics["min_signed_distance_um"] == -1.0
+    assert metrics["median_signed_distance_um"] == 1.0
+    assert metrics["max_signed_distance_um"] == 5.0
+    assert metrics["mean_unsigned_distance_um"] == pytest.approx(2.0)
+    assert metrics["fraction_inside_structure"] == pytest.approx(1 / 3)
+    assert metrics["fraction_touching_or_inside_structure"] == pytest.approx(1 / 3)
+
+
+def test_compute_hotspot_sdf_metrics_returns_stable_empty_hotspot_metrics():
+    structure_mask = np.zeros((5, 5, 5), dtype=bool)
+    gene_mask = np.zeros_like(structure_mask)
+    structure_mask[2, 2, 2] = True
+
+    metrics = compute_hotspot_sdf_metrics(
+        gene_mask,
+        structure_mask,
+        spacing_zyx_um=(5.0, 1.0, 1.0),
+    )
+
+    assert metrics["n_hotspot_voxels"] == 0
+    assert metrics["fraction_inside_structure"] == 0.0
+    assert np.isnan(metrics["median_signed_distance_um"])
+
+
+def test_compute_hotspot_sdf_metrics_returns_nan_distances_for_empty_structure():
+    structure_mask = np.zeros((5, 5, 5), dtype=bool)
+    gene_mask = np.zeros_like(structure_mask)
+    gene_mask[2, 2, 2] = True
+
+    metrics = compute_hotspot_sdf_metrics(
+        gene_mask,
+        structure_mask,
+        spacing_zyx_um=(5.0, 1.0, 1.0),
+    )
+
+    assert metrics["n_hotspot_voxels"] == 1
+    assert metrics["fraction_inside_structure"] == 0.0
+    assert np.isnan(metrics["mean_unsigned_distance_um"])
 
 
 def test_quantify_gene_structure_relationships_outputs_sdf_metrics(tmp_path):

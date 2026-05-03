@@ -148,6 +148,91 @@ class _GridSpec:
         return int(np.prod(self.shape_zyx))
 
 
+def compute_hotspot_overlap_metrics(
+    gene_mask: np.ndarray,
+    structure_mask: np.ndarray,
+    voxel_volume_um3: float,
+) -> dict[str, float | int]:
+    """Compute pure voxel overlap metrics for one gene hotspot and structure mask."""
+
+    gene_mask = np.asarray(gene_mask, dtype=bool)
+    structure_mask = np.asarray(structure_mask, dtype=bool)
+    _validate_matching_masks(gene_mask, structure_mask)
+    if voxel_volume_um3 <= 0:
+        raise ValueError("voxel_volume_um3 must be greater than 0.")
+
+    overlap = gene_mask & structure_mask
+    gene_voxels = int(gene_mask.sum())
+    structure_voxels = int(structure_mask.sum())
+    overlap_voxels = int(overlap.sum())
+    return {
+        "gene_hotspot_voxels": gene_voxels,
+        "gene_hotspot_volume_um3": float(gene_voxels * voxel_volume_um3),
+        "structure_voxels": structure_voxels,
+        "structure_volume_um3": float(structure_voxels * voxel_volume_um3),
+        "overlap_voxels": overlap_voxels,
+        "overlap_volume_um3": float(overlap_voxels * voxel_volume_um3),
+        "fraction_of_gene_in_structure": float(overlap_voxels / gene_voxels)
+        if gene_voxels
+        else 0.0,
+        "fraction_of_structure_covered_by_gene": float(overlap_voxels / structure_voxels)
+        if structure_voxels
+        else 0.0,
+    }
+
+
+def compute_hotspot_sdf_metrics(
+    gene_mask: np.ndarray,
+    structure_mask: np.ndarray,
+    spacing_zyx_um: tuple[float, float, float],
+) -> dict[str, float | int]:
+    """Compute anisotropic signed-distance metrics for one hotspot and structure.
+
+    Arrays are interpreted in ``zyx`` order. Distances are physical microns:
+    ``spacing_zyx_um`` is passed directly to SciPy's Euclidean distance
+    transform. Signed distance is negative inside ``structure_mask`` and
+    positive outside. Boundary voxels are not clamped to zero; an isolated
+    inside voxel therefore has distance ``-min(spacing_zyx_um)``.
+    """
+
+    gene_mask = np.asarray(gene_mask, dtype=bool)
+    structure_mask = np.asarray(structure_mask, dtype=bool)
+    _validate_matching_masks(gene_mask, structure_mask)
+    _validate_spacing_zyx(spacing_zyx_um)
+
+    n_hotspot_voxels = int(gene_mask.sum())
+    if n_hotspot_voxels == 0 or not bool(structure_mask.any()):
+        return {
+            "n_hotspot_voxels": n_hotspot_voxels,
+            **_empty_sdf_distribution(),
+            "fraction_inside_structure": 0.0,
+            "fraction_touching_or_inside_structure": 0.0,
+        }
+
+    outside = distance_transform_edt(~structure_mask, sampling=spacing_zyx_um)
+    inside = distance_transform_edt(structure_mask, sampling=spacing_zyx_um)
+    signed = outside.astype(np.float32)
+    signed[structure_mask] = -inside[structure_mask]
+    signed_values = signed[gene_mask]
+    unsigned_values = np.maximum(signed_values, 0.0)
+    return {
+        "n_hotspot_voxels": n_hotspot_voxels,
+        "min_unsigned_distance_um": float(np.min(unsigned_values)),
+        "median_unsigned_distance_um": float(np.median(unsigned_values)),
+        "mean_unsigned_distance_um": float(np.mean(unsigned_values)),
+        "max_unsigned_distance_um": float(np.max(unsigned_values)),
+        "p95_unsigned_distance_um": float(np.percentile(unsigned_values, 95)),
+        "min_signed_distance_um": float(np.min(signed_values)),
+        "median_signed_distance_um": float(np.median(signed_values)),
+        "mean_signed_distance_um": float(np.mean(signed_values)),
+        "max_signed_distance_um": float(np.max(signed_values)),
+        "p05_signed_distance_um": float(np.percentile(signed_values, 5)),
+        "p95_signed_distance_um": float(np.percentile(signed_values, 95)),
+        "fraction_inside_structure": float(np.mean(signed_values < 0)),
+        "fraction_touching_or_inside_structure": float(np.mean(signed_values <= 0)),
+    }
+
+
 def run_spatial_module_discovery(
     cfg: SpatialModuleDiscoveryConfig,
 ) -> SpatialModuleDiscoveryResult:
@@ -376,24 +461,18 @@ def quantify_gene_structure_relationships(
         }
         for structure_name in structures:
             structure_mask = structure_masks[structure_name]
+            overlap_metrics = compute_hotspot_overlap_metrics(
+                gene_mask,
+                structure_mask,
+                grid.voxel_volume_um3,
+            )
             overlap = gene_mask & structure_mask
-            overlap_voxels = int(overlap.sum())
-            structure_voxels = int(structure_mask.sum())
             overlap_rows.append(
                 {
                     "hotspot": level,
                     "structure": structure_name,
                     "threshold_enrichment": thresholds[level],
-                    "gene_hotspot_voxels": gene_voxels,
-                    "gene_hotspot_volume_um3": float(gene_voxels * grid.voxel_volume_um3),
-                    "structure_voxels": structure_voxels,
-                    "structure_volume_um3": float(structure_voxels * grid.voxel_volume_um3),
-                    "overlap_voxels": overlap_voxels,
-                    "overlap_volume_um3": float(overlap_voxels * grid.voxel_volume_um3),
-                    "fraction_of_gene_in_structure": float(overlap_voxels / gene_voxels) if gene_voxels else 0.0,
-                    "fraction_of_structure_covered_by_gene": float(overlap_voxels / structure_voxels)
-                    if structure_voxels
-                    else 0.0,
+                    **overlap_metrics,
                     "overlap_cell_count": float(cell_count[overlap].sum()),
                     "overlap_gene_positive_cell_count": float(positive_count[overlap].sum()),
                     "overlap_gene_expression_sum": float(expression_sum[overlap].sum()),
@@ -958,31 +1037,42 @@ def _distance_row(
     structure_mask: np.ndarray,
     spacing_zyx_um: tuple[float, float, float],
 ) -> dict:
-    outside = distance_transform_edt(~structure_mask, sampling=spacing_zyx_um)
-    inside = distance_transform_edt(structure_mask, sampling=spacing_zyx_um)
-    signed = outside.astype(np.float32)
-    signed[structure_mask] = -inside[structure_mask]
-    signed_values = signed[gene_mask]
-    row = {"hotspot": hotspot, "structure": structure, "n_hotspot_voxels": int(signed_values.size)}
-    if not signed_values.size:
-        return row
-    unsigned_values = np.maximum(signed_values, 0.0)
-    row.update(
-        {
-            "min_unsigned_distance_um": float(np.min(unsigned_values)),
-            "median_unsigned_distance_um": float(np.median(unsigned_values)),
-            "mean_unsigned_distance_um": float(np.mean(unsigned_values)),
-            "p95_unsigned_distance_um": float(np.percentile(unsigned_values, 95)),
-            "min_signed_distance_um": float(np.min(signed_values)),
-            "median_signed_distance_um": float(np.median(signed_values)),
-            "mean_signed_distance_um": float(np.mean(signed_values)),
-            "p05_signed_distance_um": float(np.percentile(signed_values, 5)),
-            "p95_signed_distance_um": float(np.percentile(signed_values, 95)),
-            "fraction_inside_structure": float(np.mean(signed_values < 0)),
-            "fraction_touching_or_inside_structure": float(np.mean(signed_values <= 0)),
-        }
-    )
-    return row
+    return {
+        "hotspot": hotspot,
+        "structure": structure,
+        **compute_hotspot_sdf_metrics(gene_mask, structure_mask, spacing_zyx_um),
+    }
+
+
+def _validate_matching_masks(gene_mask: np.ndarray, structure_mask: np.ndarray) -> None:
+    if gene_mask.shape != structure_mask.shape:
+        raise ValueError(
+            "gene_mask and structure_mask must have identical zyx shapes, got "
+            f"{gene_mask.shape} and {structure_mask.shape}."
+        )
+
+
+def _validate_spacing_zyx(spacing_zyx_um: tuple[float, float, float]) -> None:
+    if len(spacing_zyx_um) != 3:
+        raise ValueError("spacing_zyx_um must contain exactly three values.")
+    if any(float(value) <= 0 for value in spacing_zyx_um):
+        raise ValueError("spacing_zyx_um values must be greater than 0.")
+
+
+def _empty_sdf_distribution() -> dict[str, float]:
+    return {
+        "min_unsigned_distance_um": math.nan,
+        "median_unsigned_distance_um": math.nan,
+        "mean_unsigned_distance_um": math.nan,
+        "max_unsigned_distance_um": math.nan,
+        "p95_unsigned_distance_um": math.nan,
+        "min_signed_distance_um": math.nan,
+        "median_signed_distance_um": math.nan,
+        "mean_signed_distance_um": math.nan,
+        "max_signed_distance_um": math.nan,
+        "p05_signed_distance_um": math.nan,
+        "p95_signed_distance_um": math.nan,
+    }
 
 
 def _plot_overlap_heatmap(
