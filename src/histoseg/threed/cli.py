@@ -114,9 +114,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     reconstruct.add_argument(
         "--rbf-smoothing",
-        type=float,
-        default=1e-4,
-        help="RBF smoothing parameter.",
+        default="1e-4",
+        help="RBF smoothing parameter, or 'auto' for k-fold CV selection.",
     )
     reconstruct.add_argument(
         "--topology-grid-size",
@@ -146,6 +145,40 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--no-preview",
         action="store_true",
         help="Skip writing overlay and diagnostic PNGs.",
+    )
+    reconstruct.add_argument(
+        "--curvature-landmark-weight",
+        type=float,
+        default=0.5,
+        help="Fraction of boundary length to oversample at high-curvature regions (0–1).",
+    )
+    reconstruct.add_argument(
+        "--no-mutual-nn-check",
+        action="store_true",
+        help="Disable mutual nearest-neighbour consistency filter for landmarks.",
+    )
+    reconstruct.add_argument(
+        "--icp-iterations",
+        type=int,
+        default=2,
+        help="Number of ICP-style iterative TPS refinement passes.",
+    )
+    reconstruct.add_argument(
+        "--zero-anchor-count",
+        type=int,
+        default=16,
+        help="Number of zero-displacement anchors placed on the convex-hull perimeter.",
+    )
+    reconstruct.add_argument(
+        "--landmark-outlier-mad-threshold",
+        type=float,
+        default=3.5,
+        help="MAD threshold for landmark outlier rejection. Use 0 to disable.",
+    )
+    reconstruct.add_argument(
+        "--no-per-structure-soft-acceptance",
+        action="store_true",
+        help="Disable per-structure soft/hard acceptance mixing.",
     )
 
     stack = subparsers.add_parser(
@@ -236,7 +269,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     stack.add_argument("--landmark-normal-weight-um", type=float, default=0.0)
     stack.add_argument("--landmark-normal-step-um", type=float, default=None)
     stack.add_argument("--rbf-neighbors", type=int, default=96)
-    stack.add_argument("--rbf-smoothing", type=float, default=1e-4)
+    stack.add_argument("--rbf-smoothing", default="1e-4", help="RBF smoothing or 'auto'.")
     stack.add_argument("--topology-grid-size", type=int, default=24)
     stack.add_argument("--topology-min-area-ratio", type=float, default=0.5)
     stack.add_argument("--topology-max-area-ratio", type=float, default=2.0)
@@ -285,6 +318,41 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="Skip per-pair soft-alignment preview PNGs.",
     )
     stack.add_argument("--overwrite", action="store_true", help="Recompute existing artifacts.")
+    stack.add_argument(
+        "--no-multistart",
+        action="store_true",
+        help="Disable multi-start similarity alignment (single PCA-seeded run only).",
+    )
+    stack.add_argument(
+        "--affine-fallback-iou-threshold",
+        type=float,
+        default=0.0,
+        help="Try 6-DOF affine fallback when similarity IoU is below this value. 0 = disabled.",
+    )
+    stack.add_argument(
+        "--global-drift-correction",
+        action="store_true",
+        help="Apply linear centroid drift correction after the full alignment chain.",
+    )
+    stack.add_argument(
+        "--curvature-landmark-weight",
+        type=float,
+        default=0.5,
+        help="Fraction of boundary to oversample at high-curvature regions (0–1).",
+    )
+    stack.add_argument(
+        "--no-mutual-nn-check",
+        action="store_true",
+        help="Disable mutual nearest-neighbour landmark consistency filter.",
+    )
+    stack.add_argument("--icp-iterations", type=int, default=2)
+    stack.add_argument("--zero-anchor-count", type=int, default=16)
+    stack.add_argument("--landmark-outlier-mad-threshold", type=float, default=3.5)
+    stack.add_argument(
+        "--no-per-structure-soft-acceptance",
+        action="store_true",
+        help="Use global soft/hard acceptance instead of per-structure acceptance.",
+    )
 
     project_cells = subparsers.add_parser(
         "project-cells",
@@ -437,6 +505,9 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     args = parser.parse_args(argv)
     if args.command == "reconstruct":
+        rbf_smoothing_reconstruct = (
+            args.rbf_smoothing if args.rbf_smoothing == "auto" else float(args.rbf_smoothing)
+        )
         result = run_3d_contour_reconstruction(
             ThreeDContourReconstructionConfig(
                 fixed_geojson=args.fixed_geojson,
@@ -453,13 +524,23 @@ def main(argv: Sequence[str] | None = None) -> None:
                 landmark_normal_step_um=args.landmark_normal_step_um,
                 rbf_kernel=args.rbf_kernel,
                 rbf_neighbors=args.rbf_neighbors or None,
-                rbf_smoothing=args.rbf_smoothing,
+                rbf_smoothing=rbf_smoothing_reconstruct,
                 topology_grid_size=args.topology_grid_size,
                 topology_min_area_ratio=args.topology_min_area_ratio,
                 topology_max_area_ratio=args.topology_max_area_ratio,
                 diagnostic_structure=args.diagnostic_structure or None,
                 dpi=args.dpi,
                 save_preview_png=not args.no_preview,
+                curvature_landmark_weight=args.curvature_landmark_weight,
+                mutual_nn_check=not args.no_mutual_nn_check,
+                icp_iterations=args.icp_iterations,
+                zero_anchor_count=args.zero_anchor_count,
+                landmark_outlier_mad_threshold=(
+                    args.landmark_outlier_mad_threshold
+                    if args.landmark_outlier_mad_threshold > 0
+                    else None
+                ),
+                per_structure_soft_acceptance=not args.no_per_structure_soft_acceptance,
             )
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
@@ -621,6 +702,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             for fmt in args.mesh_export_formats.split(",")
             if fmt.strip()
         )
+        rbf_smoothing_stack = (
+            args.rbf_smoothing if args.rbf_smoothing == "auto" else float(args.rbf_smoothing)
+        )
         result = run_3d_stack_reconstruction(
             ThreeDStackReconstructionConfig(
                 xenium_root=args.xenium_root,
@@ -643,6 +727,9 @@ def main(argv: Sequence[str] | None = None) -> None:
                 min_component_pixels=args.min_component_pixels,
                 save_slice_preview_png=args.save_slice_preview,
                 hard_alignment_maxiter=args.hard_alignment_maxiter,
+                hard_alignment_multistart=not args.no_multistart,
+                affine_fallback_iou_threshold=args.affine_fallback_iou_threshold,
+                global_drift_correction=args.global_drift_correction,
                 run_soft_alignment=not args.no_soft,
                 sampling_distance_um=args.sampling_distance_um,
                 max_landmark_distance_um=args.max_landmark_distance_um,
@@ -653,12 +740,22 @@ def main(argv: Sequence[str] | None = None) -> None:
                 landmark_normal_weight_um=args.landmark_normal_weight_um,
                 landmark_normal_step_um=args.landmark_normal_step_um,
                 rbf_neighbors=args.rbf_neighbors or None,
-                rbf_smoothing=args.rbf_smoothing,
+                rbf_smoothing=rbf_smoothing_stack,
                 topology_grid_size=args.topology_grid_size,
                 topology_min_area_ratio=args.topology_min_area_ratio,
                 topology_max_area_ratio=args.topology_max_area_ratio,
                 diagnostic_structure=args.diagnostic_structure or None,
                 save_alignment_preview_png=not args.no_alignment_preview,
+                curvature_landmark_weight=args.curvature_landmark_weight,
+                mutual_nn_check=not args.no_mutual_nn_check,
+                icp_iterations=args.icp_iterations,
+                zero_anchor_count=args.zero_anchor_count,
+                landmark_outlier_mad_threshold=(
+                    args.landmark_outlier_mad_threshold
+                    if args.landmark_outlier_mad_threshold > 0
+                    else None
+                ),
+                per_structure_soft_acceptance=not args.no_per_structure_soft_acceptance,
                 point_sample_distance_um=args.point_sample_distance_um,
                 voxel_size_um=args.voxel_size_um,
                 mesh_method=args.mesh_method,

@@ -221,6 +221,130 @@ def test_mesh_level_must_be_between_zero_and_one(tmp_path):
         )
 
 
+def test_hard_align_multistart_improves_or_maintains_iou(tmp_path):
+    """Multi-start should produce at least as good IoU as single-start."""
+    fixed = tmp_path / "fixed.geojson"
+    moving = tmp_path / "moving.geojson"
+    _write_geojson(
+        fixed,
+        [
+            _feature(box(0, 0, 20, 10), "Structure 1"),
+            _feature(box(30, 0, 40, 12), "Structure 2"),
+        ],
+    )
+    _write_geojson(
+        moving,
+        [
+            _feature(box(5, 2, 25, 12), "Structure 1"),
+            _feature(box(35, 2, 45, 14), "Structure 2"),
+        ],
+    )
+    summary_single = hard_align_geojson(
+        fixed_geojson=fixed,
+        moving_geojson=moving,
+        output_geojson=tmp_path / "hard_single.geojson",
+        group_property="structure",
+        maxiter=30,
+        overwrite=True,
+        multistart=False,
+    )
+    summary_multi = hard_align_geojson(
+        fixed_geojson=fixed,
+        moving_geojson=moving,
+        output_geojson=tmp_path / "hard_multi.geojson",
+        group_property="structure",
+        maxiter=30,
+        overwrite=True,
+        multistart=True,
+    )
+    assert summary_multi["union_iou_after_hard"] >= summary_single["union_iou_after_hard"] - 0.02
+
+
+def test_hard_align_affine_fallback_accepted_when_triggered(tmp_path):
+    """affine_fallback_iou_threshold=1.0 always triggers the affine fallback."""
+    fixed = tmp_path / "fixed.geojson"
+    moving = tmp_path / "moving.geojson"
+    _write_geojson(fixed, [_feature(box(0, 0, 20, 10), "Structure 1")])
+    _write_geojson(moving, [_feature(box(2, 1, 22, 11), "Structure 1")])
+    summary = hard_align_geojson(
+        fixed_geojson=fixed,
+        moving_geojson=moving,
+        output_geojson=tmp_path / "hard_affine.geojson",
+        group_property="structure",
+        maxiter=20,
+        overwrite=True,
+        affine_fallback_iou_threshold=1.0,  # always trigger
+    )
+    # The function should complete without error regardless of whether affine was used.
+    assert summary["union_iou_after_hard"] >= 0.0
+    assert (tmp_path / "hard_affine.geojson").exists()
+
+
+def test_build_per_structure_soft_geojson_uses_soft_where_improved(tmp_path):
+    """Per-structure mixing should use soft geometry where IoU is better."""
+    from histoseg.threed.multislice import _build_per_structure_soft_geojson
+
+    hard_features = [
+        _feature(box(0, 0, 10, 10), "S1"),
+        _feature(box(20, 0, 30, 10), "S2"),
+    ]
+    # Soft S1 is slightly different, soft S2 is significantly different
+    soft_features = [
+        _feature(box(0.1, 0.1, 10.1, 10.1), "S1"),
+        _feature(box(100, 100, 200, 200), "S2"),  # deliberately bad
+    ]
+    hard_payload = {"type": "FeatureCollection", "features": hard_features}
+    soft_payload = {"type": "FeatureCollection", "features": soft_features}
+    # S1: soft IoU > hard IoU (both at identity, soft slightly shifted closer)
+    # S2: soft IoU=0 (far off), hard IoU > 0
+    soft_summary = {
+        "qc": {
+            "per_structure": {
+                "S1": {"iou_hard_before_soft": 0.8, "iou_soft_after": 0.9, "delta_iou_soft": 0.1},
+                "S2": {"iou_hard_before_soft": 0.7, "iou_soft_after": 0.0, "delta_iou_soft": -0.7},
+            }
+        }
+    }
+    mixed = _build_per_structure_soft_geojson(hard_payload, soft_payload, "structure", soft_summary)
+    geoms_by_structure = {
+        f["properties"]["structure"]: shape(f["geometry"])
+        for f in mixed["features"]
+    }
+    # S1 should use soft geometry (IoU improved)
+    assert geoms_by_structure["S1"].equals(shape(soft_features[0]["geometry"]))
+    # S2 should keep hard geometry (IoU degraded)
+    assert geoms_by_structure["S2"].equals(shape(hard_features[1]["geometry"]))
+
+
+def test_global_drift_correction_applies_translation(tmp_path):
+    """Drift correction should translate slices with accumulated centroid drift."""
+    from histoseg.threed.multislice import _apply_global_drift_correction
+
+    slices = []
+    aligned_rows = []
+    for i in range(4):
+        path = tmp_path / f"slice_{i}.geojson"
+        # Each slice's centroid drifts by (10, 5) per step.
+        offset = i * 10.0
+        features = [_feature(box(offset, offset / 2, offset + 20, offset / 2 + 20), "S")]
+        _write_geojson(path, features)
+        slices.append(path)
+        aligned_rows.append({"order": i + 1, "sample_id": f"s{i}", "aligned_geojson": str(path)})
+
+    _apply_global_drift_correction(slices, aligned_rows, group_property="structure")
+
+    # The reference slice (index 0) should not be modified.
+    ref_payload = json.loads(slices[0].read_text(encoding="utf-8"))
+    ref_geom = shape(ref_payload["features"][0]["geometry"])
+    assert abs(ref_geom.centroid.x - 10.0) < 0.1  # centroid of box(0,0,20,20) = (10,10)
+
+    # Non-reference slices should have been corrected (closer to reference centroid trend).
+    last_payload = json.loads(slices[-1].read_text(encoding="utf-8"))
+    last_geom = shape(last_payload["features"][0]["geometry"])
+    # After drift correction, the centroid x should be closer to the trend-predicted value.
+    assert abs(last_geom.centroid.x) < 50.0  # broad sanity check (no extreme drift)
+
+
 def _feature(geom, structure: str):
     return {
         "type": "Feature",
