@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "validation": "sdf_anisotropy_sweep",
+  "description": "Synthetic validation of compute_hotspot_sdf_metrics under anisotropic z sampling.",
+  "z_factors": [
+    1.0,
+    2.0,
+    5.0,
+    10.0
+  ],
+  "outputs": {
+    "sdf_truth_table_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\validation\\results\\sdf_truth_table.csv",
+    "empty_mask_contract_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\validation\\results\\empty_mask_contract.csv",
+    "anisotropy_sensitivity_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\validation\\results\\anisotropy_sensitivity.csv",
+    "anisotropy_sensitivity_fraction_inside_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\validation\\results\\anisotropy_sensitivity_fraction_inside.csv",
+    "anisotropy_sensitivity_signed_distance_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\validation\\results\\anisotropy_sensitivity_signed_distance.csv",
+    "anisotropy_sensitivity_png": "D:\\GitHub\\HistoSeg\\reproducibility\\validation\\results\\anisotropy_sensitivity.png"
+  },
+  "summary": {
+    "min_fraction_inside_structure": 0.9673617899424352,
+    "max_fraction_inside_structure": 0.9698464912280702,
+    "max_abs_fraction_inside_delta": 0.0024847012856350492,
+    "max_abs_fraction_inside_percent_delta": 0.24847012856350492,
+    "max_abs_median_signed_delta_um": 0.5660190582275391,
+    "max_signed_summary_mae_um": 1.4766236543655396
+  }
+}

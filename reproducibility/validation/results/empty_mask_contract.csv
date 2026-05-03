@@ -1,0 +1,3 @@
+case,n_hotspot_voxels,fraction_inside_structure,fraction_touching_or_inside_structure,distance_summaries_are_nan,contract_passed
+empty_hotspot,0,0.0,0.0,True,True
+empty_structure,1,0.0,0.0,True,True

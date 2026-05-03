@@ -44,6 +44,10 @@ the post-merge validation.
 **Scientific Conclusion:** HistoSeg's structure association metrics are defined
 on physical voxel spacing and remain interpretable under anisotropic sampling
 because distances are computed directly from 3D masks with SciPy EDT sampling.
+The measured synthetic sweep confirms that the implemented metric contract is
+stable for a smooth tilted ellipsoid scene across \(1\times\) to \(10\times\)
+Z spacing: fraction-inside drift is 0.0025 at most, and median signed-distance
+drift is 0.566 um at most.
 
 **Panels:**
 
@@ -58,21 +62,23 @@ because distances are computed directly from 3D masks with SciPy EDT sampling.
   structure cases return NaN distance summaries and zero inside/touching
   fractions instead of infinite distances.
 - **D. Anisotropy sensitivity summary.** Plot fraction-inside and signed
-  distance summaries over a synthetic stack where `(z_um, y_um, x_um)` is
-  varied while the same binary mask contract is preserved.
+  distance summaries from `reproducibility/validation/sdf_anisotropy_sweep.py`,
+  which discretizes the same tilted ellipsoid scene at \(1\times\), \(2\times\),
+  \(5\times\), and \(10\times\) Z spacing and evaluates the public
+  `compute_hotspot_sdf_metrics` API.
 
-**Data Source:** `synthetic_stack` validation fixtures derived from
-`tests/test_threed_spatial_modules.py` and a lightweight synthetic anisotropy
-sweep.
+**Data Source:** `tests/test_threed_spatial_modules.py` truth-table fixtures
+and `reproducibility/validation/sdf_anisotropy_sweep.py`.
 
 **Expected Artifacts:**
 
-- `synthetic_stack/sdf_truth_table.csv`
-- `synthetic_stack/sdf_truth_table.png`
-- `synthetic_stack/empty_mask_contract.csv`
-- `synthetic_stack/anisotropy_sensitivity_fraction_inside.csv`
-- `synthetic_stack/anisotropy_sensitivity_signed_distance.csv`
-- `synthetic_stack/anisotropy_sensitivity.png`
+- `reproducibility/validation/results/sdf_truth_table.csv`
+- `reproducibility/validation/results/empty_mask_contract.csv`
+- `reproducibility/validation/results/anisotropy_sensitivity.csv`
+- `reproducibility/validation/results/anisotropy_sensitivity_fraction_inside.csv`
+- `reproducibility/validation/results/anisotropy_sensitivity_signed_distance.csv`
+- `reproducibility/validation/results/anisotropy_sensitivity.png`
+- `reproducibility/validation/results/validation_manifest.json`
 
 ## Figure 3: Biological Discovery In The 32-Slice Polyp Stack
 

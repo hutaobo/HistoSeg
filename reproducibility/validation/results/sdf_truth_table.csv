@@ -1,0 +1,8 @@
+case,metric,observed,expected,absolute_error,passed
+5x5x5_anisotropic_truth_table,n_hotspot_voxels,3.0,3.0,0.0,True
+5x5x5_anisotropic_truth_table,min_signed_distance_um,-1.0,-1.0,0.0,True
+5x5x5_anisotropic_truth_table,median_signed_distance_um,1.0,1.0,0.0,True
+5x5x5_anisotropic_truth_table,max_signed_distance_um,5.0,5.0,0.0,True
+5x5x5_anisotropic_truth_table,mean_unsigned_distance_um,2.0,2.0,0.0,True
+5x5x5_anisotropic_truth_table,fraction_inside_structure,0.3333333333333333,0.3333333333333333,0.0,True
+5x5x5_anisotropic_truth_table,fraction_touching_or_inside_structure,0.3333333333333333,0.3333333333333333,0.0,True
