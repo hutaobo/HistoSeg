@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+from html import escape
 import json
+import logging
 import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence, Union
@@ -24,6 +26,32 @@ CELL_CLOUD_OBSM_KEY = "X_histoseg_3d_um"
 CELL_CLOUD_ALIGNED_XY_OBSM_KEY = "X_histoseg_aligned_xy_um"
 CELL_CLOUD_OBS_SLICE_KEY = "histoseg_slice_id"
 CELL_CLOUD_UNS_KEY = "histoseg_3d_alignment"
+CELL_CLOUD_RENDER_WARNING_THRESHOLD = 500000
+
+LOGGER = logging.getLogger(__name__)
+
+CELL_CLOUD_PALETTE = (
+    "#2dd4bf",
+    "#60a5fa",
+    "#f59e0b",
+    "#a78bfa",
+    "#fb7185",
+    "#84cc16",
+    "#facc15",
+    "#22c55e",
+    "#38bdf8",
+    "#f472b6",
+    "#c084fc",
+    "#fb923c",
+    "#14b8a6",
+    "#818cf8",
+    "#ef4444",
+    "#10b981",
+    "#eab308",
+    "#06b6d4",
+    "#8b5cf6",
+    "#f97316",
+)
 
 
 @dataclass(frozen=True)
@@ -54,6 +82,35 @@ class CellCloudProjectionResult:
     alignment_hash: str
     cache_status: str
     cache_h5ad: Path | None = None
+
+
+@dataclass(frozen=True)
+class CellCloudRenderConfig:
+    aligned_cells_parquet: PathLike
+    stack_root: PathLike
+    out_html: PathLike
+    label_column: str = "leiden_1_0"
+    max_points: int = 300000
+    random_state: int = 0
+    z_visual_scale: float = 8.0
+    marker_size: float = 1.4
+    opacity: float = 0.48
+    include_contours: bool = True
+    title: str = "HistoSeg 3D cell cloud"
+    performance_warning_threshold: int = CELL_CLOUD_RENDER_WARNING_THRESHOLD
+
+
+@dataclass
+class CellCloudRenderResult:
+    out_html: Path
+    aligned_cells_parquet: Path
+    stack_root: Path
+    total_cells: int
+    rendered_cells: int
+    label_column: str
+    label_count: int
+    contour_trace_count: int
+    z_visual_scale: float
 
 
 @dataclass(frozen=True)
@@ -173,6 +230,67 @@ def run_cell_cloud_projection(cfg: CellCloudProjectionConfig) -> CellCloudProjec
     finally:
         if getattr(adata, "isbacked", False):
             adata.file.close()
+
+
+def render_cell_cloud_html(cfg: CellCloudRenderConfig) -> CellCloudRenderResult:
+    """Render an aligned HistoSeg cell cloud Parquet as an interactive Plotly HTML."""
+
+    _validate_render_config(cfg)
+    aligned_cells_parquet = Path(cfg.aligned_cells_parquet).expanduser().resolve()
+    stack_root = Path(cfg.stack_root).expanduser().resolve()
+    out_html = Path(cfg.out_html).expanduser().resolve()
+    out_html.parent.mkdir(parents=True, exist_ok=True)
+
+    cells = pd.read_parquet(aligned_cells_parquet)
+    _require_columns(cells, [cfg.label_column, "x_3d_um", "y_3d_um", "z_um"])
+    cells = _finite_cell_cloud_rows(cells)
+    total_cells = int(len(cells))
+    render_target = min(total_cells, int(cfg.max_points))
+    warning_threshold = int(cfg.performance_warning_threshold)
+    if warning_threshold > 0 and (total_cells > warning_threshold or render_target > warning_threshold):
+        LOGGER.warning(
+            "Cell cloud has %s valid cells and render target is %s points; "
+            "Plotly scatter3d can become slow above %s points. Use --max-points to downsample.",
+            total_cells,
+            render_target,
+            warning_threshold,
+        )
+
+    sampled = _sample_cell_cloud(
+        cells,
+        label_column=cfg.label_column,
+        max_points=int(cfg.max_points),
+        random_state=int(cfg.random_state),
+    )
+    contour_traces = (
+        _load_cell_cloud_contour_traces(stack_root, z_visual_scale=float(cfg.z_visual_scale))
+        if cfg.include_contours
+        else []
+    )
+    _write_cell_cloud_plotly_html(
+        sampled,
+        out_html,
+        label_column=cfg.label_column,
+        title=cfg.title,
+        z_visual_scale=float(cfg.z_visual_scale),
+        marker_size=float(cfg.marker_size),
+        opacity=float(cfg.opacity),
+        extra_traces=contour_traces,
+        total_cells=total_cells,
+        parquet_path=aligned_cells_parquet,
+    )
+
+    return CellCloudRenderResult(
+        out_html=out_html,
+        aligned_cells_parquet=aligned_cells_parquet,
+        stack_root=stack_root,
+        total_cells=total_cells,
+        rendered_cells=int(len(sampled)),
+        label_column=cfg.label_column,
+        label_count=int(sampled[cfg.label_column].astype(str).nunique()),
+        contour_trace_count=len(contour_traces),
+        z_visual_scale=float(cfg.z_visual_scale),
+    )
 
 
 def build_alignment_manifest(
@@ -500,6 +618,203 @@ def make_cell_cloud_cache_provenance(
     }
 
 
+def _finite_cell_cloud_rows(cells: pd.DataFrame) -> pd.DataFrame:
+    frame = cells.copy()
+    for column in ("x_3d_um", "y_3d_um", "z_um"):
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    finite = np.isfinite(frame[["x_3d_um", "y_3d_um", "z_um"]].to_numpy(dtype=float)).all(axis=1)
+    return frame.loc[finite].reset_index(drop=True)
+
+
+def _sample_cell_cloud(
+    cells: pd.DataFrame,
+    *,
+    label_column: str,
+    max_points: int,
+    random_state: int,
+) -> pd.DataFrame:
+    if max_points <= 0:
+        raise ValueError("max_points must be greater than 0.")
+    if len(cells) <= max_points:
+        return cells.copy().reset_index(drop=True)
+
+    strata_columns = [label_column]
+    if "slice_order" in cells.columns:
+        strata_columns.append("slice_order")
+    grouped = list(cells.groupby(strata_columns, sort=False, dropna=False))
+    counts = pd.Series([len(group) for _, group in grouped], dtype=float)
+    raw_targets = counts * float(max_points) / float(max(int(counts.sum()), 1))
+    targets = np.floor(raw_targets).astype(int).clip(upper=counts.astype(int))
+
+    remaining = int(max_points - targets.sum())
+    if remaining > 0:
+        capacity = counts.astype(int) - targets
+        remainders = (raw_targets - np.floor(raw_targets)).sort_values(ascending=False)
+        while remaining > 0 and int(capacity.sum()) > 0:
+            for index in remainders.index:
+                if remaining <= 0:
+                    break
+                if int(capacity.loc[index]) <= 0:
+                    continue
+                targets.loc[index] += 1
+                capacity.loc[index] -= 1
+                remaining -= 1
+
+    pieces: list[pd.DataFrame] = []
+    for index, (_, group) in enumerate(grouped):
+        target = int(targets.loc[index])
+        if target <= 0:
+            continue
+        if len(group) <= target:
+            pieces.append(group)
+        else:
+            pieces.append(group.sample(n=target, random_state=random_state + index))
+    if not pieces:
+        return cells.sample(n=max_points, random_state=random_state).reset_index(drop=True)
+    return pd.concat(pieces, ignore_index=True)
+
+
+def _load_cell_cloud_contour_traces(stack_root: Path, *, z_visual_scale: float) -> list[dict[str, Any]]:
+    contour_path = Path(stack_root) / "aligned_contour_3d_points.csv"
+    if not contour_path.exists():
+        return []
+    contour = pd.read_csv(contour_path)
+    required = {"structure", "slice_order", "polyline_id", "point_index", "x_um", "y_um", "z_um"}
+    if not required.issubset(contour.columns):
+        return []
+
+    traces: list[dict[str, Any]] = []
+    for index, (structure, group) in enumerate(contour.groupby("structure", sort=True)):
+        x_values: list[float | None] = []
+        y_values: list[float | None] = []
+        z_values: list[float | None] = []
+        for _, polyline in group.sort_values(
+            ["slice_order", "polyline_id", "point_index"]
+        ).groupby(["slice_order", "polyline_id"], sort=False):
+            x_values.extend(polyline["x_um"].round(3).tolist())
+            y_values.extend(polyline["y_um"].round(3).tolist())
+            z_values.extend((polyline["z_um"] * z_visual_scale).round(3).tolist())
+            x_values.append(None)
+            y_values.append(None)
+            z_values.append(None)
+        traces.append(
+            {
+                "type": "scatter3d",
+                "mode": "lines",
+                "name": f"{structure} contour",
+                "x": x_values,
+                "y": y_values,
+                "z": z_values,
+                "line": {"width": 3, "color": CELL_CLOUD_PALETTE[index % len(CELL_CLOUD_PALETTE)]},
+                "opacity": 0.72,
+                "visible": "legendonly",
+                "hoverinfo": "skip",
+            }
+        )
+    return traces
+
+
+def _write_cell_cloud_plotly_html(
+    cells: pd.DataFrame,
+    output_html: Path,
+    *,
+    label_column: str,
+    title: str,
+    z_visual_scale: float,
+    marker_size: float,
+    opacity: float,
+    extra_traces: Sequence[Mapping[str, Any]],
+    total_cells: int,
+    parquet_path: Path,
+) -> None:
+    traces: list[dict[str, Any]] = []
+    labels = sorted(cells[label_column].astype(str).unique(), key=_cell_cloud_label_sort_key)
+    for index, label in enumerate(labels):
+        group = cells.loc[cells[label_column].astype(str) == label]
+        z_true = group["z_um"].to_numpy(dtype=float)
+        trace_name = _cell_cloud_trace_name(label_column, label)
+        traces.append(
+            {
+                "type": "scatter3d",
+                "mode": "markers",
+                "name": trace_name,
+                "x": group["x_3d_um"].round(3).tolist(),
+                "y": group["y_3d_um"].round(3).tolist(),
+                "z": (z_true * z_visual_scale).round(3).tolist(),
+                "customdata": z_true.round(3).tolist(),
+                "marker": {
+                    "size": marker_size,
+                    "color": CELL_CLOUD_PALETTE[index % len(CELL_CLOUD_PALETTE)],
+                    "opacity": opacity,
+                    "line": {"width": 0},
+                },
+                "hovertemplate": (
+                    f"{trace_name}<br>"
+                    "x=%{x:.1f} um<br>"
+                    "y=%{y:.1f} um<br>"
+                    "z=%{customdata:.1f} um<extra></extra>"
+                ),
+            }
+        )
+
+    traces.extend(dict(trace) for trace in extra_traces)
+    subtitle = f"Showing {len(cells):,} of {total_cells:,} cells; full table: {parquet_path}"
+    z_title = "Z (um)"
+    if z_visual_scale != 1:
+        z_title = f"Z (um, visual x{z_visual_scale:g})"
+
+    html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>{escape(title)}</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    body {{ margin: 0; background: #08111f; color: #d8e2ef; font-family: Arial, sans-serif; }}
+    #plot {{ width: 100vw; height: 100vh; }}
+  </style>
+</head>
+<body>
+  <div id="plot"></div>
+  <script>
+    const data = {json.dumps(traces)};
+    const layout = {{
+      title: {{
+        text: {json.dumps(title + "<br><sup>" + subtitle + "</sup>")},
+        font: {{color: "#d8e2ef", size: 20}}
+      }},
+      paper_bgcolor: "#08111f",
+      plot_bgcolor: "#08111f",
+      scene: {{
+        xaxis: {{title: "X (um)", color: "#b9c7d6", gridcolor: "#27364a"}},
+        yaxis: {{title: "Y (um)", color: "#b9c7d6", gridcolor: "#27364a"}},
+        zaxis: {{title: {json.dumps(z_title)}, color: "#b9c7d6", gridcolor: "#27364a"}},
+        aspectmode: "data"
+      }},
+      legend: {{font: {{color: "#d8e2ef"}}, itemsizing: "constant"}},
+      margin: {{l: 0, r: 0, t: 62, b: 0}}
+    }};
+    Plotly.newPlot("plot", data, layout, {{responsive: true}});
+  </script>
+</body>
+</html>
+"""
+    output_html.write_text(html, encoding="utf-8")
+
+
+def _cell_cloud_label_sort_key(value: str) -> tuple[int, Any]:
+    try:
+        return (0, int(value))
+    except ValueError:
+        return (1, value)
+
+
+def _cell_cloud_trace_name(label_column: str, label: str) -> str:
+    if label_column.lower().startswith("leiden"):
+        return f"Leiden {label}"
+    return f"{label_column} {label}"
+
+
 def _cell_cloud_dataframe_from_cache(
     obs: pd.DataFrame,
     adata: Any,
@@ -620,6 +935,19 @@ def _validate_projection_config(cfg: CellCloudProjectionConfig) -> None:
         raise ValueError("--write-scanpy-spatial requires --write-cache.")
 
 
+def _validate_render_config(cfg: CellCloudRenderConfig) -> None:
+    if int(cfg.max_points) <= 0:
+        raise ValueError("max_points must be greater than 0.")
+    if float(cfg.z_visual_scale) <= 0:
+        raise ValueError("z_visual_scale must be greater than 0.")
+    if float(cfg.marker_size) <= 0:
+        raise ValueError("marker_size must be greater than 0.")
+    if not 0 <= float(cfg.opacity) <= 1:
+        raise ValueError("opacity must be between 0 and 1.")
+    if not str(cfg.label_column).strip():
+        raise ValueError("label_column must not be empty.")
+
+
 def _validate_chunk_size(chunk_size: int) -> None:
     if int(chunk_size) <= 0:
         raise ValueError("chunk_size must be greater than 0.")
@@ -683,6 +1011,8 @@ __all__ = [
     "CELL_CLOUD_UNS_KEY",
     "CellCloudProjectionConfig",
     "CellCloudProjectionResult",
+    "CellCloudRenderConfig",
+    "CellCloudRenderResult",
     "SimilarityTransform",
     "SliceCellTransform",
     "TpsModel",
@@ -695,6 +1025,7 @@ __all__ = [
     "load_cell_alignment_transforms",
     "make_cell_cloud_cache_provenance",
     "project_cell_coordinates",
+    "render_cell_cloud_html",
     "run_cell_cloud_projection",
     "write_cell_cloud_cache",
 ]

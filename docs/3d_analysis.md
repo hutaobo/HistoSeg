@@ -6,7 +6,7 @@ contour annotations, build 3D contour stacks, export per-structure PLY/OBJ
 meshes, and inspect QC artifacts before downstream analysis. The Python
 namespace is `histoseg.threed` because module names cannot begin with a digit.
 
-The flagship 3D surface currently has two public workflows:
+The flagship 3D surface currently has these public workflows:
 
 - Pairwise conservative TPS soft alignment for a fixed contour GeoJSON and a
   moving contour GeoJSON that has already been hard-aligned with a similarity
@@ -18,6 +18,8 @@ The flagship 3D surface currently has two public workflows:
 - 3D gene spatial module discovery from an aligned cell table and merged
   AnnData: gene enrichment voxels, nested hotspot surfaces, voxel overlap/SDF
   distance metrics, and gene-by-structure clustermaps.
+- 3D cell cloud rendering from aligned cell Parquet or merged AnnData into a
+  browser-shareable Plotly HTML, with optional contour overlays.
 
 ## Current Scope
 
@@ -101,6 +103,22 @@ result = run_spatial_module_discovery(cfg)
 print(result.fraction_inside_matrix_csv)
 ```
 
+For an interactive 3D cell cloud:
+
+```python
+from histoseg.threed import CellCloudRenderConfig, render_cell_cloud_html
+
+result = render_cell_cloud_html(
+    CellCloudRenderConfig(
+        stack_root="outputs/polyp_3d_reconstruction",
+        aligned_cells_parquet="outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet",
+        out_html="outputs/polyp_3d_reconstruction/leiden_3d_cells.html",
+        label_column="leiden_1_0",
+    )
+)
+print(result.out_html)
+```
+
 ## CLI
 
 ```bash
@@ -132,6 +150,22 @@ histoseg-3d reconstruct-stack \
 
 Set `--mesh-smoothing-sigma-um 0` to disable the 3D Gaussian smoothing step.
 `--mesh-level` must stay between `0` and `1` for the Marching Cubes surface.
+
+Render aligned cells into a Plotly/WebGL HTML view:
+
+```bash
+histoseg-3d render-cell-cloud \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --aligned-cells-parquet outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet \
+  --out-html outputs/polyp_3d_reconstruction/leiden_3d_cells.html \
+  --label-column leiden_1_0 \
+  --max-points 300000
+```
+
+If the aligned Parquet does not exist yet, render directly from AnnData by
+supplying `--h5ad` and `--out-parquet` instead of `--aligned-cells-parquet`.
+HistoSeg uses its AnnData alignment cache when available and warns when the
+render target is large enough to slow typical browser WebGL sessions.
 
 For end-to-end gene spatial module discovery:
 
@@ -180,6 +214,7 @@ Multi-slice reconstruction writes:
 - `meshes/Structure_*.obj`
 - `meshes/mesh_manifest.csv`
 - `meshes/mesh_qc_summary.json`
+- `leiden_3d_cells.html` from `render-cell-cloud`
 
 Spatial module discovery writes:
 

@@ -1,0 +1,28 @@
+name: histoseg-viz
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - numpy
+  - pandas
+  - pyarrow
+  - scipy
+  - scikit-image
+  - scikit-learn
+  - seaborn
+  - shapely
+  - matplotlib
+  - networkx
+  - anndata
+  - pyvista
+  - vtk
+  - imageio
+  - sphinx>=8
+  - myst-nb
+  - pydata-sphinx-theme>=0.16
+  - sphinx-design
+  - sphinx-copybutton
+  - linkify-it-py
+  - pip:
+      - -e .[threed,viz,docs]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -14,12 +15,15 @@ from histoseg.threed import (
     CELL_CLOUD_UNS_KEY,
     CellCloudProjectionConfig,
     CellCloudProjectionResult,
+    CellCloudRenderConfig,
+    CellCloudRenderResult,
     build_alignment_manifest,
     cell_cloud_cache_status,
     cell_cloud_dataframe_from_coordinates,
     hash_alignment_manifest,
     load_cell_alignment_transforms,
     project_cell_coordinates,
+    render_cell_cloud_html,
     write_cell_cloud_cache,
 )
 
@@ -187,6 +191,193 @@ def test_project_cells_cli_parses_cache_flags(monkeypatch, tmp_path, capsys):
     assert cfg.write_cache is True
     assert cfg.write_scanpy_spatial is True
     assert Path(cfg.cache_h5ad).name == "cached.h5ad"
+
+
+def test_render_cell_cloud_html_writes_label_and_contour_traces(tmp_path, caplog):
+    stack_root = tmp_path / "stack"
+    stack_root.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "structure": "Structure 1",
+                "slice_order": 1,
+                "polyline_id": 0,
+                "point_index": 0,
+                "x_um": 0.0,
+                "y_um": 0.0,
+                "z_um": 0.0,
+            },
+            {
+                "structure": "Structure 1",
+                "slice_order": 1,
+                "polyline_id": 0,
+                "point_index": 1,
+                "x_um": 1.0,
+                "y_um": 1.0,
+                "z_um": 0.0,
+            },
+        ]
+    ).to_csv(stack_root / "aligned_contour_3d_points.csv", index=False)
+
+    aligned = tmp_path / "cells.parquet"
+    pd.DataFrame(
+        {
+            "sample_id": ["s1", "s1", "s2", "s2"],
+            "barcode": ["c1", "c2", "c3", "c4"],
+            "leiden_1_0": ["0", "0", "1", "1"],
+            "slice_order": [1, 1, 2, 2],
+            "x_3d_um": [0.0, 1.0, 2.0, 3.0],
+            "y_3d_um": [0.0, 1.0, 2.0, 3.0],
+            "z_um": [0.0, 0.0, 5.0, 5.0],
+        }
+    ).to_parquet(aligned, index=False)
+
+    caplog.set_level(logging.WARNING)
+    result = render_cell_cloud_html(
+        CellCloudRenderConfig(
+            aligned_cells_parquet=aligned,
+            stack_root=stack_root,
+            out_html=tmp_path / "cells.html",
+            max_points=3,
+            performance_warning_threshold=3,
+        )
+    )
+
+    assert result.total_cells == 4
+    assert result.rendered_cells == 3
+    assert result.label_count == 2
+    assert result.contour_trace_count == 1
+    html = result.out_html.read_text(encoding="utf-8")
+    assert "Leiden 0" in html
+    assert "Leiden 1" in html
+    assert "Structure 1 contour" in html
+    assert "Use --max-points to downsample" in caplog.text
+
+
+def test_render_cell_cloud_cli_parses_existing_parquet(monkeypatch, tmp_path, capsys):
+    import histoseg.threed.cli as cli
+
+    calls: list[CellCloudRenderConfig] = []
+
+    def fake_render(cfg):
+        calls.append(cfg)
+        return CellCloudRenderResult(
+            out_html=Path(cfg.out_html),
+            aligned_cells_parquet=Path(cfg.aligned_cells_parquet),
+            stack_root=Path(cfg.stack_root),
+            total_cells=4,
+            rendered_cells=2,
+            label_column=cfg.label_column,
+            label_count=2,
+            contour_trace_count=0,
+            z_visual_scale=cfg.z_visual_scale,
+        )
+
+    monkeypatch.setattr(cli, "render_cell_cloud_html", fake_render)
+    cli.main(
+        [
+            "render-cell-cloud",
+            "--stack-root",
+            str(tmp_path / "stack"),
+            "--aligned-cells-parquet",
+            str(tmp_path / "cells.parquet"),
+            "--out-html",
+            str(tmp_path / "cells.html"),
+            "--label-column",
+            "cell_type",
+            "--max-points",
+            "42",
+            "--random-state",
+            "7",
+            "--z-visual-scale",
+            "3.5",
+            "--marker-size",
+            "2.0",
+            "--opacity",
+            "0.4",
+            "--no-contours",
+            "--title",
+            "Custom cell cloud",
+            "--performance-warning-threshold",
+            "123",
+        ]
+    )
+
+    capsys.readouterr()
+    assert len(calls) == 1
+    cfg = calls[0]
+    assert cfg.label_column == "cell_type"
+    assert cfg.max_points == 42
+    assert cfg.random_state == 7
+    assert cfg.z_visual_scale == 3.5
+    assert cfg.marker_size == 2.0
+    assert cfg.opacity == 0.4
+    assert cfg.include_contours is False
+    assert cfg.title == "Custom cell cloud"
+    assert cfg.performance_warning_threshold == 123
+
+
+def test_render_cell_cloud_cli_projects_h5ad_before_rendering(monkeypatch, tmp_path, capsys):
+    import histoseg.threed.cli as cli
+
+    projection_calls: list[CellCloudProjectionConfig] = []
+    render_calls: list[CellCloudRenderConfig] = []
+
+    def fake_project(cfg):
+        projection_calls.append(cfg)
+        return CellCloudProjectionResult(
+            out_parquet=Path(cfg.out_parquet),
+            cell_count=4,
+            projected_cell_count=4,
+            stack_root=Path(cfg.stack_root),
+            alignment_hash="abc123",
+            cache_status="missing",
+        )
+
+    def fake_render(cfg):
+        render_calls.append(cfg)
+        return CellCloudRenderResult(
+            out_html=Path(cfg.out_html),
+            aligned_cells_parquet=Path(cfg.aligned_cells_parquet),
+            stack_root=Path(cfg.stack_root),
+            total_cells=4,
+            rendered_cells=4,
+            label_column=cfg.label_column,
+            label_count=2,
+            contour_trace_count=1,
+            z_visual_scale=cfg.z_visual_scale,
+        )
+
+    monkeypatch.setattr(cli, "run_cell_cloud_projection", fake_project)
+    monkeypatch.setattr(cli, "render_cell_cloud_html", fake_render)
+    cli.main(
+        [
+            "render-cell-cloud",
+            "--stack-root",
+            str(tmp_path / "stack"),
+            "--h5ad",
+            str(tmp_path / "cells.h5ad"),
+            "--out-parquet",
+            str(tmp_path / "cells.parquet"),
+            "--out-html",
+            str(tmp_path / "cells.html"),
+            "--label-column",
+            "leiden_1_0",
+            "--label-columns",
+            "cell_type,batch",
+            "--ignore-cache",
+            "--write-cache",
+        ]
+    )
+
+    capsys.readouterr()
+    assert len(projection_calls) == 1
+    assert projection_calls[0].label_columns == ("leiden_1_0", "cell_type", "batch")
+    assert projection_calls[0].ignore_cache is True
+    assert projection_calls[0].write_cache is True
+    assert len(render_calls) == 1
+    assert Path(render_calls[0].aligned_cells_parquet).name == "cells.parquet"
+    assert render_calls[0].label_column == "leiden_1_0"
 
 
 class _MiniAnnData:

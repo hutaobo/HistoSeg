@@ -7,6 +7,7 @@ from typing import Sequence
 
 from . import (
     CellCloudProjectionConfig,
+    CellCloudRenderConfig,
     GeneStructureQuantificationConfig,
     SpatialModuleDiscoveryConfig,
     SpatialModulePlotConfig,
@@ -14,6 +15,7 @@ from . import (
     ThreeDStackReconstructionConfig,
     plot_spatial_module_clustermap,
     quantify_gene_structure_relationships,
+    render_cell_cloud_html,
     run_3d_contour_reconstruction,
     run_3d_stack_reconstruction,
     run_cell_cloud_projection,
@@ -329,6 +331,50 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="With --write-cache, also write aligned XY to .obsm['spatial'].",
     )
 
+    render_cells = subparsers.add_parser(
+        "render-cell-cloud",
+        help="Render an aligned 3D cell cloud as an interactive Plotly HTML.",
+    )
+    render_cells.add_argument("--stack-root", required=True, help="HistoSeg 3D reconstruction output directory.")
+    render_cells.add_argument("--out-html", required=True, help="Output interactive Plotly HTML path.")
+    render_cells.add_argument(
+        "--aligned-cells-parquet",
+        default=None,
+        help="Existing aligned 3D cell Parquet. If omitted, --h5ad and --out-parquet are required.",
+    )
+    render_cells.add_argument("--h5ad", default=None, help="Merged AnnData .h5ad path to project before rendering.")
+    render_cells.add_argument(
+        "--out-parquet",
+        default=None,
+        help="Aligned 3D cell Parquet to write when rendering from --h5ad.",
+    )
+    render_cells.add_argument("--sample-column", default="sample_id")
+    render_cells.add_argument("--barcode-column", default="barcode")
+    render_cells.add_argument("--x-column", default="x_centroid")
+    render_cells.add_argument("--y-column", default="y_centroid")
+    render_cells.add_argument("--label-column", default="leiden_1_0")
+    render_cells.add_argument(
+        "--label-columns",
+        nargs="*",
+        default=(),
+        help="Extra AnnData obs columns to carry when projecting from --h5ad.",
+    )
+    render_cells.add_argument("--pixel-size-um", type=float, default=0.2125)
+    render_cells.add_argument("--chunk-size", type=int, default=100000)
+    render_cells.add_argument("--ignore-cache", action="store_true")
+    render_cells.add_argument("--fail-on-stale-cache", action="store_true")
+    render_cells.add_argument("--write-cache", action="store_true")
+    render_cells.add_argument("--cache-h5ad", default=None)
+    render_cells.add_argument("--write-scanpy-spatial", action="store_true")
+    render_cells.add_argument("--max-points", type=int, default=300000)
+    render_cells.add_argument("--random-state", type=int, default=0)
+    render_cells.add_argument("--z-visual-scale", type=float, default=8.0)
+    render_cells.add_argument("--marker-size", type=float, default=1.4)
+    render_cells.add_argument("--opacity", type=float, default=0.48)
+    render_cells.add_argument("--no-contours", action="store_true")
+    render_cells.add_argument("--title", default="HistoSeg 3D cell cloud")
+    render_cells.add_argument("--performance-warning-threshold", type=int, default=500000)
+
     discover = subparsers.add_parser(
         "discover-spatial-modules",
         help="Batch-map genes into 3D enrichment fields, surfaces, SDF metrics, and spatial module matrices.",
@@ -435,6 +481,53 @@ def main(argv: Sequence[str] | None = None) -> None:
                 write_cache=args.write_cache,
                 cache_h5ad=args.cache_h5ad,
                 write_scanpy_spatial=args.write_scanpy_spatial,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "render-cell-cloud":
+        aligned_cells_parquet = args.aligned_cells_parquet
+        if aligned_cells_parquet:
+            if args.h5ad or args.out_parquet:
+                parser.error("--aligned-cells-parquet cannot be combined with --h5ad or --out-parquet.")
+        else:
+            if not args.h5ad or not args.out_parquet:
+                parser.error("render-cell-cloud requires either --aligned-cells-parquet or both --h5ad and --out-parquet.")
+            label_columns = tuple(dict.fromkeys([args.label_column, *_parse_cli_chunks(args.label_columns)]))
+            projection = run_cell_cloud_projection(
+                CellCloudProjectionConfig(
+                    h5ad=args.h5ad,
+                    stack_root=args.stack_root,
+                    out_parquet=args.out_parquet,
+                    sample_column=args.sample_column,
+                    barcode_column=args.barcode_column,
+                    x_column=args.x_column,
+                    y_column=args.y_column,
+                    label_columns=label_columns,
+                    pixel_size_um=args.pixel_size_um,
+                    chunk_size=args.chunk_size,
+                    ignore_cache=args.ignore_cache,
+                    fail_on_stale_cache=args.fail_on_stale_cache,
+                    write_cache=args.write_cache,
+                    cache_h5ad=args.cache_h5ad,
+                    write_scanpy_spatial=args.write_scanpy_spatial,
+                )
+            )
+            aligned_cells_parquet = projection.out_parquet
+
+        result = render_cell_cloud_html(
+            CellCloudRenderConfig(
+                aligned_cells_parquet=aligned_cells_parquet,
+                stack_root=args.stack_root,
+                out_html=args.out_html,
+                label_column=args.label_column,
+                max_points=args.max_points,
+                random_state=args.random_state,
+                z_visual_scale=args.z_visual_scale,
+                marker_size=args.marker_size,
+                opacity=args.opacity,
+                include_contours=not args.no_contours,
+                title=args.title,
+                performance_warning_threshold=args.performance_warning_threshold,
             )
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))

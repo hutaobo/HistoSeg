@@ -141,9 +141,22 @@ histoseg-3d plot-spatial-modules \
   --hotspot top05
 ```
 
+Render the aligned Leiden cell cloud as an interactive browser HTML:
+
+```bash
+histoseg-3d render-cell-cloud \
+  --stack-root "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction" \
+  --aligned-cells-parquet "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction/aligned_leiden_3d_cells.parquet" \
+  --out-html "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction/leiden_3d_cells.html" \
+  --label-column leiden_1_0 \
+  --max-points 300000
+```
+
 Render the static hero figures locally with PyVista:
 
 ```bash
+pip install -e ".[threed,viz,docs]"
+
 python scripts/render_polyp_24gene_figures.py \
   --stack-root "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction" \
   --gene GREM1 \
@@ -155,4 +168,5 @@ python scripts/render_polyp_24gene_figures.py \
 ```
 
 `pyvista` is intentionally not a core HistoSeg dependency. The renderer is a
-documentation asset script for reproducible static figures.
+documentation asset script for reproducible static figures. In Docker, use the
+`viz` target so Mesa and Xvfb are available for headless rendering.

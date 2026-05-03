@@ -1,0 +1,24 @@
+services:
+  histoseg-core:
+    build:
+      context: .
+      target: core
+    image: histoseg:core
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    entrypoint: ["histoseg-3d"]
+    command: ["--help"]
+
+  histoseg-viz:
+    build:
+      context: .
+      target: viz
+    image: histoseg:viz
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+    environment:
+      PYVISTA_OFF_SCREEN: "true"
+    entrypoint: ["histoseg-3d"]
+    command: ["--help"]
