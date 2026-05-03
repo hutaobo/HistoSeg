@@ -3,20 +3,20 @@ import queue
 import sys
 import threading
 import traceback
+from importlib import import_module
 from pathlib import Path
+from typing import Any, Callable
 import tkinter as tk
 from tkinter import END, filedialog, messagebox, ttk
 
 import pandas as pd
 from PIL import Image, ImageTk
 
-# SFPlot imports
-from sfplot import (
-    compute_cophenetic_distances_from_df,
-    plot_cophenetic_heatmap,
-    load_xenium_data,
-    compute_cophenetic_distances_from_adata,
-)
+SearcherApi = tuple[
+    Callable[[pd.DataFrame], tuple[pd.DataFrame, pd.DataFrame]],
+    Callable[[Any], tuple[pd.DataFrame, pd.DataFrame]],
+    Callable[..., Image.Image],
+]
 
 
 def resource_path(relative_path: str) -> str:
@@ -43,6 +43,8 @@ class MainApp(tk.Tk):
 
         # Shared queue for thread communication
         self._queue: queue.Queue[tuple[str, object]] = queue.Queue()
+        self._searcher_api: SearcherApi | None = None
+        self._xenium_loader: Callable[[str, bool], Any] | None = None
         self._STEPS = {
             "start": 5,
             "csv_read": 20,
@@ -71,6 +73,31 @@ class MainApp(tk.Tk):
         # Start polling queue
         self.after(100, self._poll_queue)
         self._log_csv("Program started successfully")
+
+    def _get_searcher_api(self) -> SearcherApi:
+        if self._searcher_api is None:
+            module = import_module("sfplot")
+            self._searcher_api = (
+                module.compute_cophenetic_distances_from_df,
+                module.compute_cophenetic_distances_from_adata,
+                module.plot_cophenetic_heatmap,
+            )
+        return self._searcher_api
+
+    def _get_xenium_loader(self) -> Callable[[str, bool], Any]:
+        if self._xenium_loader is None:
+            module = import_module("sfplot")
+            self._xenium_loader = module.load_xenium_data
+        return self._xenium_loader
+
+    @staticmethod
+    def _format_xenium_dependency_error() -> str:
+        return (
+            traceback.format_exc()
+            + "\n\nThe Xenium GUI tab requires sfplot with Xenium dependencies. "
+            + "Install HistoSeg with the xenium-gui extra, or install sfplot[xenium,gui] "
+            + "from https://github.com/hutaobo/sfplot."
+        )
 
     def _build_csv_tab(self) -> None:
         top = tk.Frame(self.tab_csv)
@@ -204,6 +231,7 @@ class MainApp(tk.Tk):
             df = pd.read_csv(self.csv_path)
             self._queue.put(("progress", self._STEPS["calc_dist"]))
             self._queue.put(("log", "Computing distances…"))
+            compute_cophenetic_distances_from_df, _, plot_cophenetic_heatmap = self._get_searcher_api()
             r, _ = compute_cophenetic_distances_from_df(df)
             self._queue.put(("progress", self._STEPS["plot"]))
             self._queue.put(("log", "Plotting heatmap…"))
@@ -234,11 +262,12 @@ class MainApp(tk.Tk):
     def _xenium_load_worker(self) -> None:
         try:
             self._queue.put(("x_log", "Loading Xenium data…"))
+            load_xenium_data = self._get_xenium_loader()
             self.adata_cache = load_xenium_data(self.xenium_path, normalize=False)
             self._queue.put(("x_log", "Xenium data loaded."))
             self._queue.put(("x_enable_csv", None))
         except Exception:
-            self._queue.put(("x_error", traceback.format_exc()))
+            self._queue.put(("x_error", self._format_xenium_dependency_error()))
 
     def _ask_selection_csv(self) -> None:
         path = filedialog.askopenfilename(filetypes=[("CSV", "*.csv")])
@@ -258,12 +287,13 @@ class MainApp(tk.Tk):
             df = pd.read_csv(self.selection_csv, comment="#")
             cell_ids = df["Cell ID"].tolist()
             sub = self.adata_cache[self.adata_cache.obs["cell_id"].isin(cell_ids)].copy()
+            _, compute_cophenetic_distances_from_adata, plot_cophenetic_heatmap = self._get_searcher_api()
             r, _ = compute_cophenetic_distances_from_adata(sub)
             img = plot_cophenetic_heatmap(r, matrix_name="row_coph", sample="", return_image=True, dpi=300)
             self._queue.put(("x_image", img))
             self._queue.put(("x_enable_csv", None))
         except Exception:
-            self._queue.put(("x_error", traceback.format_exc()))
+            self._queue.put(("x_error", self._format_xenium_dependency_error()))
 
     def _on_scale_change_x(self, _=None) -> None:
         if self._orig_img2:

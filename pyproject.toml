@@ -22,6 +22,7 @@ dependencies = [
     "matplotlib",
     "networkx",
     "openai>=1.0.0",
+    "sfplot @ git+https://github.com/hutaobo/sfplot.git@master",
 ]
 
 [project.optional-dependencies]
@@ -51,6 +52,9 @@ docs = [
     "linkify-it-py",
     "myst-parser",
     "sphinx-rtd-theme",
+]
+xenium-gui = [
+    "sfplot[xenium,gui] @ git+https://github.com/hutaobo/sfplot.git@master",
 ]
 
 [project.scripts]

@@ -482,7 +482,7 @@ def compute_segmentation_confidence_score_from_merged(
 
     Notes:
       - This function is intentionally *separate* from isoline generation so you can call it independently.
-      - It uses histoseg.sfplot.Searcher_Findee_Score utilities.
+      - It uses sfplot Search-and-Find utilities.
 
     Returns:
       SegmentationConfidenceResult(score_mean, stats, blue_band_matrix?)
@@ -492,8 +492,7 @@ def compute_segmentation_confidence_score_from_merged(
     if missing:
         raise ValueError(f"merged_df missing required columns: {sorted(missing)}")
 
-    # Lazy import: keep this module importable even if sfplot deps are optional.
-    from histoseg.sfplot.Searcher_Findee_Score import (
+    from sfplot import (
         compute_searcher_findee_distance_matrix_from_df,
         compute_cophenetic_from_distance_matrix,
     )

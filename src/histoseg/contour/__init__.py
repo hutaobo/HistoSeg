@@ -1,6 +1,6 @@
 """Contour Analysis public API."""
 
-from histoseg.sfplot.Searcher_Findee_Score import (
+from sfplot import (
     compute_cophenetic_distances_from_df,
     compute_cophenetic_from_distance_matrix,
     compute_searcher_findee_distance_matrix_from_df,
