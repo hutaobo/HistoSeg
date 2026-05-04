@@ -381,10 +381,37 @@ def _hard_registration_manifest_payload(hard_summary: Mapping[str, Any]) -> dict
     payload: dict[str, Any] = {
         "registration_backend": hard_summary.get("registration_backend", "contour-tps"),
     }
+    if hard_summary.get("selected_hard_seed_backend") is not None:
+        payload["selected_hard_seed_backend"] = hard_summary.get("selected_hard_seed_backend")
     if hard_summary.get("method_credit") is not None:
         payload["method_credit"] = hard_summary.get("method_credit")
     if hard_summary.get("method_reference_doi") is not None:
         payload["method_reference_doi"] = hard_summary.get("method_reference_doi")
+
+    tournament = hard_summary.get("hard_alignment_tournament")
+    if isinstance(tournament, Mapping):
+        payload["hard_alignment_tournament"] = {
+            "strategy": tournament.get("strategy"),
+            "selected_backend": tournament.get("selected_backend"),
+            "rotation_difference_degrees": tournament.get("rotation_difference_degrees"),
+        }
+        candidates = []
+        for candidate in hard_summary.get("hard_alignment_candidates") or ():
+            if not isinstance(candidate, Mapping):
+                continue
+            candidates.append(
+                {
+                    "backend": candidate.get("backend"),
+                    "union_iou_after_hard": candidate.get("union_iou_after_hard"),
+                    "hard_alignment_accepted": candidate.get("hard_alignment_accepted"),
+                    "rotation_degrees": candidate.get("rotation_degrees"),
+                    "scale": candidate.get("scale"),
+                    "translate_x": candidate.get("translate_x"),
+                    "translate_y": candidate.get("translate_y"),
+                }
+            )
+        if candidates:
+            payload["hard_alignment_candidates"] = candidates
 
     coda_image = hard_summary.get("coda_image")
     if isinstance(coda_image, Mapping):
