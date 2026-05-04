@@ -20,7 +20,7 @@ from scipy.interpolate import RBFInterpolator
 PathLike = Union[str, Path]
 
 
-ALIGNMENT_MANIFEST_SCHEMA_VERSION = 1
+ALIGNMENT_MANIFEST_SCHEMA_VERSION = 2
 CELL_CLOUD_CACHE_SCHEMA_VERSION = 1
 CELL_CLOUD_OBSM_KEY = "X_histoseg_3d_um"
 CELL_CLOUD_ALIGNED_XY_OBSM_KEY = "X_histoseg_aligned_xy_um"
@@ -334,6 +334,7 @@ def build_alignment_manifest(
         pairwise_row = pairwise_by_sample.get(sample_id)
         if order == 1:
             slice_payload["hard_transform"] = None
+            slice_payload["hard_registration"] = None
             slice_payload["soft_transform"] = None
             slices.append(slice_payload)
             continue
@@ -341,6 +342,7 @@ def build_alignment_manifest(
         hard_summary_path = _find_hard_summary(root, sample_id, pairwise_row)
         hard_summary = _load_json(hard_summary_path)
         slice_payload["hard_transform"] = _canonicalize(hard_summary["transform"])
+        slice_payload["hard_registration"] = _hard_registration_manifest_payload(hard_summary)
 
         soft_payload = None
         if pairwise_row is not None and _truthy(pairwise_row.get("soft_accepted")):
@@ -373,6 +375,36 @@ def build_alignment_manifest(
         "stack_root_name": root.name,
         "slices": slices,
     }
+
+
+def _hard_registration_manifest_payload(hard_summary: Mapping[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "registration_backend": hard_summary.get("registration_backend", "contour-tps"),
+    }
+    if hard_summary.get("method_credit") is not None:
+        payload["method_credit"] = hard_summary.get("method_credit")
+    if hard_summary.get("method_reference_doi") is not None:
+        payload["method_reference_doi"] = hard_summary.get("method_reference_doi")
+
+    coda_image = hard_summary.get("coda_image")
+    if isinstance(coda_image, Mapping):
+        preprocessing = coda_image.get("preprocessing") or {}
+        payload["coda_image"] = {
+            "radon_angle_range": _canonicalize(coda_image.get("radon_angle_range")),
+            "radon_angle_step": coda_image.get("radon_angle_step"),
+            "radon_rotation_degrees": coda_image.get("radon_rotation_degrees"),
+            "phase_shift_y": coda_image.get("phase_shift_y"),
+            "phase_shift_x": coda_image.get("phase_shift_x"),
+            "phase_upsample_factor": coda_image.get("phase_upsample_factor"),
+            "preprocessing": {
+                "input_source": preprocessing.get("input_source"),
+                "raster_size": preprocessing.get("raster_size"),
+                "square_bounds": _canonicalize(preprocessing.get("square_bounds")),
+                "native_units_per_pixel": preprocessing.get("native_units_per_pixel"),
+                "mask_padding_fraction": preprocessing.get("mask_padding_fraction"),
+            },
+        }
+    return _canonicalize(payload)
 
 
 def hash_alignment_manifest(manifest: Mapping[str, Any]) -> str:

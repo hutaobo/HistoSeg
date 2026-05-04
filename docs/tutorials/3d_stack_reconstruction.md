@@ -74,6 +74,32 @@ $env:GIT_CONFIG_VALUE_0='true'
 python -m pip install "pyXenium @ git+https://github.com/hutaobo/pyXenium.git"
 ```
 
+### Optional CODA-Inspired Backend
+
+The default stack workflow uses `--registration-backend contour-tps`. A new
+conservative `--registration-backend coda-image` option can be used when a
+tissue-mask silhouette is a better global hard-alignment cue than contour
+similarity alone:
+
+```bash
+histoseg-3d reconstruct-stack \
+  --xenium-root "Y:/long/spatialpathologist/3D aligment/polyp" \
+  --segmentation-strategy "Y:/long/spatialpathologist/3D aligment/polyp/contour for alignment/segmentationstrategy.txt" \
+  --out-dir "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction_coda_seed" \
+  --registration-backend coda-image \
+  --coda-raster-size 512 \
+  --coda-angle-step 1.0
+```
+
+This backend is inspired by the image-registration strategy in CODA
+(Kiemen et al., *Nature Methods* 2022,
+[doi:10.1038/s41592-022-01650-9](https://doi.org/10.1038/s41592-022-01650-9);
+[methodology page](https://labs.pathology.jhu.edu/kiemen/coda-3d/)). HistoSeg
+does not claim to reproduce the full CODA pipeline in this mode: the first
+version only estimates Radon rotation and global phase-correlation translation
+from a contour-derived tissue-mask proxy, then uses the existing topology-safe
+contour TPS refinement layer.
+
 ## Outputs
 
 The stack workflow writes:
