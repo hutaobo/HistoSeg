@@ -61,6 +61,8 @@ class CodaImageRegistrationResult:
 
     rotation: RadonRotationResult
     translation: TranslationResult
+    orientation_disambiguation: str = "translation_iou"
+    orientation_candidates: tuple[dict[str, float], ...] = ()
     method_credit: str = CODA_METHOD_CREDIT
     method_reference_doi: str = CODA_METHOD_REFERENCE_DOI
     method_reference_url: str = CODA_METHOD_REFERENCE_URL
@@ -143,21 +145,56 @@ def estimate_coda_image_registration(
         angle_range=cfg.angle_range,
         angle_step=cfg.angle_step,
     )
-    rotated_moving = rotate(
-        _as_float_image(moving_image, name="moving_image"),
-        rotation.rotation_degrees,
-        resize=False,
-        order=1,
-        mode="constant",
-        cval=0.0,
-        preserve_range=True,
+    fixed = _as_float_image(fixed_image, name="fixed_image")
+    moving = _as_float_image(moving_image, name="moving_image")
+    candidates: list[dict[str, float]] = []
+    best_translation: TranslationResult | None = None
+    best_angle = float(rotation.rotation_degrees)
+    best_score = -math.inf
+    for candidate_angle in (
+        float(rotation.rotation_degrees),
+        _normalize_full_circle_degrees(float(rotation.rotation_degrees) + 180.0),
+    ):
+        rotated_moving = _rotate_image(moving, candidate_angle)
+        translation = estimate_translation(
+            fixed,
+            rotated_moving,
+            upsample_factor=cfg.phase_upsample_factor,
+        )
+        shifted = _shift_image_no_wrap(
+            rotated_moving,
+            shift_y=translation.shift_y,
+            shift_x=translation.shift_x,
+        )
+        overlap_score = _binary_iou(fixed, shifted)
+        candidates.append(
+            {
+                "rotation_degrees": float(candidate_angle),
+                "phase_shift_y": float(translation.shift_y),
+                "phase_shift_x": float(translation.shift_x),
+                "translation_iou": float(overlap_score),
+                "phase_error": float(translation.error),
+            }
+        )
+        if overlap_score > best_score:
+            best_score = float(overlap_score)
+            best_angle = float(candidate_angle)
+            best_translation = translation
+
+    if best_translation is None:  # pragma: no cover - loop always has two candidates.
+        raise RuntimeError("No CODA image registration orientation candidates were evaluated.")
+
+    selected_rotation = RadonRotationResult(
+        rotation_degrees=_normalize_full_circle_degrees(best_angle),
+        score=rotation.score,
+        angle_range=rotation.angle_range,
+        angle_step=rotation.angle_step,
     )
-    translation = estimate_translation(
-        fixed_image,
-        rotated_moving,
-        upsample_factor=cfg.phase_upsample_factor,
+    return CodaImageRegistrationResult(
+        rotation=selected_rotation,
+        translation=best_translation,
+        orientation_candidates=tuple(candidates),
     )
-    return CodaImageRegistrationResult(rotation=rotation, translation=translation)
 
 
 def apply_similarity_to_points(
@@ -234,6 +271,55 @@ def _normalize_rotation_degrees(angle: float) -> float:
     if normalized >= 90.0:
         normalized -= 180.0
     return normalized
+
+
+def _normalize_full_circle_degrees(angle: float) -> float:
+    normalized = math.fmod(float(angle), 360.0)
+    if normalized < -180.0:
+        normalized += 360.0
+    if normalized >= 180.0:
+        normalized -= 360.0
+    return normalized
+
+
+def _rotate_image(image: np.ndarray, angle_degrees: float) -> np.ndarray:
+    return rotate(
+        image,
+        float(angle_degrees),
+        resize=False,
+        order=1,
+        mode="constant",
+        cval=0.0,
+        preserve_range=True,
+    )
+
+
+def _shift_image_no_wrap(image: np.ndarray, *, shift_y: float, shift_x: float) -> np.ndarray:
+    dy = int(round(float(shift_y)))
+    dx = int(round(float(shift_x)))
+    shifted = np.zeros_like(image)
+    src_y0 = max(0, -dy)
+    src_y1 = min(image.shape[0], image.shape[0] - dy)
+    dst_y0 = max(0, dy)
+    dst_y1 = min(image.shape[0], image.shape[0] + dy)
+    src_x0 = max(0, -dx)
+    src_x1 = min(image.shape[1], image.shape[1] - dx)
+    dst_x0 = max(0, dx)
+    dst_x1 = min(image.shape[1], image.shape[1] + dx)
+    if src_y1 <= src_y0 or src_x1 <= src_x0:
+        return shifted
+    shifted[dst_y0:dst_y1, dst_x0:dst_x1] = image[src_y0:src_y1, src_x0:src_x1]
+    return shifted
+
+
+def _binary_iou(fixed: np.ndarray, moving: np.ndarray) -> float:
+    fixed_mask = fixed > 0
+    moving_mask = moving > 0
+    union = np.logical_or(fixed_mask, moving_mask).sum()
+    if int(union) == 0:
+        return 0.0
+    intersection = np.logical_and(fixed_mask, moving_mask).sum()
+    return float(intersection / union)
 
 
 def _point_origin(points: np.ndarray, origin: str | Sequence[float]) -> np.ndarray:
