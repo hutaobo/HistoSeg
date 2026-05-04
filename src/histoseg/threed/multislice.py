@@ -1750,6 +1750,15 @@ def _coda_image_summary_payload(
         "phase_error": float(image_result.translation.error),
         "phase_difference": float(image_result.translation.phase_difference),
         "phase_upsample_factor": int(phase_upsample_factor),
+        "orientation_disambiguation": getattr(
+            image_result,
+            "orientation_disambiguation",
+            None,
+        ),
+        "orientation_candidates": [
+            {key: float(value) for key, value in candidate.items()}
+            for candidate in getattr(image_result, "orientation_candidates", ())
+        ],
         "preprocessing": {
             **dict(raster_metadata),
             "mask_padding_fraction": float(mask_padding_fraction),
