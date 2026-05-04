@@ -76,6 +76,12 @@ final partition. The result is a semantic contour set: each polygon carries a
 structure name or identifier and can be exported to Xenium Explorer, reviewed
 as a 2D artifact, or passed into HistoSeg 3D reconstruction.
 
+This separation is intentional. StructureMap analysis helps decide which labels
+belong together; HistoSeg contour generation turns that decision into explicit
+geometry; HistoSeg 3D then aligns and quantifies that geometry. Image-guided
+registration backends such as `coda-image` belong to the downstream 3D alignment
+stage and do not change the selected structure groups.
+
 ## Workflows
 
 - StructureMap-guided semantic contour synthesis from selected or curated

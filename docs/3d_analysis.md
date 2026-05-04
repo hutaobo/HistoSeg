@@ -14,6 +14,32 @@ stack reconstruction aligns these named contours across slices. The aligned
 semantic contours are the source for cell-cloud projection, optional mesh
 visualization, and SDF-based gene-structure quantification.
 
+## Concept Boundaries
+
+HistoSeg keeps the semantic and geometric layers explicit:
+
+- **StructureMap** is an upstream relationship map. It helps identify or audit
+  spatial label groups, but it is not itself a contour and is not used as a
+  hidden registration state.
+- **Semantic contours** are the continuous GeoJSON/CSV geometry generated from
+  selected or curated structure groups. These contours are the inputs to 3D
+  alignment, rasterization, cell-cloud projection, meshes, and SDF metrics.
+- **CODA-inspired image registration** is a hard-alignment seed candidate used
+  after semantic contours exist. It participates in the hard-seed tournament
+  before topology-safe TPS refinement; it does not define structure groups or
+  replace the semantic contour layer.
+
+The resulting data flow is:
+
+```text
+sfplot / StructureMap interpretation
+  -> selected structure groups
+  -> HistoSeg semantic contours
+  -> hard-alignment tournament
+  -> topology-safe TPS
+  -> 3D masks, SDF metrics, cell clouds, and meshes
+```
+
 The flagship 3D surface currently has these public workflows:
 
 - Pairwise conservative TPS soft alignment for a fixed contour GeoJSON and a

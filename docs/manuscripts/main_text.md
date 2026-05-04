@@ -82,7 +82,10 @@ registration step followed by optional thin-plate spline soft alignment, each
 accepted only when objective geometry and topology checks pass. The hard step
 estimates rotation, translation and uniform scale; it is therefore not a
 pure rigid-only registration, although rigid registration is its scale-fixed
-special case. Accepted contours define a stack manifest that anchors downstream
+special case. When the CODA-inspired backend is enabled, image-derived Radon
+and phase-correlation estimates are evaluated only as an alternative hard seed
+in this alignment stage; they do not alter the upstream semantic structure
+definitions. Accepted contours define a stack manifest that anchors downstream
 cell-cloud projection, surface visualization and gene-structure quantification.
 For quantification, HistoSeg rasterizes aligned contours into 3D structure masks
 and computes signed-distance fields using
@@ -129,6 +132,9 @@ slice, HistoSeg first aligns the moving slice to the previously accepted slice.
 The hard step estimates rotation, translation and uniform scale by optimizing
 contour-union IoU from PCA/centroid-derived and multi-start seeds; it is
 accepted only if the union IoU between matched structures does not decrease.
+The optional CODA-inspired backend adds an image-derived hard-seed candidate
+to this step and promotes it only when it improves hard-alignment IoU, leaving
+the semantic contour definitions unchanged.
 Soft alignment is then fit from matched structure-boundary landmarks and
 accepted only when topology and geometry quality-control checks pass. With the
 default per-structure acceptance rule, a structure keeps its soft-aligned
