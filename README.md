@@ -9,21 +9,24 @@
   <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/License-PolyForm--Noncommercial%201.0.0-blue.svg"></a>
 </p>
 
-**HistoSeg: A robust framework for 3D reconstruction of tissue architecture via Signed Distance Fields (SDFs).**
+**HistoSeg: StructureMap-guided semantic contours and robust 3D tissue reconstruction via Signed Distance Fields (SDFs).**
 
 </div>
 
 HistoSeg is centered on same-sample, multi-slice **3D Xenium contour
-reconstruction**. It turns ordered 2D contour annotations into aligned contour
-stacks, sampled 3D points, smoothed PLY/OBJ meshes, QC metrics, and interactive
-HTML views. The package also includes the H&E and 2D contour workflows needed
-to prepare and review the structures that feed the 3D reconstruction pipeline.
+reconstruction**. It converts selected or curated tissue structure groups,
+including groups defined or audited with sfplot Search-and-Find/StructureMap
+relationships, into continuous semantic contours. Those named 2D contours then
+become aligned contour stacks, sampled 3D points, smoothed PLY/OBJ meshes, QC
+metrics, interactive HTML views, and SDF-based gene-structure measurements. The
+package also includes the H&E and 2D contour workflows needed to prepare and
+review the structures that feed the 3D reconstruction pipeline.
 
 HistoSeg is organized around its 3D reconstruction surface, with two supporting
 analysis groups:
 
 - **3D Reconstruction** (`histoseg.threed`) for same-sample, multi-slice Xenium contour alignment, 3D contour stacks, mesh export, and QC visualization.
-- **2D Contour Analysis** (`histoseg.contour`) for contour extraction from spatial/cell-coordinate data, including Pattern1 isolines and multi-structure Xenium exports.
+- **2D Contour Analysis** (`histoseg.contour`) for StructureMap-guided semantic contour extraction from spatial/cell-coordinate data, including Pattern1 isolines and multi-structure Xenium exports.
 - **H&E Analysis** (`histoseg.he`) for image-based H&E tissue segmentation, neutral tissue partitioning, and aligned-image change detection.
 
 Full documentation: [histoseg.readthedocs.io](https://histoseg.readthedocs.io)
@@ -32,7 +35,7 @@ Full documentation: [histoseg.readthedocs.io](https://histoseg.readthedocs.io)
 
 Use **3D Reconstruction** when you are preparing for multi-slice Xenium contour reconstruction from the same sample. It can soft-align a hard-aligned moving contour GeoJSON to a fixed reference slice, or build a pyXenium-backed multi-slice contour stack with 3D points, smoothed PLY/OBJ surface meshes, and an interactive HTML view.
 
-Use **Contour Analysis** when your input is spatial cell-coordinate data such as Xenium `cells.parquet` plus cluster assignments, and you want geometry extracted from cell neighborhoods or selected cluster groups.
+Use **Contour Analysis** when your input is spatial cell-coordinate data such as Xenium `cells.parquet` plus cluster assignments, and you want geometry extracted from cell neighborhoods or selected cluster groups. The selected groups can be curated directly or informed by sfplot Search-and-Find / cophenetic StructureMap relationships.
 
 Use **HE Analysis** when your input is an H&E image such as PNG, JPG, TIFF, or GeoTIFF and you want masks, overlays, heatmaps, GeoJSON polygons, or region tables.
 
@@ -229,6 +232,7 @@ histoseg-contour gene-isoline \
 
 Contour Analysis currently supports:
 
+- StructureMap-guided semantic contour synthesis from selected or curated structure groups
 - Pattern1 isoline contour generation from clustered cell coordinates
 - gene/transcript isoline contour generation from Xenium transcript tables
 - multi-structure contour partitioning
@@ -260,9 +264,11 @@ HistoSeg workflows write reviewable artifacts such as:
 
 ## Scientific Foundation & Reproducibility
 
-HistoSeg's 3D methods are documented as an implementation-faithful manuscript
-draft in [Online Methods: SDF Quantification And Topology-Aware Alignment](docs/manuscripts/histoseg_online_methods_sdf_alignment.md).
-The draft describes the exact anisotropic SDF contract used by the package:
+HistoSeg's methods are documented as an implementation-faithful manuscript
+draft in [Online Methods: Semantic Contours, SDF Quantification And Topology-Aware Alignment](docs/manuscripts/histoseg_online_methods_sdf_alignment.md).
+The draft describes the full pipeline from sfplot Search-and-Find/StructureMap
+relationships to HistoSeg semantic isoline contours, topology-aware stack
+alignment, and the exact anisotropic SDF contract used by the package:
 `scipy.ndimage.distance_transform_edt(..., sampling=(z_um, y_um, x_um))`,
 negative distances inside structure masks, and positive distances outside.
 

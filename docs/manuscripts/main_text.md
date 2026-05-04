@@ -2,30 +2,34 @@
 
 **Frozen baseline:** `publication-alpha-20260503` at commit `2361fbc`
 
-**Draft status:** first Results-centered manuscript draft. Abstract,
-Introduction, Discussion, references, and final figure legends remain to be
-completed after the Results claims are locked.
+**Draft status:** manuscript foundation draft. Abstract, Introduction, Results
+and figure legends are in place; Discussion and final references remain to be
+completed after the figure assembly is locked.
 
 ## Working Title
 
-HistoSeg: signed-distance reconstruction and 3D spatial quantification of
-multi-slice spatial transcriptomics tissue architecture
+HistoSeg: StructureMap-guided semantic contours for signed-distance
+reconstruction and 3D spatial quantification of multi-slice spatial
+transcriptomics tissue architecture
 
 ## Abstract
 
 Spatial transcriptomics is typically analyzed as a set of two-dimensional
 fields, even when tissue architecture is inherently three-dimensional.
 HistoSeg reconstructs ordered multi-slice Xenium data into auditable 3D tissue
-objects by combining topology-aware contour alignment, deterministic cell-cloud
-projection and physically sampled signed-distance fields (SDFs). SDF metrics
-are computed directly from 3D structure masks with anisotropic voxel spacing,
-enabling stable gene-structure quantification across sparse slice sampling. In
-synthetic validation, increasing \(z\)-spacing tenfold changed fraction-inside
-summaries by at most 0.248 percentage points and median signed distance by at
-most 0.566 \(\mu m\). Applied to a 32-slice polyp stack with 2,785,128 aligned
-cells, HistoSeg resolved marker-supported stromal-immune, epithelial and
-macrophage/perivascular-associated compartments, including a GREM1-associated
-Structure 5 niche.
+objects by combining sfplot-guided semantic contour definition,
+topology-aware contour alignment, deterministic cell-cloud projection and
+physically sampled signed-distance fields (SDFs). StructureMap relationships
+support the selection of biologically meaningful structure groups; HistoSeg then
+converts those groups into continuous contours for 3D reconstruction. SDF
+metrics are computed directly from 3D structure masks with anisotropic voxel
+spacing, enabling stable gene-structure quantification across sparse slice
+sampling. In synthetic validation, increasing \(z\)-spacing tenfold changed
+fraction-inside summaries by at most 0.248 percentage points and median signed
+distance by at most 0.566 \(\mu m\). Applied to a 32-slice polyp stack with
+2,785,128 aligned cells, HistoSeg resolved marker-supported stromal-immune,
+epithelial and macrophage/perivascular-associated compartments, including a
+GREM1-associated Structure 5 niche.
 
 ## Introduction
 
@@ -53,17 +57,28 @@ fold-over, expose its alignment state, and define gene-structure association in
 physical units that remain interpretable under anisotropic sampling.
 
 HistoSeg addresses this problem by treating 3D reconstruction as a set of
-explicit contracts. Ordered 2D contours are aligned with conservative
-hard-alignment and optional thin-plate spline soft-alignment steps, each
-accepted only when objective geometry and topology checks pass. Accepted
-contours define a stack manifest that anchors downstream cell-cloud projection,
-surface visualization and gene-structure quantification. For quantification,
-HistoSeg rasterizes aligned contours into 3D structure masks and computes
-signed-distance fields using `scipy.ndimage.distance_transform_edt` with
-physical sampling `(z_um, y_um, x_um)`. Distances are negative inside a
-structure, positive outside it, and undefined empty-mask cases are reported as
-NaN summaries with zero inside/touching fractions rather than as hidden
-failures.
+explicit contracts, beginning with semantic contour definition. The upstream
+sfplot layer computes Search-and-Find relationships and cophenetic StructureMap
+summaries that help define or audit biologically meaningful structure groups.
+HistoSeg then consumes selected or curated groups and converts them into
+continuous isoline or multi-structure partition contours. These contours are
+semantic anatomical objects: they carry structure labels, can be reviewed as
+GeoJSON/CSV annotations, and can be propagated through alignment and 3D
+quantification.
+
+Ordered 2D semantic contours are aligned with a conservative hard similarity
+registration step followed by optional thin-plate spline soft alignment, each
+accepted only when objective geometry and topology checks pass. The hard step
+estimates rotation, translation and uniform scale; it is therefore not a
+pure rigid-only registration, although rigid registration is its scale-fixed
+special case. Accepted contours define a stack manifest that anchors downstream
+cell-cloud projection, surface visualization and gene-structure quantification.
+For quantification, HistoSeg rasterizes aligned contours into 3D structure masks
+and computes signed-distance fields using
+`scipy.ndimage.distance_transform_edt` with physical sampling
+`(z_um, y_um, x_um)`. Distances are negative inside a structure, positive
+outside it, and undefined empty-mask cases are reported as NaN summaries with
+zero inside/touching fractions rather than as hidden failures.
 
 Here we describe the HistoSeg 3D workflow and validate its core SDF
 quantification contract. We first show how topology-aware alignment and
@@ -80,31 +95,35 @@ section-level visualization toward volumetric tissue architecture.
 
 ## Results
 
-### HistoSeg reconstructs ordered Xenium slices as auditable 3D tissue objects
+### HistoSeg converts semantic structure maps into auditable 3D tissue objects
 
 HistoSeg was designed to convert ordered multi-slice Xenium outputs into a
 single 3D analytical object whose geometry, cell coordinates, and downstream
 gene-structure measurements remain traceable to explicit intermediate files
-(Fig. 1). The workflow starts from per-slice cell coordinates and structure
-annotations, extracts 2D tissue contours, aligns consecutive slices, and exports
-an aligned stack manifest. This manifest defines the slice order, physical
+(Fig. 1). The workflow begins with a semantic structure layer. sfplot
+Search-and-Find / cophenetic StructureMap relationships can be used to identify
+or audit groups of spatial labels that behave as coherent tissue structures.
+HistoSeg consumes those selected or curated groups, converts them into
+continuous 2D semantic contours, aligns consecutive slices, and exports an
+aligned stack manifest. This manifest defines the slice order, physical
 \(z\)-positions, accepted contour paths, and alignment role for each slice.
 Downstream 3D outputs, including contour point clouds, optional surface meshes,
 aligned cell-cloud tables, and gene-by-structure matrices, are generated from
 this accepted manifest rather than from ad hoc visualization state.
 
-The alignment step combines a conservative hard similarity transform with an
+The alignment step combines a conservative hard similarity registration with an
 optional soft thin-plate spline (TPS) warp (Fig. 1B). For each non-reference
 slice, HistoSeg first aligns the moving slice to the previously accepted slice.
-The hard alignment is accepted only if the union intersection-over-union (IoU)
-between matched structures does not decrease. Soft alignment is then fit from
-matched structure-boundary landmarks and accepted only when three conditions
-are simultaneously satisfied: union IoU does not worsen relative to the hard
-alignment, the topology quality-control grid detects no fold-over or excessive
-cell-area distortion, and the warped geometries remain valid after repair.
-This conservative acceptance rule makes the aligned stack a reviewable object:
-each accepted or rejected pairwise step has an associated metric record and,
-when enabled, diagnostic overlays.
+The hard step estimates rotation, translation and uniform scale by optimizing
+contour-union IoU from PCA/centroid-derived and multi-start seeds; it is
+accepted only if the union IoU between matched structures does not decrease.
+Soft alignment is then fit from matched structure-boundary landmarks and
+accepted only when topology and geometry quality-control checks pass. With the
+default per-structure acceptance rule, a structure keeps its soft-aligned
+geometry only when its per-structure IoU does not regress; otherwise the
+hard-aligned geometry is retained. This conservative acceptance rule makes the
+aligned stack a reviewable object: each accepted or rejected pairwise step has
+an associated metric record and, when enabled, diagnostic overlays.
 
 The 32-slice polyp reconstruction provides the first large-scale use case for
 this contract. The frozen publication-alpha baseline contains a 32-slice stack

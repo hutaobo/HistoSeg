@@ -8,13 +8,15 @@ Guide
 Contour Analysis is the spatial or cell-coordinate workflow group exposed as
 `histoseg.contour`. Use it when the primary input is a table of cells with
 spatial coordinates and cluster assignments, and the goal is to generate
-review-ready spatial structures rather than image-first segmentation masks.
+review-ready semantic spatial structures rather than image-first segmentation
+masks. Structure groups can be curated directly or selected after sfplot
+Search-and-Find / cophenetic StructureMap analysis.
 :::
 
 :::{div} hs-metadata
 <span>Input: cells with x/y coordinates</span>
 <span>Outputs: contours, previews, exports</span>
-<span>Supports Pattern1, gene isolines, and named structures</span>
+<span>Supports StructureMap-guided semantic contours, Pattern1, gene isolines, and named structures</span>
 :::
 
 ## When To Use It
@@ -24,8 +26,33 @@ Choose this workflow group when you want to:
 - extract Pattern1 isolines from clustered cell coordinates;
 - extract gene/transcript-defined isolines from Xenium transcript tables;
 - partition cells into multiple named structures with non-overlapping contours;
+- convert selected or curated structure groups into continuous semantic
+  contours for 3D reconstruction and SDF quantification;
 - export Xenium Explorer-compatible review layers; or
 - analyze how generated structures touch, overlap, or enclose one another.
+
+## Semantic Contour Chain
+
+HistoSeg's contour workflow is designed to bridge relationship-level structure
+analysis and geometry-level reconstruction. sfplot can be used upstream to
+compute Search-and-Find relationships and cophenetic StructureMap summaries
+between spatial labels. Those results help define or audit structure groups,
+while HistoSeg produces the final continuous contour geometry. HistoSeg consumes
+selected or curated structure groups and synthesizes continuous semantic
+boundaries from the observed cells or transcripts.
+
+The implemented chain is:
+
+1. Use sfplot Search-and-Find / StructureMap analysis, or expert curation, to
+   identify a structure group as a set of cluster labels.
+2. Use HistoSeg Pattern1, gene-isoline, or multi-structure workflows to turn
+   that group into a continuous isoline or partition contour.
+3. Export named GeoJSON/CSV contours for review, alignment, 3D reconstruction,
+   and SDF-based gene-structure quantification.
+
+The selection step remains explicit: users provide target clusters, transcript
+targets, or multi-structure specifications, and HistoSeg builds the geometric
+contours from those definitions.
 
 ## Workflows
 

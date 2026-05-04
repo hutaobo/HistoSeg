@@ -16,12 +16,13 @@ history
 ```
 
 <div class="hs-hero">
-  <p class="hs-tagline">3D Xenium contour reconstruction, from aligned 2D slices to review-ready meshes.</p>
+  <p class="hs-tagline">StructureMap-guided semantic contours and 3D Xenium tissue reconstruction.</p>
   <p class="hs-lead">
     HistoSeg is a Python toolkit centered on same-sample, multi-slice Xenium
-    contour reconstruction. The flagship <code>histoseg.threed</code> workflow
-    aligns neighboring contour slices, builds 3D contour stacks, exports
-    PLY/OBJ meshes, and writes QC artifacts. <code>histoseg.contour</code> and
+    contour reconstruction. It turns sfplot Search-and-Find/StructureMap-guided
+    or curated structure groups into continuous semantic contours, then aligns
+    neighboring contour slices, builds 3D contour stacks, exports PLY/OBJ
+    meshes, and writes QC artifacts. <code>histoseg.contour</code> and
     <code>histoseg.he</code> support the 2D spatial and image workflows that
     prepare those structures for reconstruction.
   </p>
@@ -40,7 +41,7 @@ history
 <span>Same-sample 3D Xenium reconstruction</span>
 <span>TPS soft alignment for neighboring contour slices</span>
 <span>PLY/OBJ mesh export and QC reports</span>
-<span>Pattern1 and multi-structure 2D contours</span>
+<span>StructureMap-guided semantic 2D contours</span>
 <span>Xenium Explorer-ready exports</span>
 :::
 
@@ -128,8 +129,8 @@ meshes.
 :link: contour_analysis
 :link-type: doc
 
-Extract Pattern1 isolines, build named structure partitions, and export
-Xenium-ready review layers.
+Extract Pattern1 isolines, build StructureMap-guided named structure partitions,
+and export Xenium-ready review layers.
 :::
 
 :::{grid-item-card} H&E Analysis

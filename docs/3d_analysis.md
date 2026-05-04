@@ -6,6 +6,14 @@ contour annotations, build 3D contour stacks, export per-structure PLY/OBJ
 meshes, and inspect QC artifacts before downstream analysis. The Python
 namespace is `histoseg.threed` because module names cannot begin with a digit.
 
+The 3D workflow starts from named semantic contours. In a typical HistoSeg run,
+sfplot Search-and-Find / StructureMap relationships or manual biological
+curation define candidate structure groups. HistoSeg then converts those groups
+into continuous 2D isoline or multi-structure partition contours, and the 3D
+stack reconstruction aligns these named contours across slices. The aligned
+semantic contours are the source for cell-cloud projection, optional mesh
+visualization, and SDF-based gene-structure quantification.
+
 The flagship 3D surface currently has these public workflows:
 
 - Pairwise conservative TPS soft alignment for a fixed contour GeoJSON and a
@@ -25,6 +33,8 @@ The flagship 3D surface currently has these public workflows:
 
 - Treat 3D contour reconstruction as the main HistoSeg workflow, with 2D
   contour generation and H&E analysis supporting upstream preparation and QC.
+- Start from named semantic contours generated from selected or curated
+  structure groups, rather than arbitrary polygons.
 - Align neighboring 2D Xenium contour slices before downstream 3D
   reconstruction.
 - Read ordered Xenium slice folders through `pyXenium.io.read_xenium(...,

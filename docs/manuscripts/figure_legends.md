@@ -11,13 +11,17 @@ below are tied to current manuscript artifacts.
 ## Figure 1 | HistoSeg reconstructs multi-slice Xenium tissue architecture as an auditable 3D analysis object
 
 **A,** Ordered multi-slice Xenium inputs are converted into per-slice
-multi-structure 2D contour annotations. Contours are stored as explicit
-GeoJSON-derived records, preserving slice identity, structure labels and
-physical slice order before 3D reconstruction. **B,** Consecutive slices are
-registered with topology-aware alignment safeguards. The workflow records
-hard-aligned and soft-aligned contour states, displacement diagnostics and
-quality-control summaries so that accepted transformations can be reviewed
-rather than treated as hidden preprocessing. **C,** Accepted aligned contours
+multi-structure 2D semantic contour annotations. sfplot Search-and-Find /
+cophenetic StructureMap relationships can be used to define or audit structure
+groups, and HistoSeg converts the selected groups into continuous isoline or
+partition contours. Contours are stored as explicit GeoJSON-derived records,
+preserving slice identity, structure labels and physical slice order before 3D
+reconstruction. **B,** Consecutive slices are registered with topology-aware
+alignment safeguards. The hard step is similarity registration, estimating
+rotation, translation and uniform scale before optional TPS refinement. The
+workflow records hard-aligned and soft-aligned contour states, displacement
+diagnostics and quality-control summaries so that accepted transformations can
+be reviewed rather than treated as hidden preprocessing. **C,** Accepted aligned contours
 are rasterized onto a 3D `(z, y, x)` grid to form binary structure masks.
 Distances used for gene-structure quantification are computed from these masks
 with `scipy.ndimage.distance_transform_edt(..., sampling=(z_um, y_um, x_um))`,
