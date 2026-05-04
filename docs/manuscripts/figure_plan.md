@@ -48,15 +48,15 @@ the post-merge validation.
 on physical voxel spacing and remain interpretable under anisotropic sampling
 because distances are computed directly from 3D masks with SciPy EDT sampling.
 The measured synthetic sweep confirms that the implemented metric contract is
-stable for a smooth tilted ellipsoid scene across \(1\times\) to \(10\times\)
+stable for a smooth tilted ellipsoid scene across $1\times$ to $10\times$
 Z spacing: fraction-inside drift is 0.0025 at most, and median signed-distance
 drift is 0.566 um at most.
 
 **Panels:**
 
 - **A. Implementation-faithful SDF schematic.** Show the binary structure mask
-  \(M_j\), outside transform \(D_{\mathrm{out},j}\), inside transform
-  \(D_{\mathrm{in},j}\), and signed field \(D_j\). The schematic should make
+  $M_j$, outside transform $D_{\mathrm{out},j}$, inside transform
+  $D_{\mathrm{in},j}$, and signed field $D_j$. The schematic should make
   clear that mesh export is not used for SDF quantification.
 - **B. 5x5x5 truth-table validation.** Show the toy anisotropic case used by
   the regression tests: one inside voxel, one outside x-step, and one outside
@@ -66,8 +66,8 @@ drift is 0.566 um at most.
   fractions instead of infinite distances.
 - **D. Anisotropy sensitivity summary.** Plot fraction-inside and signed
   distance summaries from `reproducibility/validation/sdf_anisotropy_sweep.py`,
-  which discretizes the same tilted ellipsoid scene at \(1\times\), \(2\times\),
-  \(5\times\), and \(10\times\) Z spacing and evaluates the public
+  which discretizes the same tilted ellipsoid scene at $1\times$, $2\times$,
+  $5\times$, and $10\times$ Z spacing and evaluates the public
   `compute_hotspot_sdf_metrics` API.
 
 **Data Source:** `tests/test_threed_spatial_modules.py` truth-table fixtures

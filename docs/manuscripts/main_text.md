@@ -24,9 +24,9 @@ support the selection of biologically meaningful structure groups; HistoSeg then
 converts those groups into continuous contours for 3D reconstruction. SDF
 metrics are computed directly from 3D structure masks with anisotropic voxel
 spacing, enabling stable gene-structure quantification across sparse slice
-sampling. In synthetic validation, increasing \(z\)-spacing tenfold changed
+sampling. In synthetic validation, increasing $z$-spacing tenfold changed
 fraction-inside summaries by at most 0.248 percentage points and median signed
-distance by at most 0.566 \(\mu m\). Applied to a 32-slice polyp stack with
+distance by at most 0.566 $\mu m$. Applied to a 32-slice polyp stack with
 2,785,128 aligned cells, HistoSeg resolved marker-supported stromal-immune,
 epithelial and macrophage/perivascular-associated compartments, including a
 GREM1-associated Structure 5 niche.
@@ -45,7 +45,7 @@ audited in physical coordinates, spatial transcriptomics can begin to describe
 tissue architecture as a volume rather than as a gallery of adjacent images.
 
 This opportunity is technically difficult. Spatial transcriptomics slices are
-sparse along the \(z\)-axis relative to their in-plane resolution, and
+sparse along the $z$-axis relative to their in-plane resolution, and
 section-to-section deformation can be large enough that simple stacking
 produces misleading geometry. Registration errors are especially harmful when
 they are propagated into downstream gene-structure statistics: a visually
@@ -106,7 +106,7 @@ or audit groups of spatial labels that behave as coherent tissue structures.
 HistoSeg consumes those selected or curated groups, converts them into
 continuous 2D semantic contours, aligns consecutive slices, and exports an
 aligned stack manifest. This manifest defines the slice order, physical
-\(z\)-positions, accepted contour paths, and alignment role for each slice.
+$z$-positions, accepted contour paths, and alignment role for each slice.
 Downstream 3D outputs, including contour point clouds, optional surface meshes,
 aligned cell-cloud tables, and gene-by-structure matrices, are generated from
 this accepted manifest rather than from ad hoc visualization state.
@@ -145,8 +145,8 @@ surface-rendering geometry (Fig. 2A). Each structure is represented as a binary
 voxel mask on a `(z, y, x)` grid. Distances are computed with
 `scipy.ndimage.distance_transform_edt` using physical sampling
 `(z_um, y_um, x_um)`, so the returned distances are in microns and directly
-encode anisotropic voxel spacing. For structure mask \(M_j\), HistoSeg computes
-an outside transform from \(1-M_j\) and an inside transform from \(M_j\). The
+encode anisotropic voxel spacing. For structure mask $M_j$, HistoSeg computes
+an outside transform from $1-M_j$ and an inside transform from $M_j$. The
 signed field is positive outside the structure and negative inside the
 structure. Boundary voxels are not clamped to zero; the implementation uses the
 discrete inside and outside transforms directly.
@@ -163,7 +163,7 @@ the corresponding threshold.
 
 For each gene, hotspot level, and structure, HistoSeg reports complementary
 overlap and SDF metrics (Fig. 2B,C). The `fraction_inside_structure` metric is
-the fraction of hotspot voxels with signed distance \(D_j(v) < 0\). The signed
+the fraction of hotspot voxels with signed distance $D_j(v) < 0$. The signed
 distance distribution is summarized by the minimum, median, mean, maximum, and
 5th and 95th percentiles over hotspot voxels. The `signed_distance` module
 matrix uses the median signed distance, whereas the `fraction_inside` module
@@ -175,15 +175,15 @@ infinite biological distance.
 The current manuscript baseline supports these claims through implementation
 tests, frozen methods text, and a synthetic anisotropy sweep. Unit-scale
 fixtures assert the anisotropic distance contract on small 3D masks, including
-the expected behavior for inside voxels, outside \(x\)-steps, outside
-\(z\)-steps, and empty-mask cases. In the synthetic sweep, the same tilted
-ellipsoid scene was discretized at \(1\times\), \(2\times\), \(5\times\), and
-\(10\times\) \(z\)-spacing while preserving \(1\,\mu m\) in-plane sampling.
+the expected behavior for inside voxels, outside $x$-steps, outside
+$z$-steps, and empty-mask cases. In the synthetic sweep, the same tilted
+ellipsoid scene was discretized at $1\times$, $2\times$, $5\times$, and
+$10\times$ $z$-spacing while preserving $1\,\mu m$ in-plane sampling.
 The `fraction_inside_structure` summary varied from 0.9674 to 0.9698, with a
 maximum absolute drift of 0.0025 (0.248 percentage points) relative to the
-\(1\times\) baseline. The median signed distance shifted by at most 0.566
-\(\mu m\), and the three-summary signed-distance mean absolute drift
-(median, 5th percentile, 95th percentile) was at most 1.477 \(\mu m\). Empty
+$1\times$ baseline. The median signed distance shifted by at most 0.566
+$\mu m$, and the three-summary signed-distance mean absolute drift
+(median, 5th percentile, 95th percentile) was at most 1.477 $\mu m$. Empty
 hotspot and empty structure cases both returned zero inside/touching fractions
 and NaN distance summaries. Fig. 2 should therefore be framed as a measured
 validation of the implemented physical-distance contract and its edge-case
@@ -204,17 +204,17 @@ Multiple extracellular-matrix, activated-fibroblast, and contractile stromal
 markers had their strongest `top05` fraction-inside values in Structure 5 and
 negative median signed distances, placing their high-enrichment hotspots inside
 the reconstructed contour. Representative values include GREM1
-(`fraction_inside_structure=0.862`, median signed distance \(-35\) um), FAP
-(0.793, \(-35\) um), ACTA2 (0.773, \(-25\) um), COL1A1 (0.767, \(-25\) um),
-and COL1A2 (0.757, \(-25\) um). The same structure also embedded immune
-markers, including PTPRC (0.872, \(-35\) um), CD3D (0.873, \(-35\) um), CD3E
-(0.876, \(-35\) um), MS4A1 (0.805, \(-25\) um), and CD79A (0.791, \(-25\) um).
+(`fraction_inside_structure=0.862`, median signed distance $-35$ um), FAP
+(0.793, $-35$ um), ACTA2 (0.773, $-25$ um), COL1A1 (0.767, $-25$ um),
+and COL1A2 (0.757, $-25$ um). The same structure also embedded immune
+markers, including PTPRC (0.872, $-35$ um), CD3D (0.873, $-35$ um), CD3E
+(0.876, $-35$ um), MS4A1 (0.805, $-25$ um), and CD79A (0.791, $-25$ um).
 This combination supports the interpretation of Structure 5 as a
 stromal-immune niche rather than a purely stromal compartment.
 
 The epithelial markers separated into at least two spatial programs. Structure
 3 carried the strongest MUC2 signal (`fraction_inside_structure=0.603`,
-median signed distance \(-10\) um), consistent with a secretory epithelial
+median signed distance $-10$ um), consistent with a secretory epithelial
 component. OLFM4 showed a near-boundary pattern with Structure 5 and Structure
 3 signals and should be interpreted as a distributed differentiation or
 interface marker rather than forced into a single compartment. MKI67 had its
@@ -225,15 +225,15 @@ Structure 3 epithelial differentiation/proliferation axis that should be
 presented with this boundary nuance.
 
 Structure 4 carried a distinct epithelial/stem-like readout. LGR5 had its
-strongest `top05` fraction-inside value in Structure 4 (0.579, \(-5\) um), and
-EPCAM also peaked in Structure 4 (0.415, \(10\) um). The separation between
+strongest `top05` fraction-inside value in Structure 4 (0.579, $-5$ um), and
+EPCAM also peaked in Structure 4 (0.415, $10$ um). The separation between
 MUC2-heavy Structure 3 and LGR5/EPCAM-associated Structure 4 suggests that the
 32-slice reconstruction preserves epithelial state heterogeneity in 3D rather
 than collapsing epithelial markers into a single contiguous compartment.
 
 Structure 2 showed the clearest macrophage/perivascular-associated signal in
-this panel. C1QA (0.270, \(30\) um), PDGFRA (0.224, \(45\) um), and CD68
-(0.157, \(80\) um) were Structure 2-dominant by `top05` fraction-inside. LYZ
+this panel. C1QA (0.270, $30$ um), PDGFRA (0.224, $45$ um), and CD68
+(0.157, $80$ um) were Structure 2-dominant by `top05` fraction-inside. LYZ
 was more distributed and lower-fraction, so it should be treated as supportive
 myeloid context rather than a defining Structure 2 marker. The positive signed
 distances for several of these markers indicate that this compartment is

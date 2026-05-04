@@ -44,15 +44,15 @@ points, with 32 Leiden labels and five contour traces.
 
 ## Figure 2 | Physical signed-distance fields provide stable 3D gene-structure metrics under anisotropic sampling
 
-**A,** HistoSeg defines each tissue structure as a binary 3D mask \(M_j\) on a
+**A,** HistoSeg defines each tissue structure as a binary 3D mask $M_j$ on a
 physical `(z, y, x)` voxel grid. The outside transform
-\(D_{\mathrm{out},j}\) is computed from \(1-M_j\), the inside transform
-\(D_{\mathrm{in},j}\) is computed from \(M_j\), and the signed-distance field
-\(D_j\) is assembled as positive outside the mask and negative inside the mask.
+$D_{\mathrm{out},j}$ is computed from $1-M_j$, the inside transform
+$D_{\mathrm{in},j}$ is computed from $M_j$, and the signed-distance field
+$D_j$ is assembled as positive outside the mask and negative inside the mask.
 All distances are reported in microns through physical EDT sampling. **B,** A
 5x5x5 anisotropic truth-table fixture validates the discrete SDF contract using
 `spacing_zyx_um=(5,1,1)`. The fixture contains one hotspot voxel inside the
-structure, one voxel one \(x\)-step outside and one voxel one \(z\)-step
+structure, one voxel one $x$-step outside and one voxel one $z$-step
 outside; all expected values passed exactly, including median signed distance
 of 1.0 um, maximum signed distance of 5.0 um and
 `fraction_inside_structure=1/3`. **C,** Empty-mask contract validation confirms
@@ -60,12 +60,12 @@ that undefined distance cases are represented explicitly. Empty hotspot and
 empty structure inputs both returned zero inside/touching fractions and NaN
 distance summaries, avoiding false zero-distance or infinite-distance
 interpretations. **D,** A synthetic anisotropy sweep discretized the same
-tilted ellipsoid structure and hotspot at \(1\times\), \(2\times\),
-\(5\times\) and \(10\times\) \(z\)-spacing while preserving 1 um in-plane
+tilted ellipsoid structure and hotspot at $1\times$, $2\times$,
+$5\times$ and $10\times$ $z$-spacing while preserving 1 um in-plane
 sampling and evaluating the public `compute_hotspot_sdf_metrics` API. Across
 the sweep, `fraction_inside_structure` ranged from 0.9674 to 0.9698, with a
 maximum absolute drift of 0.0025, equivalent to 0.248 percentage points,
-relative to the \(1\times\) baseline. Median signed distance shifted by at most
+relative to the $1\times$ baseline. Median signed distance shifted by at most
 0.566 um, and the maximum mean absolute drift across the median, 5th percentile
 and 95th percentile signed-distance summaries was 1.477 um.
 

@@ -23,7 +23,7 @@ implementation reads clustered cells, marks selected clusters as the target
 class, samples tissue-aware background points when configured, fits a
 distance-weighted K-nearest-neighbor classifier over the spatial coordinates,
 smooths the predicted target probability field with a Gaussian filter, masks the
-field to the tissue support, and extracts the \(0.5\) isoline with
+field to the tissue support, and extracts the $0.5$ isoline with
 `matplotlib.contour`. Candidate loops are filtered by the minimum number of
 target cells enclosed by the loop. Gene/transcript isolines reuse the same
 engine after adapting selected Xenium transcript coordinates into the target
@@ -41,7 +41,7 @@ seed pixels are resolved by the local posterior winner, and unassigned tissue
 pixels are filled from the nearest seed using
 `scipy.ndimage.distance_transform_edt(..., return_indices=True)`. The resulting
 non-overlapping partition masks are converted to continuous contour paths at
-level \(0.5\), exported as Xenium Explorer-compatible GeoJSON/CSV annotations,
+level $0.5$, exported as Xenium Explorer-compatible GeoJSON/CSV annotations,
 and carried forward with their semantic structure labels.
 
 This produces the end-to-end semantic geometry chain used by HistoSeg:
@@ -73,14 +73,14 @@ s = (\Delta z, \Delta y, \Delta x) = (z_{\mu m}, y_{\mu m}, x_{\mu m}).
 $$
 
 Aligned per-slice GeoJSON contours are rasterized onto this grid. For each
-structure \(s_j\), HistoSeg constructs a mask
+structure $s_j$, HistoSeg constructs a mask
 
 $$
 M_j(v) \in \{0,1\},
 $$
 
-where \(v\) indexes a voxel in `(z, y, x)` order and \(M_j(v)=1\) indicates
-that the voxel center lies inside the aligned contour for structure \(s_j\) on
+where $v$ indexes a voxel in `(z, y, x)` order and $M_j(v)=1$ indicates
+that the voxel center lies inside the aligned contour for structure $s_j$ on
 the corresponding slice. The mask spacing is stored as
 `spacing_zyx_um = (z_um, y_um, x_um)`.
 
@@ -114,7 +114,7 @@ spacing through the `sampling=(z_um, y_um, x_um)` argument. Negative values mean
 that a voxel is embedded inside the structure mask, while positive values mean
 that a voxel is outside the structure. Boundary voxels are not clamped to zero:
 because the implementation uses the discrete inside and outside transforms
-directly, an isolated inside voxel can have signed distance \(-\min(s)\).
+directly, an isolated inside voxel can have signed distance $-\min(s)$.
 In the output metadata, this contract is recorded as `outside_um` outside the
 structure and `-inside_um` inside the structure.
 
@@ -148,7 +148,7 @@ Voxels are considered valid when the smoothed total cell count exceeds the
 configured minimum valid cell count. For surface export and quantification, the
 valid enrichment field is smoothed again using the configured
 `surface_smoothing_sigma_voxels_zyx`; a voxel remains quantifiable when it is
-valid and the smoothed validity weight is greater than \(10^{-6}\).
+valid and the smoothed validity weight is greater than $10^{-6}$.
 
 Nested gene hotspot masks are defined by empirical quantiles of the smoothed
 valid enrichment field. The implemented hotspot levels are
@@ -165,7 +165,7 @@ $$
 \tau_{g,\mathrm{top05}} = Q_{0.95}(E_g).
 $$
 
-For a hotspot level \(k\), the binary hotspot mask is
+For a hotspot level $k$, the binary hotspot mask is
 
 $$
 H_{g,k}(v) =
@@ -176,7 +176,7 @@ $$
 which corresponds to the implemented mask
 `quant_valid & (smooth_field >= threshold)`.
 
-For each gene \(g\), hotspot level \(k\), and structure \(s_j\), HistoSeg
+For each gene $g$, hotspot level $k$, and structure $s_j$, HistoSeg
 computes voxel-overlap metrics and SDF metrics. The overlap count is
 
 $$
@@ -214,7 +214,7 @@ $$
 $$
 
 The reported signed-distance summaries are the minimum, median, mean, maximum,
-5th percentile, and 95th percentile of \(\mathcal{D}_{g,k,j}\). The unsigned
+5th percentile, and 95th percentile of $\mathcal{D}_{g,k,j}$. The unsigned
 outside-distance summaries are computed from
 
 $$
@@ -263,7 +263,7 @@ is a 2D similarity registration, not a pure rigid-only registration. Rigid
 registration is the scale-fixed special case; HistoSeg estimates a uniform
 scale together with rotation and translation.
 
-For a moving point \(x\), the hard transform has the form
+For a moving point $x$, the hard transform has the form
 
 $$
 T_{\mathrm{sim}}(x)
@@ -271,8 +271,8 @@ T_{\mathrm{sim}}(x)
 s R_\theta (x-o) + o + t,
 $$
 
-where \(o\) is the moving union centroid used as the transform origin,
-\(\theta\) is the rotation angle, \(s\) is the uniform scale, and \(t\) is the
+where $o$ is the moving union centroid used as the transform origin,
+$\theta$ is the rotation angle, $s$ is the uniform scale, and $t$ is the
 translation vector. Initialization uses the area-derived scale
 
 $$
@@ -294,8 +294,8 @@ T_{\mathrm{sim}}(G_{\mathrm{moving}})\right)
 $$
 
 with Nelder-Mead. Multi-start hard alignment is enabled by default and evaluates
-rotation seeds from the proxy/PCA initialization plus \(0^\circ\), \(90^\circ\),
-\(180^\circ\), and \(270^\circ\) offsets when they are not near-duplicates.
+rotation seeds from the proxy/PCA initialization plus $0^\circ$, $90^\circ$,
+$180^\circ$, and $270^\circ$ offsets when they are not near-duplicates.
 
 The hard alignment is accepted only when the union IoU between the fixed and
 moving contour unions does not decrease. If the optimized similarity transform
@@ -344,12 +344,12 @@ $$
 \delta_c = \max\left(\min\left(\frac{\delta_s}{2}, 25\right), 10^{-6}\right),
 $$
 
-where \(\delta_s\) is `sampling_distance_um`. Boundary normals are estimated
+where $\delta_s$ is `sampling_distance_um`. Boundary normals are estimated
 from local tangents using a configurable normal step; if no step is provided,
 the step is one half of the relevant sampling distance, lower-bounded by
-\(10^{-6}\). For a moving sample point \(p_i\) with normal \(n_i\), HistoSeg
-queries the \(K\) nearest fixed candidates with a k-d tree, where
-\(K=\min(\texttt{landmark\_candidate\_count}, N_c)\). Candidate \(q_l\) is
+$10^{-6}$. For a moving sample point $p_i$ with normal $n_i$, HistoSeg
+queries the $K$ nearest fixed candidates with a k-d tree, where
+$K=\min(\texttt{landmark\_candidate\_count}, N_c)$. Candidate $q_l$ is
 scored by
 
 $$
@@ -358,8 +358,8 @@ C(i,l) =
 + \lambda \left(1-\left|n_i^\top m_l\right|\right),
 $$
 
-where \(m_l\) is the candidate normal and
-\(\lambda=\texttt{landmark\_normal\_weight\_um}\). If either normal is not
+where $m_l$ is the candidate normal and
+$\lambda=\texttt{landmark\_normal\_weight\_um}$. If either normal is not
 finite, the normal penalty is not applied for that candidate. The lowest-cost
 candidate is retained when its Euclidean distance is no greater than
 `max_landmark_distance_um`.
@@ -371,7 +371,7 @@ required, HistoSeg keeps evenly spaced rows from the generated landmark table.
 Mutual nearest-neighbor filtering is enabled by default. For each moving-to-fixed
 landmark pair, the fixed target point is projected back to the moving boundary,
 and the pair is retained only when the reverse projection lies within
-\(2\,\delta_s\) of the original source point. MAD-based displacement outlier
+$2\,\delta_s$ of the original source point. MAD-based displacement outlier
 filtering is also enabled by default; landmarks whose displacement vectors
 deviate beyond the configured MAD threshold are removed when enough landmarks
 remain. At least three boundary landmarks are required for soft alignment.
@@ -384,9 +384,9 @@ correspondences.
 
 The soft warp is fit as a displacement field using
 `scipy.interpolate.RBFInterpolator` with the configured kernel, which defaults
-to `thin_plate_spline`. Let source landmarks be \(p_i \in \mathbb{R}^2\) and
-target landmarks be \(q_i \in \mathbb{R}^2\). HistoSeg normalizes coordinates by
-the landmark mean \(c\) and maximum coordinate range \(a\):
+to `thin_plate_spline`. Let source landmarks be $p_i \in \mathbb{R}^2$ and
+target landmarks be $q_i \in \mathbb{R}^2$. HistoSeg normalizes coordinates by
+the landmark mean $c$ and maximum coordinate range $a$:
 
 $$
 \tilde{p}_i = \frac{p_i-c}{a},
@@ -395,7 +395,7 @@ $$
 $$
 
 The interpolator is fit to predict normalized displacement
-\(\tilde{u}(\tilde{x})\), with the configured smoothing and optional neighbor
+$\tilde{u}(\tilde{x})$, with the configured smoothing and optional neighbor
 limit. The physical displacement and warp are
 
 $$
@@ -430,10 +430,10 @@ r_c =
 {A_0},
 $$
 
-where \(A_0\) is the original grid-cell area and the numerator is the signed
+where $A_0$ is the original grid-cell area and the numerator is the signed
 area of the warped quadrilateral. A cell is considered folded when
-\(r_c \le 0\), compressed when \(r_c\) is below `topology_min_area_ratio`, and
-expanded when \(r_c\) exceeds `topology_max_area_ratio`. The topology check is
+$r_c \le 0$, compressed when $r_c$ is below `topology_min_area_ratio`, and
+expanded when $r_c$ exceeds `topology_max_area_ratio`. The topology check is
 valid only when no folded, compressed, or expanded cells are detected.
 
 For full stack reconstruction, the soft-aligned contour is accepted only when
