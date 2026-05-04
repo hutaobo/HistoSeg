@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 import trimesh
 from shapely.geometry import MultiPolygon, box, mapping, shape
+from shapely.ops import unary_union
 
 from histoseg.threed import (
     ThreeDStackReconstructionResult,
@@ -16,6 +17,7 @@ from histoseg.threed import (
     write_3d_visualization_html,
 )
 from histoseg.threed.multislice import _read_strategy_specs
+from histoseg.threed.multislice import _build_per_structure_soft_geojson
 from histoseg.threed import ThreeDStackReconstructionConfig
 
 
@@ -261,6 +263,50 @@ def test_hard_align_multistart_improves_or_maintains_iou(tmp_path):
     assert summary_multi["union_iou_after_hard"] >= summary_single["union_iou_after_hard"] - 0.02
 
 
+def test_per_structure_soft_mixing_preserves_feature_identity():
+    hard_payload = _geojson_payload(
+        [
+            _feature(box(0, 0, 10, 10), "Structure 1"),
+            _feature(box(20, 0, 30, 10), "Structure 1"),
+            _feature(box(40, 0, 50, 10), "Structure 2"),
+        ]
+    )
+    soft_payload = _geojson_payload(
+        [
+            _feature(box(1, 0, 11, 10), "Structure 1"),
+            _feature(box(21, 0, 31, 10), "Structure 1"),
+            _feature(box(41, 0, 51, 10), "Structure 2"),
+        ]
+    )
+    summary = {
+        "qc": {
+            "per_structure": {
+                "Structure 1": {
+                    "iou_hard_before_soft": 0.4,
+                    "iou_soft_after": 0.5,
+                },
+                "Structure 2": {
+                    "iou_hard_before_soft": 0.8,
+                    "iou_soft_after": 0.7,
+                },
+            }
+        }
+    }
+
+    mixed = _build_per_structure_soft_geojson(
+        hard_payload,
+        soft_payload,
+        "structure",
+        summary,
+    )
+    geoms = [shape(feature["geometry"]) for feature in mixed["features"]]
+
+    assert geoms[0].bounds == pytest.approx((1.0, 0.0, 11.0, 10.0))
+    assert geoms[1].bounds == pytest.approx((21.0, 0.0, 31.0, 10.0))
+    assert geoms[2].bounds == pytest.approx((40.0, 0.0, 50.0, 10.0))
+    assert unary_union(geoms[:2]).area == pytest.approx(200.0)
+
+
 def test_reconstruct_stack_cli_parses_registration_backend(monkeypatch, tmp_path, capsys):
     import histoseg.threed.cli as cli
 
@@ -420,6 +466,10 @@ def _write_geojson(path, features):
         json.dumps({"type": "FeatureCollection", "features": features}),
         encoding="utf-8",
     )
+
+
+def _geojson_payload(features):
+    return {"type": "FeatureCollection", "features": features}
 
 
 def _union_iou(features_a, features_b):

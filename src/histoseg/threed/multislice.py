@@ -2233,21 +2233,21 @@ def _build_per_structure_soft_geojson(
     with the soft-aligned version; otherwise the hard-aligned geometry is kept.
     """
     per_structure_qc = soft_summary.get("qc", {}).get("per_structure", {})
-    soft_by_group: dict[str, dict[str, Any]] = {}
-    for feature in soft_payload.get("features", []):
-        group = str(_feature_group(feature.get("properties") or {}, group_property))
-        soft_by_group[group] = feature
-
     mixed = copy.deepcopy(hard_payload)
-    for feature in mixed.get("features", []):
+    soft_features = soft_payload.get("features", [])
+    for feature_index, feature in enumerate(mixed.get("features", [])):
         group = str(_feature_group(feature.get("properties") or {}, group_property))
-        if group not in soft_by_group:
+        if feature_index >= len(soft_features):
+            continue
+        soft_feature = soft_features[feature_index]
+        soft_group = str(_feature_group(soft_feature.get("properties") or {}, group_property))
+        if soft_group != group:
             continue
         qc = per_structure_qc.get(group, {})
         iou_hard = float(qc.get("iou_hard_before_soft", 0.0))
         iou_soft = float(qc.get("iou_soft_after", 0.0))
         if iou_soft >= iou_hard:
-            feature["geometry"] = soft_by_group[group]["geometry"]
+            feature["geometry"] = soft_feature["geometry"]
     return mixed
 
 
