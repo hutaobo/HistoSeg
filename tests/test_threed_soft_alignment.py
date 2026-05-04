@@ -6,7 +6,11 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import box, mapping, shape
 
-from histoseg.threed import ThreeDContourReconstructionConfig, run_3d_contour_reconstruction
+from histoseg.threed import (
+    ThreeDContourReconstructionConfig,
+    ThreeDContourReconstructionResult,
+    run_3d_contour_reconstruction,
+)
 from histoseg.threed.cli import main
 from histoseg.threed.soft_alignment import (
     _FeatureRecord,
@@ -121,6 +125,68 @@ def test_3d_cli_help_exits_successfully(capsys):
         assert exc.code == 0
 
     assert "Run HistoSeg 3D Analysis workflows" in capsys.readouterr().out
+
+
+def test_3d_cli_reconstruct_parses_landmark_diagnostic_parameters(monkeypatch, tmp_path, capsys):
+    import histoseg.threed.cli as cli
+
+    calls: list[ThreeDContourReconstructionConfig] = []
+
+    def fake_run(cfg):
+        calls.append(cfg)
+        return ThreeDContourReconstructionResult(
+            out_dir=tmp_path / "out",
+            soft_aligned_geojson=tmp_path / "out" / "soft_aligned_contours.geojson",
+            metrics_csv=tmp_path / "out" / "soft_tps_alignment_metrics.csv",
+            landmarks_csv=tmp_path / "out" / "soft_tps_landmarks.csv",
+            summary_json=tmp_path / "out" / "soft_tps_alignment_summary.json",
+        )
+
+    monkeypatch.setattr(cli, "run_3d_contour_reconstruction", fake_run)
+    base_args = [
+        "reconstruct",
+        "--fixed-geojson",
+        str(tmp_path / "fixed.geojson"),
+        "--moving-hard-aligned-geojson",
+        str(tmp_path / "moving.geojson"),
+        "--out-dir",
+        str(tmp_path / "out"),
+    ]
+
+    cli.main(base_args)
+    cli.main(
+        base_args
+        + [
+            "--landmarks-per-structure",
+            "420",
+            "--diagnostic-structure-landmarks",
+            "900",
+            "--diagnostic-structure",
+            "Structure 3",
+        ]
+    )
+    cli.main(
+        base_args
+        + [
+            "--landmarks-per-structure",
+            "0",
+            "--diagnostic-structure-landmarks",
+            "0",
+            "--diagnostic-structure",
+            "",
+        ]
+    )
+
+    capsys.readouterr()
+    assert calls[0].landmarks_per_structure == 260
+    assert calls[0].diagnostic_structure_landmarks == 620
+    assert calls[0].diagnostic_structure == "Structure 5"
+    assert calls[1].landmarks_per_structure == 420
+    assert calls[1].diagnostic_structure_landmarks == 900
+    assert calls[1].diagnostic_structure == "Structure 3"
+    assert calls[2].landmarks_per_structure is None
+    assert calls[2].diagnostic_structure_landmarks is None
+    assert calls[2].diagnostic_structure is None
 
 
 def test_3d_cli_reconstruct_writes_expected_outputs(tmp_path):

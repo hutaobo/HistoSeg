@@ -356,6 +356,12 @@ def test_reconstruct_stack_cli_parses_registration_backend(monkeypatch, tmp_path
             "4",
             "--coda-mask-padding-fraction",
             "0.1",
+            "--landmarks-per-structure",
+            "420",
+            "--diagnostic-structure-landmarks",
+            "900",
+            "--diagnostic-structure",
+            "Structure 3",
         ]
     )
 
@@ -366,6 +372,12 @@ def test_reconstruct_stack_cli_parses_registration_backend(monkeypatch, tmp_path
     assert calls[1].coda_angle_step == 0.5
     assert calls[1].coda_phase_upsample_factor == 4
     assert calls[1].coda_mask_padding_fraction == 0.1
+    assert calls[0].landmarks_per_structure == 260
+    assert calls[0].diagnostic_structure_landmarks == 620
+    assert calls[0].diagnostic_structure == "Structure 5"
+    assert calls[1].landmarks_per_structure == 420
+    assert calls[1].diagnostic_structure_landmarks == 900
+    assert calls[1].diagnostic_structure == "Structure 3"
 
 
 def test_hard_align_affine_fallback_accepted_when_triggered(tmp_path):

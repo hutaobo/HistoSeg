@@ -298,8 +298,18 @@ def main(argv: Sequence[str] | None = None) -> None:
         default=180.0,
         help="TPS nearest-boundary rejection distance in GeoJSON coordinate units.",
     )
-    stack.add_argument("--landmarks-per-structure", type=int, default=260)
-    stack.add_argument("--diagnostic-structure-landmarks", type=int, default=620)
+    stack.add_argument(
+        "--landmarks-per-structure",
+        type=int,
+        default=260,
+        help="Conservative cap for boundary landmarks per structure. Use 0 for no cap.",
+    )
+    stack.add_argument(
+        "--diagnostic-structure-landmarks",
+        type=int,
+        default=620,
+        help="Landmark cap for the diagnostic structure. Use 0 to use the regular cap.",
+    )
     stack.add_argument("--landmark-candidate-count", type=int, default=8)
     stack.add_argument("--landmark-candidate-spacing-um", type=float, default=None)
     stack.add_argument("--landmark-normal-weight-um", type=float, default=0.0)
@@ -309,7 +319,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     stack.add_argument("--topology-grid-size", type=int, default=24)
     stack.add_argument("--topology-min-area-ratio", type=float, default=0.5)
     stack.add_argument("--topology-max-area-ratio", type=float, default=2.0)
-    stack.add_argument("--diagnostic-structure", default="Structure 5")
+    stack.add_argument(
+        "--diagnostic-structure",
+        default="Structure 5",
+        help="Structure label for the local diagnostic zoom. Use '' to show all structures.",
+    )
     stack.add_argument("--point-sample-distance-um", type=float, default=80.0)
     stack.add_argument("--voxel-size-um", type=float, default=80.0)
     stack.add_argument("--mesh-method", default="marching_cubes")
@@ -552,8 +566,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 group_property=args.group_property,
                 sampling_distance_um=args.sampling_distance_um,
                 max_landmark_distance_um=args.max_landmark_distance_um,
-                landmarks_per_structure=args.landmarks_per_structure or None,
-                diagnostic_structure_landmarks=args.diagnostic_structure_landmarks or None,
+                landmarks_per_structure=_zero_as_none(args.landmarks_per_structure),
+                diagnostic_structure_landmarks=_zero_as_none(args.diagnostic_structure_landmarks),
                 landmark_candidate_count=args.landmark_candidate_count,
                 landmark_candidate_spacing_um=args.landmark_candidate_spacing_um,
                 landmark_normal_weight_um=args.landmark_normal_weight_um,
@@ -774,8 +788,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 run_soft_alignment=not args.no_soft,
                 sampling_distance_um=args.sampling_distance_um,
                 max_landmark_distance_um=args.max_landmark_distance_um,
-                landmarks_per_structure=args.landmarks_per_structure or None,
-                diagnostic_structure_landmarks=args.diagnostic_structure_landmarks or None,
+                landmarks_per_structure=_zero_as_none(args.landmarks_per_structure),
+                diagnostic_structure_landmarks=_zero_as_none(args.diagnostic_structure_landmarks),
                 landmark_candidate_count=args.landmark_candidate_count,
                 landmark_candidate_spacing_um=args.landmark_candidate_spacing_um,
                 landmark_normal_weight_um=args.landmark_normal_weight_um,
@@ -818,6 +832,12 @@ def _parse_cli_chunks(values: Sequence[str]) -> list[str]:
     for value in values:
         result.extend(part.strip() for part in str(value).split(",") if part.strip())
     return result
+
+
+def _zero_as_none(value: int | None) -> int | None:
+    if value == 0:
+        return None
+    return value
 
 
 if __name__ == "__main__":
