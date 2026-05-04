@@ -2,13 +2,13 @@
 
 **Frozen baseline:** `publication-alpha-20260503` at commit `2361fbc`
 
-**Draft status:** manuscript foundation draft. Abstract, Introduction, Results
-and figure legends are in place; Discussion and final references remain to be
-completed after the figure assembly is locked.
+**Draft status:** first complete manuscript narrative draft. Discussion,
+references, and final journal formatting remain to be completed after the
+Results claims are locked.
 
 ## Working Title
 
-HistoSeg: StructureMap-guided semantic contours for signed-distance
+HistoSeg: StructureMap-guided semantic contour synthesis, signed-distance
 reconstruction and 3D spatial quantification of multi-slice spatial
 transcriptomics tissue architecture
 
@@ -56,6 +56,17 @@ render a volume. It must preserve slice provenance, guard against topological
 fold-over, expose its alignment state, and define gene-structure association in
 physical units that remain interpretable under anisotropic sampling.
 
+An additional bottleneck is semantic geometry. A 3D tissue object is only as
+interpretable as the 2D structures that enter the stack. HistoSeg addresses
+this by connecting two layers of analysis developed in the same method family:
+sfplot provides Search-and-Find and cophenetic StructureMap relationships for
+identifying or auditing spatially coherent structure groups, and HistoSeg
+converts selected or curated groups into continuous named contours through
+isoline and multi-structure partitioning. These contours are not arbitrary
+image masks. They are semantic tissue boundaries that retain structure labels,
+can be reviewed in Xenium Explorer, and become the geometric primitives for
+alignment, rasterization and SDF quantification.
+
 HistoSeg addresses this problem by treating 3D reconstruction as a set of
 explicit contracts, beginning with semantic contour definition. The upstream
 sfplot layer computes Search-and-Find relationships and cophenetic StructureMap
@@ -81,17 +92,18 @@ outside it, and undefined empty-mask cases are reported as NaN summaries with
 zero inside/touching fractions rather than as hidden failures.
 
 Here we describe the HistoSeg 3D workflow and validate its core SDF
-quantification contract. We first show how topology-aware alignment and
-manifest-based provenance convert a serial Xenium stack into an auditable 3D
-analysis object. We then demonstrate that the implemented SDF metrics have
-stable behavior in unit-scale truth tables, empty-mask edge cases and a
-synthetic anisotropy sweep. Finally, we apply the workflow to a 32-slice polyp
-dataset containing 2,785,128 aligned cells and a 24-gene marker panel. The
-analysis resolves interpretable 3D compartments, including a mixed
-stromal-immune Structure 5 niche with embedded GREM1, fibroblast, extracellular
-matrix, T-cell and B-cell marker signals. These results position HistoSeg as a
-reproducible foundation for moving spatial transcriptomics analysis from
-section-level visualization toward volumetric tissue architecture.
+quantification contract. We first show how StructureMap-supported semantic
+contours, topology-aware alignment and manifest-based provenance convert a
+serial Xenium stack into an auditable 3D analysis object. We then demonstrate
+that the implemented SDF metrics have stable behavior in unit-scale truth
+tables, empty-mask edge cases and a synthetic anisotropy sweep. Finally, we
+apply the workflow to a 32-slice polyp dataset containing 2,785,128 aligned
+cells and a 24-gene marker panel. The analysis resolves interpretable 3D
+compartments, including a mixed stromal-immune Structure 5 niche with embedded
+GREM1, fibroblast, extracellular matrix, T-cell and B-cell marker signals.
+These results position HistoSeg as a reproducible foundation for moving spatial
+transcriptomics analysis from section-level visualization toward volumetric
+tissue architecture.
 
 ## Results
 

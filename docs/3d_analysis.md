@@ -33,8 +33,8 @@ The flagship 3D surface currently has these public workflows:
 
 - Treat 3D contour reconstruction as the main HistoSeg workflow, with 2D
   contour generation and H&E analysis supporting upstream preparation and QC.
-- Start from named semantic contours generated from selected or curated
-  structure groups, rather than arbitrary polygons.
+- Consume named semantic contours generated from selected or curated structure
+  groups, including groups supported by sfplot StructureMap interpretation.
 - Align neighboring 2D Xenium contour slices before downstream 3D
   reconstruction.
 - Read ordered Xenium slice folders through `pyXenium.io.read_xenium(...,
