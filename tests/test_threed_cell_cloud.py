@@ -9,6 +9,8 @@ import pandas as pd
 import pytest
 
 from histoseg.threed import (
+    CODA_METHOD_CREDIT,
+    CODA_METHOD_REFERENCE_DOI,
     CELL_CLOUD_ALIGNED_XY_OBSM_KEY,
     CELL_CLOUD_OBS_SLICE_KEY,
     CELL_CLOUD_OBSM_KEY,
@@ -95,6 +97,57 @@ def test_alignment_manifest_hash_changes_only_with_geometry_state(tmp_path):
 
     changed_hash = hash_alignment_manifest(build_alignment_manifest(stack_root, pixel_size_um=2.0))
     assert changed_hash != first_hash
+
+
+def test_alignment_manifest_tracks_coda_backend_credit_and_parameters(tmp_path):
+    stack_root = _write_minimal_stack(tmp_path)
+    hard_summary = stack_root / "pairwise_alignments" / "001_to_002_s2" / "hard_similarity_alignment.json"
+    payload = json.loads(hard_summary.read_text(encoding="utf-8"))
+    payload.update(
+        {
+            "registration_backend": "coda-image",
+            "method_credit": CODA_METHOD_CREDIT,
+            "method_reference_doi": CODA_METHOD_REFERENCE_DOI,
+            "coda_image": {
+                "radon_rotation_degrees": -12.0,
+                "radon_score": 0.9,
+                "radon_angle_range": [0.0, 180.0],
+                "radon_angle_step": 1.0,
+                "phase_shift_y": -3.0,
+                "phase_shift_x": 4.0,
+                "phase_error": 0.1,
+                "phase_difference": 0.0,
+                "phase_upsample_factor": 1,
+                "preprocessing": {
+                    "input_source": "contour_union_raster_proxy",
+                    "raster_size": 512,
+                    "square_bounds": [0.0, 0.0, 100.0, 100.0],
+                    "native_units_per_pixel": 0.2,
+                    "fixed_positive_pixels": 10,
+                    "moving_positive_pixels": 11,
+                    "mask_padding_fraction": 0.05,
+                },
+            },
+        }
+    )
+    hard_summary.write_text(json.dumps(payload), encoding="utf-8")
+
+    manifest = build_alignment_manifest(stack_root, pixel_size_um=2.0)
+    registration = manifest["slices"][1]["hard_registration"]
+    first_hash = hash_alignment_manifest(manifest)
+
+    assert registration["registration_backend"] == "coda-image"
+    assert registration["method_credit"] == CODA_METHOD_CREDIT
+    assert registration["method_reference_doi"] == CODA_METHOD_REFERENCE_DOI
+    assert registration["coda_image"]["radon_angle_step"] == 1.0
+
+    payload["coda_image"]["phase_error"] = 0.8
+    hard_summary.write_text(json.dumps(payload), encoding="utf-8")
+    assert hash_alignment_manifest(build_alignment_manifest(stack_root, pixel_size_um=2.0)) == first_hash
+
+    payload["coda_image"]["radon_angle_step"] = 0.5
+    hard_summary.write_text(json.dumps(payload), encoding="utf-8")
+    assert hash_alignment_manifest(build_alignment_manifest(stack_root, pixel_size_um=2.0)) != first_hash
 
 
 def test_write_cell_cloud_cache_uses_histoseg_keys_without_touching_spatial(tmp_path):

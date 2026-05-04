@@ -6,8 +6,10 @@ import pandas as pd
 import pytest
 import trimesh
 from shapely.geometry import MultiPolygon, box, mapping, shape
+from shapely.ops import unary_union
 
 from histoseg.threed import (
+    ThreeDStackReconstructionResult,
     discover_xenium_slices,
     hard_align_geojson,
     reconstruct_3d_contour_meshes,
@@ -15,6 +17,7 @@ from histoseg.threed import (
     write_3d_visualization_html,
 )
 from histoseg.threed.multislice import _read_strategy_specs
+from histoseg.threed.multislice import _build_per_structure_soft_geojson
 from histoseg.threed import ThreeDStackReconstructionConfig
 
 
@@ -260,6 +263,111 @@ def test_hard_align_multistart_improves_or_maintains_iou(tmp_path):
     assert summary_multi["union_iou_after_hard"] >= summary_single["union_iou_after_hard"] - 0.02
 
 
+def test_per_structure_soft_mixing_preserves_feature_identity():
+    hard_payload = _geojson_payload(
+        [
+            _feature(box(0, 0, 10, 10), "Structure 1"),
+            _feature(box(20, 0, 30, 10), "Structure 1"),
+            _feature(box(40, 0, 50, 10), "Structure 2"),
+        ]
+    )
+    soft_payload = _geojson_payload(
+        [
+            _feature(box(1, 0, 11, 10), "Structure 1"),
+            _feature(box(21, 0, 31, 10), "Structure 1"),
+            _feature(box(41, 0, 51, 10), "Structure 2"),
+        ]
+    )
+    summary = {
+        "qc": {
+            "per_structure": {
+                "Structure 1": {
+                    "iou_hard_before_soft": 0.4,
+                    "iou_soft_after": 0.5,
+                },
+                "Structure 2": {
+                    "iou_hard_before_soft": 0.8,
+                    "iou_soft_after": 0.7,
+                },
+            }
+        }
+    }
+
+    mixed = _build_per_structure_soft_geojson(
+        hard_payload,
+        soft_payload,
+        "structure",
+        summary,
+    )
+    geoms = [shape(feature["geometry"]) for feature in mixed["features"]]
+
+    assert geoms[0].bounds == pytest.approx((1.0, 0.0, 11.0, 10.0))
+    assert geoms[1].bounds == pytest.approx((21.0, 0.0, 31.0, 10.0))
+    assert geoms[2].bounds == pytest.approx((40.0, 0.0, 50.0, 10.0))
+    assert unary_union(geoms[:2]).area == pytest.approx(200.0)
+
+
+def test_reconstruct_stack_cli_parses_registration_backend(monkeypatch, tmp_path, capsys):
+    import histoseg.threed.cli as cli
+
+    calls: list[ThreeDStackReconstructionConfig] = []
+
+    def fake_run(cfg):
+        calls.append(cfg)
+        return ThreeDStackReconstructionResult(
+            out_dir=tmp_path / "out",
+            slice_manifest_csv=tmp_path / "out" / "xenium_slice_manifest.csv",
+            pairwise_metrics_csv=tmp_path / "out" / "pairwise_alignment_metrics.csv",
+            aligned_manifest_csv=tmp_path / "out" / "aligned_slice_manifest.csv",
+            contour_points_csv=tmp_path / "out" / "aligned_contour_3d_points.csv",
+            summary_json=tmp_path / "out" / "3d_stack_reconstruction_summary.json",
+            visualization_html=tmp_path / "out" / "histoseg_3d_contour_stack.html",
+            mesh_dir=tmp_path / "out" / "meshes",
+        )
+
+    monkeypatch.setattr(cli, "run_3d_stack_reconstruction", fake_run)
+    cli.main(
+        [
+            "reconstruct-stack",
+            "--xenium-root",
+            str(tmp_path / "xenium"),
+            "--segmentation-strategy",
+            str(tmp_path / "segmentationstrategy.txt"),
+            "--out-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+    cli.main(
+        [
+            "reconstruct-stack",
+            "--xenium-root",
+            str(tmp_path / "xenium"),
+            "--segmentation-strategy",
+            str(tmp_path / "segmentationstrategy.txt"),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--registration-backend",
+            "coda-image",
+            "--coda-raster-size",
+            "128",
+            "--coda-angle-step",
+            "0.5",
+            "--coda-phase-upsample-factor",
+            "4",
+            "--coda-mask-padding-fraction",
+            "0.1",
+        ]
+    )
+
+    capsys.readouterr()
+    assert calls[0].registration_backend == "contour-tps"
+    assert calls[1].registration_backend == "coda-image"
+    assert calls[1].coda_raster_size == 128
+    assert calls[1].coda_angle_step == 0.5
+    assert calls[1].coda_phase_upsample_factor == 4
+    assert calls[1].coda_mask_padding_fraction == 0.1
+
+
 def test_hard_align_affine_fallback_accepted_when_triggered(tmp_path):
     """affine_fallback_iou_threshold=1.0 always triggers the affine fallback."""
     fixed = tmp_path / "fixed.geojson"
@@ -358,6 +466,10 @@ def _write_geojson(path, features):
         json.dumps({"type": "FeatureCollection", "features": features}),
         encoding="utf-8",
     )
+
+
+def _geojson_payload(features):
+    return {"type": "FeatureCollection", "features": features}
 
 
 def _union_iou(features_a, features_b):

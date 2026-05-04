@@ -37,6 +37,14 @@ from .soft_alignment import (
     _records_from_geojson,
     run_3d_contour_reconstruction,
 )
+from .image_registration import (
+    CODA_METHOD_CREDIT,
+    CODA_METHOD_REFERENCE_DOI,
+    CODA_METHOD_REFERENCE_URL,
+    CODA_METHODOLOGY_URL,
+    CodaImageRegistrationConfig,
+    estimate_coda_image_registration,
+)
 
 try:  # Shapely 2.x fast vectorized containment.
     from shapely import contains_xy as _contains_xy
@@ -81,12 +89,17 @@ class ThreeDStackReconstructionConfig:
     min_cells: int = 500
     min_component_pixels: int = 180
     save_slice_preview_png: bool = False
+    registration_backend: str = "contour-tps"
     hard_alignment_maxiter: int = 80
     # Enable multi-start similarity search (tries PCA rotation + 0/90/180/270° seeds).
     hard_alignment_multistart: bool = True
     # When similarity IoU after hard alignment falls below this threshold, try a 6-DOF affine
     # fallback and use it if it improves IoU.  Set to 0.0 to disable.
     affine_fallback_iou_threshold: float = 0.0
+    coda_raster_size: int = 512
+    coda_angle_step: float = 1.0
+    coda_phase_upsample_factor: int = 1
+    coda_mask_padding_fraction: float = 0.05
     # Apply a linear drift correction after the full pairwise alignment chain to reduce
     # cumulative translation drift across the stack.
     global_drift_correction: bool = False
@@ -235,16 +248,12 @@ def run_3d_stack_reconstruction(
         hard_path = pair_dir / "moving_hard_aligned.geojson"
         hard_summary_path = pair_dir / "hard_similarity_alignment.json"
 
-        hard_summary = hard_align_geojson(
+        hard_summary = _run_hard_alignment_backend(
+            cfg,
             fixed_geojson=fixed_path,
             moving_geojson=raw_geojson,
             output_geojson=hard_path,
             summary_json=hard_summary_path,
-            group_property=cfg.group_property,
-            maxiter=cfg.hard_alignment_maxiter,
-            overwrite=cfg.overwrite,
-            multistart=cfg.hard_alignment_multistart,
-            affine_fallback_iou_threshold=cfg.affine_fallback_iou_threshold,
         )
 
         if cfg.run_soft_alignment:
@@ -459,6 +468,283 @@ def discover_xenium_slices(
     ]
 
 
+def _run_hard_alignment_backend(
+    cfg: ThreeDStackReconstructionConfig,
+    *,
+    fixed_geojson: PathLike,
+    moving_geojson: PathLike,
+    output_geojson: PathLike,
+    summary_json: PathLike,
+) -> dict[str, Any]:
+    if cfg.registration_backend == "contour-tps":
+        return hard_align_geojson(
+            fixed_geojson=fixed_geojson,
+            moving_geojson=moving_geojson,
+            output_geojson=output_geojson,
+            summary_json=summary_json,
+            group_property=cfg.group_property,
+            maxiter=cfg.hard_alignment_maxiter,
+            overwrite=cfg.overwrite,
+            multistart=cfg.hard_alignment_multistart,
+            affine_fallback_iou_threshold=cfg.affine_fallback_iou_threshold,
+            registration_backend="contour-tps",
+        )
+    if cfg.registration_backend == "coda-image":
+        return _run_tournament_hard_alignment(
+            fixed_geojson=fixed_geojson,
+            moving_geojson=moving_geojson,
+            output_geojson=output_geojson,
+            summary_json=summary_json,
+            group_property=cfg.group_property,
+            maxiter=cfg.hard_alignment_maxiter,
+            overwrite=cfg.overwrite,
+            multistart=cfg.hard_alignment_multistart,
+            affine_fallback_iou_threshold=cfg.affine_fallback_iou_threshold,
+            raster_size=cfg.coda_raster_size,
+            angle_step=cfg.coda_angle_step,
+            phase_upsample_factor=cfg.coda_phase_upsample_factor,
+            mask_padding_fraction=cfg.coda_mask_padding_fraction,
+        )
+    raise ValueError(f"Unsupported registration_backend: {cfg.registration_backend!r}.")
+
+
+def _run_tournament_hard_alignment(
+    *,
+    fixed_geojson: PathLike,
+    moving_geojson: PathLike,
+    output_geojson: PathLike,
+    summary_json: PathLike | None = None,
+    group_property: str = "structure",
+    maxiter: int = 80,
+    overwrite: bool = False,
+    multistart: bool = True,
+    affine_fallback_iou_threshold: float = 0.0,
+    raster_size: int = 512,
+    angle_step: float = 1.0,
+    phase_upsample_factor: int = 1,
+    mask_padding_fraction: float = 0.05,
+) -> dict[str, Any]:
+    """Run contour and CODA-inspired hard seeds, then promote the higher-IoU winner."""
+
+    output_path = Path(output_geojson)
+    summary_path = Path(summary_json) if summary_json is not None else None
+    if output_path.exists() and not overwrite and summary_path is not None and summary_path.exists():
+        return json.loads(summary_path.read_text(encoding="utf-8"))
+
+    candidate_dir = output_path.parent / "hard_alignment_candidates"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    contour_summary_path = candidate_dir / "contour_tps_summary.json"
+    contour_output_path = candidate_dir / "contour_tps_moving_hard_aligned.geojson"
+    coda_summary_path = candidate_dir / "coda_image_summary.json"
+    coda_output_path = candidate_dir / "coda_image_moving_hard_aligned.geojson"
+
+    contour_summary = hard_align_geojson(
+        fixed_geojson=fixed_geojson,
+        moving_geojson=moving_geojson,
+        output_geojson=contour_output_path,
+        summary_json=contour_summary_path,
+        group_property=group_property,
+        maxiter=maxiter,
+        overwrite=True,
+        multistart=multistart,
+        affine_fallback_iou_threshold=affine_fallback_iou_threshold,
+        registration_backend="contour-tps",
+    )
+    coda_summary = _coda_image_align_geojson(
+        fixed_geojson=fixed_geojson,
+        moving_geojson=moving_geojson,
+        output_geojson=coda_output_path,
+        summary_json=coda_summary_path,
+        group_property=group_property,
+        overwrite=True,
+        raster_size=raster_size,
+        angle_step=angle_step,
+        phase_upsample_factor=phase_upsample_factor,
+        mask_padding_fraction=mask_padding_fraction,
+    )
+
+    contour_iou = _hard_alignment_iou(contour_summary)
+    coda_iou = _hard_alignment_iou(coda_summary)
+    if contour_iou >= coda_iou:
+        selected_backend = "contour-tps"
+        selected_summary = contour_summary
+        selected_output_path = contour_output_path
+    else:
+        selected_backend = "coda-image"
+        selected_summary = coda_summary
+        selected_output_path = coda_output_path
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(selected_output_path, output_path)
+
+    summary = copy.deepcopy(selected_summary)
+    summary.update(
+        {
+            "fixed_geojson": str(Path(fixed_geojson)),
+            "moving_geojson": str(Path(moving_geojson)),
+            "output_geojson": str(output_path),
+            "registration_backend": "coda-image",
+            "selected_hard_seed_backend": selected_backend,
+            "method_credit": CODA_METHOD_CREDIT,
+            "method_reference_doi": CODA_METHOD_REFERENCE_DOI,
+            "method_reference_url": CODA_METHOD_REFERENCE_URL,
+            "methodology_url": CODA_METHODOLOGY_URL,
+            "method_note": (
+                "CODA-inspired tournament hard alignment: contour similarity and "
+                "CODA-inspired Radon/phase seeds are both evaluated, then the "
+                "higher-IoU hard seed is promoted before topology-safe contour TPS. "
+                "This is not a full CODA reimplementation."
+            ),
+            "hard_alignment_tournament": {
+                "strategy": "max_union_iou_after_hard",
+                "selected_backend": selected_backend,
+                "rotation_difference_degrees": _rotation_difference_degrees(
+                    contour_summary.get("transform", {}).get("rotation_degrees", 0.0),
+                    coda_summary.get("transform", {}).get("rotation_degrees", 0.0),
+                ),
+            },
+            "hard_alignment_candidates": [
+                _hard_alignment_candidate_payload(
+                    contour_summary,
+                    summary_json=contour_summary_path,
+                ),
+                _hard_alignment_candidate_payload(
+                    coda_summary,
+                    summary_json=coda_summary_path,
+                ),
+            ],
+            "coda_image": coda_summary.get("coda_image"),
+        }
+    )
+    if summary_path is not None:
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    return summary
+
+
+def _coda_image_align_geojson(
+    *,
+    fixed_geojson: PathLike,
+    moving_geojson: PathLike,
+    output_geojson: PathLike,
+    summary_json: PathLike | None = None,
+    group_property: str = "structure",
+    overwrite: bool = False,
+    raster_size: int = 512,
+    angle_step: float = 1.0,
+    phase_upsample_factor: int = 1,
+    mask_padding_fraction: float = 0.05,
+) -> dict[str, Any]:
+    """Hard-align contours with a CODA-inspired image-derived similarity seed."""
+
+    output_path = Path(output_geojson)
+    summary_path = Path(summary_json) if summary_json is not None else None
+    if output_path.exists() and not overwrite and summary_path is not None and summary_path.exists():
+        return json.loads(summary_path.read_text(encoding="utf-8"))
+
+    fixed_payload = _read_geojson(Path(fixed_geojson))
+    moving_payload = _read_geojson(Path(moving_geojson))
+    fixed_records = _records_from_geojson(fixed_payload, group_property, "fixed")
+    moving_records = _records_from_geojson(moving_payload, group_property, "moving")
+    fixed_union = unary_union([record.geometry for record in fixed_records])
+    moving_union = unary_union([record.geometry for record in moving_records])
+
+    fixed_mask, moving_mask, raster_metadata = _rasterize_pair_for_coda(
+        fixed_union,
+        moving_union,
+        raster_size=int(raster_size),
+        padding_fraction=float(mask_padding_fraction),
+    )
+    image_result = estimate_coda_image_registration(
+        fixed_mask,
+        moving_mask,
+        CodaImageRegistrationConfig(
+            angle_step=float(angle_step),
+            phase_upsample_factor=int(phase_upsample_factor),
+        ),
+    )
+    native_units_per_pixel = float(raster_metadata["native_units_per_pixel"])
+    bounds = raster_metadata["square_bounds"]
+    origin_x = (float(bounds[0]) + float(bounds[2])) / 2.0
+    origin_y = (float(bounds[1]) + float(bounds[3])) / 2.0
+    transform = _SimilarityTransform(
+        origin_x=origin_x,
+        origin_y=origin_y,
+        rotation_degrees=float(image_result.rotation.rotation_degrees),
+        scale=1.0,
+        translate_x=float(image_result.translation.shift_x) * native_units_per_pixel,
+        translate_y=-float(image_result.translation.shift_y) * native_units_per_pixel,
+    )
+
+    before_iou = _iou(fixed_union, moving_union)
+    aligned_union = _apply_similarity_to_geometry(moving_union, transform)
+    after_iou = _iou(fixed_union, aligned_union)
+    accepted = after_iou >= before_iou
+    optimization = {
+        "method": "coda_image_radon_phase_correlation",
+        "success": True,
+        "accepted": bool(accepted),
+        "accepted_reason": (
+            "image_similarity_seed_improved_or_preserved_iou"
+            if accepted
+            else "identity_kept_because_image_seed_reduced_iou"
+        ),
+        "union_iou_before": before_iou,
+        "union_iou_final": after_iou if accepted else before_iou,
+    }
+    if not accepted:
+        transform = _identity_transform_for_geometry(moving_union)
+        aligned_union = moving_union
+        after_iou = before_iou
+
+    aligned_payload = _apply_similarity_to_geojson(moving_payload, transform)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(aligned_payload, ensure_ascii=False), encoding="utf-8")
+
+    per_structure = _per_structure_iou(
+        fixed_records,
+        _records_from_geojson(aligned_payload, group_property, "aligned"),
+    )
+    summary = {
+        "fixed_geojson": str(Path(fixed_geojson)),
+        "moving_geojson": str(Path(moving_geojson)),
+        "output_geojson": str(output_path),
+        "registration_backend": "coda-image",
+        "method_credit": CODA_METHOD_CREDIT,
+        "method_reference_doi": CODA_METHOD_REFERENCE_DOI,
+        "method_reference_url": CODA_METHOD_REFERENCE_URL,
+        "methodology_url": CODA_METHODOLOGY_URL,
+        "method_note": (
+            "CODA-inspired tissue-mask Radon rotation plus phase-correlation "
+            "translation. This is not a full CODA reimplementation."
+        ),
+        "transform": asdict(transform),
+        "affine_params": None,
+        "optimization": optimization,
+        "coda_image": _coda_image_summary_payload(
+            image_result=image_result,
+            raster_metadata=raster_metadata,
+            angle_step=angle_step,
+            phase_upsample_factor=phase_upsample_factor,
+            mask_padding_fraction=mask_padding_fraction,
+        ),
+        "union_iou_before_hard": before_iou,
+        "union_iou_after_hard": after_iou,
+        "hard_alignment_accepted": accepted,
+        "per_structure_iou_after_hard": per_structure,
+    }
+    if summary_path is not None:
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    return summary
+
+
 def hard_align_geojson(
     *,
     fixed_geojson: PathLike,
@@ -470,6 +756,7 @@ def hard_align_geojson(
     overwrite: bool = False,
     multistart: bool = True,
     affine_fallback_iou_threshold: float = 0.0,
+    registration_backend: str = "contour-tps",
 ) -> dict[str, Any]:
     """Hard-align one contour GeoJSON to another with a similarity transform."""
 
@@ -545,6 +832,7 @@ def hard_align_geojson(
         "fixed_geojson": str(Path(fixed_geojson)),
         "moving_geojson": str(Path(moving_geojson)),
         "output_geojson": str(output_path),
+        "registration_backend": registration_backend,
         "transform": asdict(transform),
         "affine_params": affine_params.tolist() if affine_params is not None else None,
         "optimization": optimization,
@@ -918,6 +1206,8 @@ def write_3d_visualization_html(
 
 
 def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
+    if cfg.registration_backend not in {"contour-tps", "coda-image"}:
+        raise ValueError("registration_backend must be 'contour-tps' or 'coda-image'.")
     if cfg.z_spacing_um <= 0:
         raise ValueError("z_spacing_um must be greater than 0.")
     if cfg.xenium_pixel_size_um <= 0:
@@ -943,6 +1233,14 @@ def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
         raise ValueError("topology_min_area_ratio must be greater than 0.")
     if cfg.topology_max_area_ratio <= cfg.topology_min_area_ratio:
         raise ValueError("topology_max_area_ratio must be greater than topology_min_area_ratio.")
+    if cfg.coda_raster_size < 16:
+        raise ValueError("coda_raster_size must be at least 16.")
+    if cfg.coda_angle_step <= 0:
+        raise ValueError("coda_angle_step must be greater than 0.")
+    if cfg.coda_phase_upsample_factor < 1:
+        raise ValueError("coda_phase_upsample_factor must be at least 1.")
+    if cfg.coda_mask_padding_fraction < 0:
+        raise ValueError("coda_mask_padding_fraction must be non-negative.")
     if cfg.mesh_method != "marching_cubes":
         raise ValueError("mesh_method currently supports only 'marching_cubes'.")
     if cfg.mesh_smoothing_sigma_um is not None and cfg.mesh_smoothing_sigma_um < 0:
@@ -1498,6 +1796,154 @@ def _group_union(records: Sequence[Any]) -> dict[str, Any]:
     return {group: unary_union(geoms) for group, geoms in grouped.items()}
 
 
+def _identity_transform_for_geometry(geom: Any) -> _SimilarityTransform:
+    centroid = geom.centroid
+    return _SimilarityTransform(
+        origin_x=float(centroid.x),
+        origin_y=float(centroid.y),
+        rotation_degrees=0.0,
+        scale=1.0,
+        translate_x=0.0,
+        translate_y=0.0,
+    )
+
+
+def _rasterize_pair_for_coda(
+    fixed_union: Any,
+    moving_union: Any,
+    *,
+    raster_size: int,
+    padding_fraction: float,
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    bounds = _square_padded_bounds(
+        unary_union([fixed_union, moving_union]),
+        padding_fraction=padding_fraction,
+    )
+    x_min, y_min, x_max, y_max = bounds
+    x_values = np.linspace(x_min, x_max, int(raster_size), dtype=float)
+    y_values = np.linspace(y_max, y_min, int(raster_size), dtype=float)
+    xx, yy = np.meshgrid(x_values, y_values)
+    fixed_mask = _geometry_contains_grid(fixed_union, xx, yy)
+    moving_mask = _geometry_contains_grid(moving_union, xx, yy)
+    native_units_per_pixel = (x_max - x_min) / max(int(raster_size) - 1, 1)
+    metadata = {
+        "input_source": "contour_union_raster_proxy",
+        "raster_size": int(raster_size),
+        "square_bounds": [float(value) for value in bounds],
+        "native_units_per_pixel": float(native_units_per_pixel),
+        "fixed_positive_pixels": int(fixed_mask.sum()),
+        "moving_positive_pixels": int(moving_mask.sum()),
+    }
+    return fixed_mask, moving_mask, metadata
+
+
+def _square_padded_bounds(geom: Any, *, padding_fraction: float) -> tuple[float, float, float, float]:
+    x_min, y_min, x_max, y_max = map(float, geom.bounds)
+    width = max(x_max - x_min, 1e-6)
+    height = max(y_max - y_min, 1e-6)
+    side = max(width, height, 1.0)
+    side *= 1.0 + 2.0 * max(float(padding_fraction), 0.0)
+    center_x = (x_min + x_max) / 2.0
+    center_y = (y_min + y_max) / 2.0
+    half = side / 2.0
+    return (center_x - half, center_y - half, center_x + half, center_y + half)
+
+
+def _coda_image_summary_payload(
+    *,
+    image_result: Any,
+    raster_metadata: Mapping[str, Any],
+    angle_step: float,
+    phase_upsample_factor: int,
+    mask_padding_fraction: float,
+) -> dict[str, Any]:
+    return {
+        "radon_rotation_degrees": float(image_result.rotation.rotation_degrees),
+        "radon_score": float(image_result.rotation.score),
+        "radon_angle_range": [
+            float(image_result.rotation.angle_range[0]),
+            float(image_result.rotation.angle_range[1]),
+        ],
+        "radon_angle_step": float(angle_step),
+        "phase_shift_y": float(image_result.translation.shift_y),
+        "phase_shift_x": float(image_result.translation.shift_x),
+        "phase_error": float(image_result.translation.error),
+        "phase_difference": float(image_result.translation.phase_difference),
+        "phase_upsample_factor": int(phase_upsample_factor),
+        "orientation_disambiguation": getattr(
+            image_result,
+            "orientation_disambiguation",
+            None,
+        ),
+        "orientation_candidates": [
+            {key: float(value) for key, value in candidate.items()}
+            for candidate in getattr(image_result, "orientation_candidates", ())
+        ],
+        "preprocessing": {
+            **dict(raster_metadata),
+            "mask_padding_fraction": float(mask_padding_fraction),
+        },
+        "deferred_features": [
+            "tile_wise_dense_displacement",
+            "dense_field_jacobian_validation",
+            "semantic_volume_labeling",
+        ],
+    }
+
+
+def _hard_alignment_candidate_payload(
+    summary: Mapping[str, Any],
+    *,
+    summary_json: PathLike | None = None,
+) -> dict[str, Any]:
+    transform = summary.get("transform") or {}
+    payload: dict[str, Any] = {
+        "backend": summary.get("registration_backend"),
+        "summary_json": str(Path(summary_json)) if summary_json is not None else None,
+        "output_geojson": summary.get("output_geojson"),
+        "union_iou_before_hard": summary.get("union_iou_before_hard"),
+        "union_iou_after_hard": summary.get("union_iou_after_hard"),
+        "hard_alignment_accepted": summary.get("hard_alignment_accepted"),
+        "rotation_degrees": transform.get("rotation_degrees"),
+        "scale": transform.get("scale"),
+        "translate_x": transform.get("translate_x"),
+        "translate_y": transform.get("translate_y"),
+    }
+
+    coda_image = summary.get("coda_image")
+    if isinstance(coda_image, Mapping):
+        payload["coda_image"] = {
+            "radon_rotation_degrees": coda_image.get("radon_rotation_degrees"),
+            "phase_shift_y": coda_image.get("phase_shift_y"),
+            "phase_shift_x": coda_image.get("phase_shift_x"),
+            "orientation_disambiguation": coda_image.get("orientation_disambiguation"),
+        }
+    return payload
+
+
+def _hard_alignment_iou(summary: Mapping[str, Any]) -> float:
+    try:
+        value = float(summary.get("union_iou_after_hard", 0.0))
+    except (TypeError, ValueError):
+        return float("-inf")
+    return value if math.isfinite(value) else float("-inf")
+
+
+def _rotation_difference_degrees(first: Any, second: Any) -> float | None:
+    try:
+        delta = (float(first) - float(second) + 180.0) % 360.0 - 180.0
+    except (TypeError, ValueError):
+        return None
+    return abs(delta)
+
+
+def _hard_candidate_iou(summary: Mapping[str, Any], backend: str) -> Any:
+    for candidate in summary.get("hard_alignment_candidates") or ():
+        if isinstance(candidate, Mapping) and candidate.get("backend") == backend:
+            return candidate.get("union_iou_after_hard")
+    return None
+
+
 def _pairwise_row(
     slice_input: _SliceInput,
     hard_summary: Mapping[str, Any],
@@ -1508,13 +1954,27 @@ def _pairwise_row(
     row = {
         "moving_order": slice_input.order,
         "moving_sample_id": slice_input.sample_id,
+        "registration_backend": hard_summary.get("registration_backend", "contour-tps"),
+        "selected_hard_seed_backend": hard_summary.get("selected_hard_seed_backend"),
+        "method_credit": hard_summary.get("method_credit"),
+        "method_reference_doi": hard_summary.get("method_reference_doi"),
         "hard_union_iou_before": hard_summary.get("union_iou_before_hard"),
         "hard_union_iou_after": hard_summary.get("union_iou_after_hard"),
+        "hard_candidate_contour_iou_after": _hard_candidate_iou(hard_summary, "contour-tps"),
+        "hard_candidate_coda_iou_after": _hard_candidate_iou(hard_summary, "coda-image"),
+        "hard_tournament_rotation_difference_degrees": (
+            hard_summary.get("hard_alignment_tournament") or {}
+        ).get("rotation_difference_degrees"),
         "hard_transform_rotation_degrees": hard_summary["transform"]["rotation_degrees"],
         "hard_transform_scale": hard_summary["transform"]["scale"],
         "hard_transform_translate_x": hard_summary["transform"]["translate_x"],
         "hard_transform_translate_y": hard_summary["transform"]["translate_y"],
         "hard_accepted": hard_summary.get("hard_alignment_accepted"),
+        "coda_radon_rotation_degrees": (hard_summary.get("coda_image") or {}).get(
+            "radon_rotation_degrees"
+        ),
+        "coda_phase_shift_y": (hard_summary.get("coda_image") or {}).get("phase_shift_y"),
+        "coda_phase_shift_x": (hard_summary.get("coda_image") or {}).get("phase_shift_x"),
         "soft_union_iou_before": None,
         "soft_union_iou_after": None,
         "soft_accepted": soft_accepted,
@@ -1952,21 +2412,21 @@ def _build_per_structure_soft_geojson(
     with the soft-aligned version; otherwise the hard-aligned geometry is kept.
     """
     per_structure_qc = soft_summary.get("qc", {}).get("per_structure", {})
-    soft_by_group: dict[str, dict[str, Any]] = {}
-    for feature in soft_payload.get("features", []):
-        group = str(_feature_group(feature.get("properties") or {}, group_property))
-        soft_by_group[group] = feature
-
     mixed = copy.deepcopy(hard_payload)
-    for feature in mixed.get("features", []):
+    soft_features = soft_payload.get("features", [])
+    for feature_index, feature in enumerate(mixed.get("features", [])):
         group = str(_feature_group(feature.get("properties") or {}, group_property))
-        if group not in soft_by_group:
+        if feature_index >= len(soft_features):
+            continue
+        soft_feature = soft_features[feature_index]
+        soft_group = str(_feature_group(soft_feature.get("properties") or {}, group_property))
+        if soft_group != group:
             continue
         qc = per_structure_qc.get(group, {})
         iou_hard = float(qc.get("iou_hard_before_soft", 0.0))
         iou_soft = float(qc.get("iou_soft_after", 0.0))
         if iou_soft >= iou_hard:
-            feature["geometry"] = soft_by_group[group]["geometry"]
+            feature["geometry"] = soft_feature["geometry"]
     return mixed
 
 

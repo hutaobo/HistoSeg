@@ -151,6 +151,38 @@ histoseg-3d reconstruct-stack \
 Set `--mesh-smoothing-sigma-um 0` to disable the 3D Gaussian smoothing step.
 `--mesh-level` must stay between `0` and `1` for the Marching Cubes surface.
 
+## CODA-Inspired Image Registration
+
+`histoseg-3d reconstruct-stack` defaults to `--registration-backend contour-tps`,
+the established contour-derived hard alignment followed by topology-safe contour
+TPS refinement. For stacks where the tissue silhouette gives a better global
+initial pose, use `--registration-backend coda-image`.
+
+The `coda-image` backend is inspired by CODA's image-registration strategy from
+Kiemen et al., "CODA: quantitative 3D reconstruction of large tissues at
+cellular resolution," *Nature Methods* 19, 1490-1499 (2022),
+[doi:10.1038/s41592-022-01650-9](https://doi.org/10.1038/s41592-022-01650-9),
+and the [CODA methodology page](https://labs.pathology.jhu.edu/kiemen/coda-3d/).
+It is not a full CODA reimplementation. This first HistoSeg backend rasterizes
+the contour union as a tissue-mask proxy, estimates a Radon rotation and global
+phase-correlation translation, then passes that hard-aligned result into the
+same TPS topology guard used by `contour-tps`.
+
+```bash
+histoseg-3d reconstruct-stack \
+  --xenium-root polyp \
+  --segmentation-strategy "polyp/contour for alignment/segmentationstrategy.txt" \
+  --out-dir outputs/polyp_3d_reconstruction \
+  --registration-backend coda-image \
+  --coda-raster-size 512 \
+  --coda-angle-step 1.0
+```
+
+Alignment summaries record the backend, CODA-inspired credit, DOI, Radon angle,
+phase-correlation shift, and hash-relevant preprocessing parameters so AnnData
+cell-cloud caches are invalidated when geometry-defining registration state
+changes.
+
 Render aligned cells into a Plotly/WebGL HTML view:
 
 ```bash

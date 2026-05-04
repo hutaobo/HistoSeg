@@ -6,6 +6,7 @@ from dataclasses import asdict
 from typing import Sequence
 
 from . import (
+    CODA_METHOD_REFERENCE_DOI,
     CellCloudProjectionConfig,
     CellCloudRenderConfig,
     GeneStructureQuantificationConfig,
@@ -249,7 +250,42 @@ def main(argv: Sequence[str] | None = None) -> None:
     stack.add_argument("--gaussian-sigma", type=float, default=2.25)
     stack.add_argument("--min-cells", type=int, default=500)
     stack.add_argument("--min-component-pixels", type=int, default=180)
+    stack.add_argument(
+        "--registration-backend",
+        default="contour-tps",
+        choices=["contour-tps", "coda-image"],
+        help=(
+            "Hard-alignment seed backend. 'contour-tps' uses the existing contour "
+            "similarity seed before TPS. 'coda-image' uses a CODA-inspired tissue-mask "
+            f"Radon rotation plus phase-correlation translation seed (DOI: {CODA_METHOD_REFERENCE_DOI}) "
+            "before the same topology-safe contour TPS refinement."
+        ),
+    )
     stack.add_argument("--hard-alignment-maxiter", type=int, default=80)
+    stack.add_argument(
+        "--coda-raster-size",
+        type=int,
+        default=512,
+        help="Raster size for the CODA-inspired contour tissue-mask proxy.",
+    )
+    stack.add_argument(
+        "--coda-angle-step",
+        type=float,
+        default=1.0,
+        help="Radon angle grid step, in degrees, for --registration-backend coda-image.",
+    )
+    stack.add_argument(
+        "--coda-phase-upsample-factor",
+        type=int,
+        default=1,
+        help="Phase-correlation upsample factor for --registration-backend coda-image.",
+    )
+    stack.add_argument(
+        "--coda-mask-padding-fraction",
+        type=float,
+        default=0.05,
+        help="Fractional square-bounds padding for CODA-inspired mask rasterization.",
+    )
     stack.add_argument(
         "--sampling-distance-um",
         type=float,
@@ -726,9 +762,14 @@ def main(argv: Sequence[str] | None = None) -> None:
                 min_cells=args.min_cells,
                 min_component_pixels=args.min_component_pixels,
                 save_slice_preview_png=args.save_slice_preview,
+                registration_backend=args.registration_backend,
                 hard_alignment_maxiter=args.hard_alignment_maxiter,
                 hard_alignment_multistart=not args.no_multistart,
                 affine_fallback_iou_threshold=args.affine_fallback_iou_threshold,
+                coda_raster_size=args.coda_raster_size,
+                coda_angle_step=args.coda_angle_step,
+                coda_phase_upsample_factor=args.coda_phase_upsample_factor,
+                coda_mask_padding_fraction=args.coda_mask_padding_fraction,
                 global_drift_correction=args.global_drift_correction,
                 run_soft_alignment=not args.no_soft,
                 sampling_distance_um=args.sampling_distance_um,
