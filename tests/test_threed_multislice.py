@@ -8,6 +8,7 @@ import trimesh
 from shapely.geometry import MultiPolygon, box, mapping, shape
 
 from histoseg.threed import (
+    ThreeDStackReconstructionResult,
     discover_xenium_slices,
     hard_align_geojson,
     reconstruct_3d_contour_meshes,
@@ -258,6 +259,67 @@ def test_hard_align_multistart_improves_or_maintains_iou(tmp_path):
         multistart=True,
     )
     assert summary_multi["union_iou_after_hard"] >= summary_single["union_iou_after_hard"] - 0.02
+
+
+def test_reconstruct_stack_cli_parses_registration_backend(monkeypatch, tmp_path, capsys):
+    import histoseg.threed.cli as cli
+
+    calls: list[ThreeDStackReconstructionConfig] = []
+
+    def fake_run(cfg):
+        calls.append(cfg)
+        return ThreeDStackReconstructionResult(
+            out_dir=tmp_path / "out",
+            slice_manifest_csv=tmp_path / "out" / "xenium_slice_manifest.csv",
+            pairwise_metrics_csv=tmp_path / "out" / "pairwise_alignment_metrics.csv",
+            aligned_manifest_csv=tmp_path / "out" / "aligned_slice_manifest.csv",
+            contour_points_csv=tmp_path / "out" / "aligned_contour_3d_points.csv",
+            summary_json=tmp_path / "out" / "3d_stack_reconstruction_summary.json",
+            visualization_html=tmp_path / "out" / "histoseg_3d_contour_stack.html",
+            mesh_dir=tmp_path / "out" / "meshes",
+        )
+
+    monkeypatch.setattr(cli, "run_3d_stack_reconstruction", fake_run)
+    cli.main(
+        [
+            "reconstruct-stack",
+            "--xenium-root",
+            str(tmp_path / "xenium"),
+            "--segmentation-strategy",
+            str(tmp_path / "segmentationstrategy.txt"),
+            "--out-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+    cli.main(
+        [
+            "reconstruct-stack",
+            "--xenium-root",
+            str(tmp_path / "xenium"),
+            "--segmentation-strategy",
+            str(tmp_path / "segmentationstrategy.txt"),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--registration-backend",
+            "coda-image",
+            "--coda-raster-size",
+            "128",
+            "--coda-angle-step",
+            "0.5",
+            "--coda-phase-upsample-factor",
+            "4",
+            "--coda-mask-padding-fraction",
+            "0.1",
+        ]
+    )
+
+    capsys.readouterr()
+    assert calls[0].registration_backend == "contour-tps"
+    assert calls[1].registration_backend == "coda-image"
+    assert calls[1].coda_raster_size == 128
+    assert calls[1].coda_angle_step == 0.5
+    assert calls[1].coda_phase_upsample_factor == 4
+    assert calls[1].coda_mask_padding_fraction == 0.1
 
 
 def test_hard_align_affine_fallback_accepted_when_triggered(tmp_path):
