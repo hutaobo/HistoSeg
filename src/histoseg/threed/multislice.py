@@ -490,19 +490,139 @@ def _run_hard_alignment_backend(
             registration_backend="contour-tps",
         )
     if cfg.registration_backend == "coda-image":
-        return _coda_image_align_geojson(
+        return _run_tournament_hard_alignment(
             fixed_geojson=fixed_geojson,
             moving_geojson=moving_geojson,
             output_geojson=output_geojson,
             summary_json=summary_json,
             group_property=cfg.group_property,
+            maxiter=cfg.hard_alignment_maxiter,
             overwrite=cfg.overwrite,
+            multistart=cfg.hard_alignment_multistart,
+            affine_fallback_iou_threshold=cfg.affine_fallback_iou_threshold,
             raster_size=cfg.coda_raster_size,
             angle_step=cfg.coda_angle_step,
             phase_upsample_factor=cfg.coda_phase_upsample_factor,
             mask_padding_fraction=cfg.coda_mask_padding_fraction,
         )
     raise ValueError(f"Unsupported registration_backend: {cfg.registration_backend!r}.")
+
+
+def _run_tournament_hard_alignment(
+    *,
+    fixed_geojson: PathLike,
+    moving_geojson: PathLike,
+    output_geojson: PathLike,
+    summary_json: PathLike | None = None,
+    group_property: str = "structure",
+    maxiter: int = 80,
+    overwrite: bool = False,
+    multistart: bool = True,
+    affine_fallback_iou_threshold: float = 0.0,
+    raster_size: int = 512,
+    angle_step: float = 1.0,
+    phase_upsample_factor: int = 1,
+    mask_padding_fraction: float = 0.05,
+) -> dict[str, Any]:
+    """Run contour and CODA-inspired hard seeds, then promote the higher-IoU winner."""
+
+    output_path = Path(output_geojson)
+    summary_path = Path(summary_json) if summary_json is not None else None
+    if output_path.exists() and not overwrite and summary_path is not None and summary_path.exists():
+        return json.loads(summary_path.read_text(encoding="utf-8"))
+
+    candidate_dir = output_path.parent / "hard_alignment_candidates"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    contour_summary_path = candidate_dir / "contour_tps_summary.json"
+    contour_output_path = candidate_dir / "contour_tps_moving_hard_aligned.geojson"
+    coda_summary_path = candidate_dir / "coda_image_summary.json"
+    coda_output_path = candidate_dir / "coda_image_moving_hard_aligned.geojson"
+
+    contour_summary = hard_align_geojson(
+        fixed_geojson=fixed_geojson,
+        moving_geojson=moving_geojson,
+        output_geojson=contour_output_path,
+        summary_json=contour_summary_path,
+        group_property=group_property,
+        maxiter=maxiter,
+        overwrite=True,
+        multistart=multistart,
+        affine_fallback_iou_threshold=affine_fallback_iou_threshold,
+        registration_backend="contour-tps",
+    )
+    coda_summary = _coda_image_align_geojson(
+        fixed_geojson=fixed_geojson,
+        moving_geojson=moving_geojson,
+        output_geojson=coda_output_path,
+        summary_json=coda_summary_path,
+        group_property=group_property,
+        overwrite=True,
+        raster_size=raster_size,
+        angle_step=angle_step,
+        phase_upsample_factor=phase_upsample_factor,
+        mask_padding_fraction=mask_padding_fraction,
+    )
+
+    contour_iou = _hard_alignment_iou(contour_summary)
+    coda_iou = _hard_alignment_iou(coda_summary)
+    if contour_iou >= coda_iou:
+        selected_backend = "contour-tps"
+        selected_summary = contour_summary
+        selected_output_path = contour_output_path
+    else:
+        selected_backend = "coda-image"
+        selected_summary = coda_summary
+        selected_output_path = coda_output_path
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(selected_output_path, output_path)
+
+    summary = copy.deepcopy(selected_summary)
+    summary.update(
+        {
+            "fixed_geojson": str(Path(fixed_geojson)),
+            "moving_geojson": str(Path(moving_geojson)),
+            "output_geojson": str(output_path),
+            "registration_backend": "coda-image",
+            "selected_hard_seed_backend": selected_backend,
+            "method_credit": CODA_METHOD_CREDIT,
+            "method_reference_doi": CODA_METHOD_REFERENCE_DOI,
+            "method_reference_url": CODA_METHOD_REFERENCE_URL,
+            "methodology_url": CODA_METHODOLOGY_URL,
+            "method_note": (
+                "CODA-inspired tournament hard alignment: contour similarity and "
+                "CODA-inspired Radon/phase seeds are both evaluated, then the "
+                "higher-IoU hard seed is promoted before topology-safe contour TPS. "
+                "This is not a full CODA reimplementation."
+            ),
+            "hard_alignment_tournament": {
+                "strategy": "max_union_iou_after_hard",
+                "selected_backend": selected_backend,
+                "rotation_difference_degrees": _rotation_difference_degrees(
+                    contour_summary.get("transform", {}).get("rotation_degrees", 0.0),
+                    coda_summary.get("transform", {}).get("rotation_degrees", 0.0),
+                ),
+            },
+            "hard_alignment_candidates": [
+                _hard_alignment_candidate_payload(
+                    contour_summary,
+                    summary_json=contour_summary_path,
+                ),
+                _hard_alignment_candidate_payload(
+                    coda_summary,
+                    summary_json=coda_summary_path,
+                ),
+            ],
+            "coda_image": coda_summary.get("coda_image"),
+        }
+    )
+    if summary_path is not None:
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    return summary
 
 
 def _coda_image_align_geojson(
@@ -1771,6 +1891,59 @@ def _coda_image_summary_payload(
     }
 
 
+def _hard_alignment_candidate_payload(
+    summary: Mapping[str, Any],
+    *,
+    summary_json: PathLike | None = None,
+) -> dict[str, Any]:
+    transform = summary.get("transform") or {}
+    payload: dict[str, Any] = {
+        "backend": summary.get("registration_backend"),
+        "summary_json": str(Path(summary_json)) if summary_json is not None else None,
+        "output_geojson": summary.get("output_geojson"),
+        "union_iou_before_hard": summary.get("union_iou_before_hard"),
+        "union_iou_after_hard": summary.get("union_iou_after_hard"),
+        "hard_alignment_accepted": summary.get("hard_alignment_accepted"),
+        "rotation_degrees": transform.get("rotation_degrees"),
+        "scale": transform.get("scale"),
+        "translate_x": transform.get("translate_x"),
+        "translate_y": transform.get("translate_y"),
+    }
+
+    coda_image = summary.get("coda_image")
+    if isinstance(coda_image, Mapping):
+        payload["coda_image"] = {
+            "radon_rotation_degrees": coda_image.get("radon_rotation_degrees"),
+            "phase_shift_y": coda_image.get("phase_shift_y"),
+            "phase_shift_x": coda_image.get("phase_shift_x"),
+            "orientation_disambiguation": coda_image.get("orientation_disambiguation"),
+        }
+    return payload
+
+
+def _hard_alignment_iou(summary: Mapping[str, Any]) -> float:
+    try:
+        value = float(summary.get("union_iou_after_hard", 0.0))
+    except (TypeError, ValueError):
+        return float("-inf")
+    return value if math.isfinite(value) else float("-inf")
+
+
+def _rotation_difference_degrees(first: Any, second: Any) -> float | None:
+    try:
+        delta = (float(first) - float(second) + 180.0) % 360.0 - 180.0
+    except (TypeError, ValueError):
+        return None
+    return abs(delta)
+
+
+def _hard_candidate_iou(summary: Mapping[str, Any], backend: str) -> Any:
+    for candidate in summary.get("hard_alignment_candidates") or ():
+        if isinstance(candidate, Mapping) and candidate.get("backend") == backend:
+            return candidate.get("union_iou_after_hard")
+    return None
+
+
 def _pairwise_row(
     slice_input: _SliceInput,
     hard_summary: Mapping[str, Any],
@@ -1782,10 +1955,16 @@ def _pairwise_row(
         "moving_order": slice_input.order,
         "moving_sample_id": slice_input.sample_id,
         "registration_backend": hard_summary.get("registration_backend", "contour-tps"),
+        "selected_hard_seed_backend": hard_summary.get("selected_hard_seed_backend"),
         "method_credit": hard_summary.get("method_credit"),
         "method_reference_doi": hard_summary.get("method_reference_doi"),
         "hard_union_iou_before": hard_summary.get("union_iou_before_hard"),
         "hard_union_iou_after": hard_summary.get("union_iou_after_hard"),
+        "hard_candidate_contour_iou_after": _hard_candidate_iou(hard_summary, "contour-tps"),
+        "hard_candidate_coda_iou_after": _hard_candidate_iou(hard_summary, "coda-image"),
+        "hard_tournament_rotation_difference_degrees": (
+            hard_summary.get("hard_alignment_tournament") or {}
+        ).get("rotation_difference_degrees"),
         "hard_transform_rotation_degrees": hard_summary["transform"]["rotation_degrees"],
         "hard_transform_scale": hard_summary["transform"]["scale"],
         "hard_transform_translate_x": hard_summary["transform"]["translate_x"],
