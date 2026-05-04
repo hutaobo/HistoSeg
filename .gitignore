@@ -122,3 +122,7 @@ ENV/
 /reproducibility/results/
 /reproducibility/results_manifest.json
 
+# Local experimental outputs and scratch visualization scripts.
+/output/
+/scripts/visualize_3d_leiden_cells.py
+
