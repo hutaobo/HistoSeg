@@ -56,6 +56,29 @@ from .cell_cloud import (
     run_cell_cloud_projection,
     write_cell_cloud_cache,
 )
+from .gland_qc import (
+    GlandQCAtlasConfig,
+    GlandQCAtlasResult,
+    render_gland_qc_atlas,
+)
+from .gland_instances import (
+    DEFAULT_EPITHELIAL_MARKERS,
+    DEFAULT_EPITHELIAL_STRUCTURES,
+    GlandInstanceSegmentationConfig,
+    GlandInstanceSegmentationResult,
+    segment_gland_instances,
+)
+from .gland_tracking import (
+    GlandInstanceTrackingConfig,
+    GlandInstanceTrackingResult,
+    track_gland_instances,
+)
+from .gland_atlas import (
+    GlandInstanceAtlasResult,
+    GlandInstanceDetectionResult,
+    render_gland_instance_atlas,
+    run_gland_instance_detection,
+)
 from .spatial_modules import (
     GeneStructureQuantificationConfig,
     GeneStructureQuantificationResult,
@@ -85,8 +108,18 @@ __all__ = [
     "CellCloudRenderResult",
     "CodaImageRegistrationConfig",
     "CodaImageRegistrationResult",
+    "DEFAULT_EPITHELIAL_MARKERS",
+    "DEFAULT_EPITHELIAL_STRUCTURES",
     "GeneStructureQuantificationConfig",
     "GeneStructureQuantificationResult",
+    "GlandInstanceAtlasResult",
+    "GlandInstanceDetectionResult",
+    "GlandInstanceSegmentationConfig",
+    "GlandInstanceSegmentationResult",
+    "GlandInstanceTrackingConfig",
+    "GlandInstanceTrackingResult",
+    "GlandQCAtlasConfig",
+    "GlandQCAtlasResult",
     "RadonRotationResult",
     "SpatialModuleDiscoveryConfig",
     "SpatialModuleDiscoveryResult",
@@ -116,10 +149,15 @@ __all__ = [
     "quantify_gene_structure_relationships",
     "reconstruct_3d_contour_meshes",
     "render_cell_cloud_html",
+    "render_gland_instance_atlas",
+    "render_gland_qc_atlas",
     "run_3d_contour_reconstruction",
     "run_cell_cloud_projection",
+    "run_gland_instance_detection",
     "run_spatial_module_discovery",
     "run_3d_stack_reconstruction",
+    "segment_gland_instances",
+    "track_gland_instances",
     "write_3d_contour_points",
     "write_3d_visualization_html",
     "write_cell_cloud_cache",

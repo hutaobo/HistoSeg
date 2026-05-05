@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -16,8 +17,12 @@ from histoseg.threed import (
     write_3d_contour_points,
     write_3d_visualization_html,
 )
-from histoseg.threed.multislice import _read_strategy_specs
-from histoseg.threed.multislice import _build_per_structure_soft_geojson
+from histoseg.threed.multislice import (
+    _SliceInput,
+    _build_per_structure_soft_geojson,
+    _pairwise_row,
+    _read_strategy_specs,
+)
 from histoseg.threed import ThreeDStackReconstructionConfig
 
 
@@ -176,6 +181,76 @@ def test_mesh_component_filter_removes_tiny_disconnected_fragments(tmp_path):
     manifest = pd.read_csv(tmp_path / "meshes" / "mesh_manifest.csv")
     assert int(manifest.loc[0, "volume_component_count_before_filter"]) == 2
     assert int(manifest.loc[0, "volume_component_count_after_filter"]) == 1
+
+
+def test_pairwise_row_exports_topology_counts(tmp_path):
+    hard_summary = {
+        "registration_backend": "coda-image",
+        "selected_hard_seed_backend": "contour-tps",
+        "method_credit": "CODA-inspired image registration seed",
+        "method_reference_doi": "10.1038/s41592-022-01650-9",
+        "union_iou_before_hard": 0.4,
+        "union_iou_after_hard": 0.8,
+        "hard_alignment_candidates": [
+            {"backend": "contour-tps", "union_iou_after_hard": 0.8},
+            {"backend": "coda-image", "union_iou_after_hard": 0.7},
+        ],
+        "hard_alignment_tournament": {"rotation_difference_degrees": 15.0},
+        "transform": {
+            "rotation_degrees": 2.0,
+            "scale": 1.0,
+            "translate_x": 3.0,
+            "translate_y": 4.0,
+        },
+        "hard_alignment_accepted": True,
+        "coda_image": {
+            "radon_rotation_degrees": 180.0,
+            "phase_shift_y": 5.0,
+            "phase_shift_x": -6.0,
+        },
+    }
+    soft_summary = {
+        "qc": {
+            "union_iou_hard_before_soft": 0.8,
+            "union_iou_soft_after": 0.83,
+            "geometry_status_counts": {"invalid": 0},
+            "topology_check": {
+                "valid": False,
+                "checked_cells": 576,
+                "min_area_ratio": 0.31,
+                "median_area_ratio": 0.98,
+                "max_area_ratio": 2.30,
+                "folded_cell_count": 2,
+                "compressed_cell_count": 3,
+                "expanded_cell_count": 4,
+            },
+        },
+        "landmarks": {"boundary_landmark_count": 42},
+    }
+
+    row = _pairwise_row(
+        _SliceInput(
+            order=2,
+            sample_id="slice_2",
+            sample_dir=tmp_path / "sample",
+            xenium_dir=tmp_path / "sample" / "xenium",
+        ),
+        hard_summary,
+        soft_summary,
+        SimpleNamespace(summary_json=tmp_path / "soft_summary.json"),
+        soft_accepted=False,
+    )
+
+    assert row["selected_hard_seed_backend"] == "contour-tps"
+    assert row["hard_candidate_contour_iou_after"] == pytest.approx(0.8)
+    assert row["hard_candidate_coda_iou_after"] == pytest.approx(0.7)
+    assert row["coda_radon_rotation_degrees"] == pytest.approx(180.0)
+    assert row["soft_topology_valid"] is False
+    assert row["soft_topology_checked_cells"] == 576
+    assert row["soft_topology_folded_cells"] == 2
+    assert row["soft_topology_compressed_cells"] == 3
+    assert row["soft_topology_expanded_cells"] == 4
+    assert row["soft_topology_median_area_ratio"] == pytest.approx(0.98)
 
 
 def test_mesh_smoothing_none_disables_gaussian_smoothing(tmp_path):

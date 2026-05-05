@@ -1980,13 +1980,18 @@ def _pairwise_row(
         "soft_accepted": soft_accepted,
         "soft_geometry_valid": None,
         "soft_topology_valid": None,
+        "soft_topology_checked_cells": None,
         "soft_topology_min_area_ratio": None,
+        "soft_topology_median_area_ratio": None,
         "soft_topology_max_area_ratio": None,
         "soft_topology_folded_cells": None,
+        "soft_topology_compressed_cells": None,
+        "soft_topology_expanded_cells": None,
         "soft_boundary_landmarks": None,
         "soft_summary_json": None,
     }
     if soft_summary is not None and soft_result is not None:
+        topology = soft_summary["qc"].get("topology_check", {})
         row.update(
             {
                 "soft_union_iou_before": soft_summary["qc"]["union_iou_hard_before_soft"],
@@ -1995,16 +2000,14 @@ def _pairwise_row(
                     soft_summary["qc"].get("geometry_status_counts", {}).get("invalid", 0)
                 )
                 == 0,
-                "soft_topology_valid": soft_summary["qc"].get("topology_check", {}).get("valid"),
-                "soft_topology_min_area_ratio": soft_summary["qc"]
-                .get("topology_check", {})
-                .get("min_area_ratio"),
-                "soft_topology_max_area_ratio": soft_summary["qc"]
-                .get("topology_check", {})
-                .get("max_area_ratio"),
-                "soft_topology_folded_cells": soft_summary["qc"]
-                .get("topology_check", {})
-                .get("folded_cell_count"),
+                "soft_topology_valid": topology.get("valid"),
+                "soft_topology_checked_cells": topology.get("checked_cells"),
+                "soft_topology_min_area_ratio": topology.get("min_area_ratio"),
+                "soft_topology_median_area_ratio": topology.get("median_area_ratio"),
+                "soft_topology_max_area_ratio": topology.get("max_area_ratio"),
+                "soft_topology_folded_cells": topology.get("folded_cell_count"),
+                "soft_topology_compressed_cells": topology.get("compressed_cell_count"),
+                "soft_topology_expanded_cells": topology.get("expanded_cell_count"),
                 "soft_boundary_landmarks": soft_summary["landmarks"]["boundary_landmark_count"],
                 "soft_summary_json": str(soft_result.summary_json),
             }

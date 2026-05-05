@@ -28,6 +28,9 @@ The flagship 3D surface currently has these public workflows:
   distance metrics, and gene-by-structure clustermaps.
 - 3D cell cloud rendering from aligned cell Parquet or merged AnnData into a
   browser-shareable Plotly HTML, with optional contour overlays.
+- Per-gland 3D QC atlas rendering from aligned GeoJSON contours, assigning
+  cross-slice gland IDs and writing local zoom pages for small-component
+  reconstruction review.
 
 ## Current Scope
 
@@ -50,6 +53,24 @@ The v1 surface mesh is a conservative voxelized contour-stack reconstruction:
 aligned 2D polygons are rasterized into a 3D volume, optionally smoothed with a
 3D Gaussian filter, and converted to a triangle surface with Marching Cubes.
 It is intended for biomedical 3D reconstruction/QC, not CAD-level editing.
+
+## Method Positioning
+
+| Method or resource | Primary input | Primary output | HistoSeg relationship |
+| --- | --- | --- | --- |
+| HistoSeg 3D | Ordered Xenium slices with named semantic contours | Topology-checked aligned contours, surface meshes, SDF metrics, gland QC tables and HTML atlases | Reconstructs interpretable contour compartments and records per-pair QC for review. |
+| CODA | Serial tissue images and masks | Large-tissue 3D image reconstructions | `coda-image` is a CODA-inspired hard seed only: it rasterizes HistoSeg contour unions, estimates Radon rotation plus phase translation, and competes against the contour seed before HistoSeg TPS. It is not a full CODA reimplementation. |
+| Space-map | Serial-section spatial transcriptomics atlas data and analysis context | Atlas-level 3D single-cell tissue reconstruction resource | HistoSeg can consume ordered slices from this type of dataset, but focuses on semantic contour reconstruction, QC, SDF analysis and local component tracking rather than recreating the full Space-map atlas pipeline. |
+
+HistoSeg therefore complements image- or atlas-first 3D methods: it preserves
+semantic contour labels, exposes conservative hard-seed tournament provenance,
+and makes fold, compression, expansion, disconnected fragment, and gland
+branch/merge candidates explicit review artifacts.
+
+Limited numbers of 2D sections can support alignment QC, morphology review,
+and hypothesis generation about local continuity. They should not be presented
+as strong 3D biological claims without denser sectioning, independent samples,
+or orthogonal validation.
 
 ## Python API
 
@@ -129,6 +150,46 @@ result = render_cell_cloud_html(
 print(result.out_html)
 ```
 
+For a per-gland QC atlas:
+
+```python
+from histoseg.threed import GlandQCAtlasConfig, render_gland_qc_atlas
+
+result = render_gland_qc_atlas(
+    GlandQCAtlasConfig(
+        stack_root="outputs/polyp_3d_reconstruction",
+        aligned_cells_parquet="outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet",
+        out_dir="outputs/polyp_3d_reconstruction/gland_qc",
+        structures=("Structure 3", "Structure 4"),
+        max_gland_pages=250,
+    )
+)
+print(result.atlas_html)
+```
+
+For lumen-seeded gland instance segmentation, tracking, and atlas rendering:
+
+```python
+from histoseg.threed import (
+    GlandInstanceSegmentationConfig,
+    GlandInstanceTrackingConfig,
+    run_gland_instance_detection,
+)
+
+result = run_gland_instance_detection(
+    segmentation_config=GlandInstanceSegmentationConfig(
+        stack_root="outputs/polyp_3d_reconstruction",
+        aligned_cells_parquet="outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet",
+        out_dir="outputs/polyp_3d_reconstruction/gland_instances",
+    ),
+    tracking_config=GlandInstanceTrackingConfig(
+        segmentation_result_dir="outputs/polyp_3d_reconstruction/gland_instances",
+        out_dir="outputs/polyp_3d_reconstruction/gland_instances",
+    ),
+)
+print(result.gland_instance_atlas_html)
+```
+
 ## CLI
 
 ```bash
@@ -193,6 +254,13 @@ phase-correlation shift, and hash-relevant preprocessing parameters so AnnData
 cell-cloud caches are invalidated when geometry-defining registration state
 changes.
 
+`pairwise_alignment_metrics.csv` records the selected hard seed, contour seed
+IoU, CODA seed IoU, seed rotation difference, CODA Radon/phase metadata,
+soft-topology validity, checked grid cells, folded/compressed/expanded cells,
+and min/median/max TPS area ratios. These columns are the first stop for
+broken or folded reconstruction triage before inspecting overlay PNGs and HTML
+views.
+
 Render aligned cells into a Plotly/WebGL HTML view:
 
 ```bash
@@ -203,6 +271,43 @@ histoseg-3d render-cell-cloud \
   --label-column leiden_1_0 \
   --max-points 300000
 ```
+
+Render a local QC atlas for gland-like components:
+
+```bash
+histoseg-3d render-gland-qc-atlas \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --aligned-cells-parquet outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet \
+  --out-dir outputs/polyp_3d_reconstruction/gland_qc \
+  --structures "Structure 3" "Structure 4" \
+  --max-gland-pages 250
+```
+
+This command writes `gland_tracks.csv`, `gland_qc_index.csv`,
+`gland_qc_atlas.html`, and one `glands/gland_*.html` page per tracked gland.
+The tracking uses neighboring-slice, same-structure contour component links.
+The original slice-local `component_index` is preserved as metadata but is not
+treated as a global gland identity. The CSV tables always cover every tracked
+gland; `--max-gland-pages` limits local HTML rendering to the highest-priority
+review targets for faster first-pass QC.
+
+Detect lumen-seeded gland/crypt instances, track them across slices, and render
+an instance atlas:
+
+```bash
+histoseg-3d detect-gland-instances \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --aligned-cells-parquet outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet \
+  --out-dir outputs/polyp_3d_reconstruction/gland_instances \
+  --epithelial-structures "Structure 3" "Structure 4" \
+  --markers EPCAM MUC2 LGR5 OLFM4 MKI67
+```
+
+The default tracker uses one-to-one Hungarian assignment between neighboring
+slices. Add `--allow-many-to-many` only for exploratory mutual-best linking.
+Possible two-to-one or one-to-two branch/merge relationships are reported in
+`gland_instance_tracks.csv` and `gland_instance_qc_index.csv` instead of being
+silently collapsed.
 
 If the aligned Parquet does not exist yet, render directly from AnnData by
 supplying `--h5ad` and `--out-parquet` instead of `--aligned-cells-parquet`.
@@ -257,6 +362,17 @@ Multi-slice reconstruction writes:
 - `meshes/mesh_manifest.csv`
 - `meshes/mesh_qc_summary.json`
 - `leiden_3d_cells.html` from `render-cell-cloud`
+- `gland_qc_atlas.html` and `glands/gland_*.html` from
+  `render-gland-qc-atlas`
+- `gland_instances/slice_gland_instances.geojson`,
+  `gland_instance_tracks.csv`, `gland_instance_qc_index.csv`, and
+  `gland_instance_atlas.html` from `detect-gland-instances`
+
+Mesh cleanup removes tiny disconnected fragments by default when a minimum
+component volume is provided. Use `--min-mesh-component-volume-um3` to set the
+volume threshold, or `--no-mesh-cleanup` to retain all disconnected components.
+`meshes/mesh_manifest.csv` records connected-component counts before and after
+filtering so fractured surfaces can be audited.
 
 Spatial module discovery writes:
 

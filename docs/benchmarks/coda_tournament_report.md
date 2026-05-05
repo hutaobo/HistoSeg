@@ -2,7 +2,7 @@
 
 Date: 2026-05-04
 
-Branch: `feature/coda-backend`
+Branch: `codex/issue-7-mats-3d-reconstruction-qc`
 
 This report records the validation run for the CODA-inspired hard-alignment backend in HistoSeg 3D. The implementation is CODA-inspired, not a full CODA reimplementation. It uses tissue-mask Radon rotation and phase-correlation translation as an image-derived hard seed, then evaluates that seed against the existing contour similarity seed before the topology-safe contour TPS refinement.
 
@@ -39,19 +39,19 @@ Interpretation: Radon/phase seeding is valuable as a rescue path for badly initi
 
 Dataset:
 
-- `Y:\long\spatialpathologist\3D aligment\polyp`
+- `data/polyp/xenium_slices`
 - 32 slices, 31 adjacent slice pairs.
-- Baseline output: `Y:\long\spatialpathologist\3D aligment\polyp\histoseg_3d_reconstruction`
-- Tournament output: `Y:\long\spatialpathologist\3D aligment\polyp\histoseg_3d_reconstruction_coda_tournament`
+- Baseline output: `outputs/polyp_3d_reconstruction`
+- Tournament output: `outputs/polyp_3d_reconstruction_coda_tournament`
 
 Command shape:
 
 ```bash
 histoseg-3d reconstruct-stack \
-  --xenium-root "Y:\long\spatialpathologist\3D aligment\polyp" \
-  --out-dir "Y:\long\spatialpathologist\3D aligment\polyp\histoseg_3d_reconstruction_coda_tournament" \
-  --segmentation-strategy "Y:\long\spatialpathologist\3D aligment\polyp\contour for alignment\segmentationstrategy.txt" \
-  --merged-h5ad "Y:\long\spatialpathologist\3D aligment\polyp\pdc_merge_leiden\polyp_32samples_min3_count5_leiden_20260501_processed_leiden.h5ad" \
+  --xenium-root data/polyp/xenium_slices \
+  --out-dir outputs/polyp_3d_reconstruction_coda_tournament \
+  --segmentation-strategy data/polyp/segmentationstrategy.txt \
+  --merged-h5ad data/polyp/pdc_merge_leiden/polyp_32samples_processed_leiden.h5ad \
   --merged-cluster-column leiden_1_0 \
   --registration-backend coda-image \
   --hard-alignment-maxiter 40 \

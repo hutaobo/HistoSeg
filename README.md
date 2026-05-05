@@ -150,6 +150,38 @@ If the aligned cell table does not exist yet, `render-cell-cloud` can project a
 merged AnnData first by replacing `--aligned-cells-parquet` with `--h5ad` and
 `--out-parquet`.
 
+For local inspection of many small gland-like contour components, render a
+per-gland QC atlas from an existing aligned stack:
+
+```bash
+histoseg-3d render-gland-qc-atlas \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --aligned-cells-parquet outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet \
+  --out-dir outputs/polyp_3d_reconstruction/gland_qc \
+  --structures "Structure 3" "Structure 4" \
+  --max-gland-pages 250
+```
+
+The atlas assigns cross-slice `gland_id` values from aligned contour components
+and writes `gland_qc_atlas.html`, per-gland local 3D zoom pages, and CSV QC
+tables for slice continuity review. The CSV index is always full; use
+`--max-gland-pages` to render only the highest-priority local HTML pages first.
+
+For lumen-seeded gland/crypt instance segmentation and cross-slice tracking:
+
+```bash
+histoseg-3d detect-gland-instances \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --aligned-cells-parquet outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet \
+  --out-dir outputs/polyp_3d_reconstruction/gland_instances \
+  --epithelial-structures "Structure 3" "Structure 4" \
+  --markers EPCAM MUC2 LGR5 OLFM4 MKI67
+```
+
+The tracker uses one-to-one Hungarian assignment by default. Add
+`--allow-many-to-many` only for exploratory branch/merge review; candidate
+two-to-one links are reported in CSV/HTML QC outputs.
+
 ## HE Analysis Quickstart
 
 ```python
