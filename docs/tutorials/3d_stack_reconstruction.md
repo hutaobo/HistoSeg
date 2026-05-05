@@ -50,11 +50,11 @@ graphclust labels are not interchangeable with this segmentation strategy.
 
 ```bash
 histoseg-3d reconstruct-stack \
-  --xenium-root "Y:/long/spatialpathologist/3D aligment/polyp" \
-  --segmentation-strategy "Y:/long/spatialpathologist/3D aligment/polyp/contour for alignment/segmentationstrategy.txt" \
-  --merged-h5ad "Y:/long/spatialpathologist/3D aligment/polyp/pdc_merge_leiden/polyp_32samples_min3_count5_leiden_20260501_processed_leiden.h5ad" \
+  --xenium-root data/polyp/xenium_slices \
+  --segmentation-strategy data/polyp/segmentationstrategy.txt \
+  --merged-h5ad data/polyp/pdc_merge_leiden/polyp_32samples_processed_leiden.h5ad \
   --merged-cluster-column leiden_1_0 \
-  --out-dir "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction" \
+  --out-dir outputs/polyp_3d_reconstruction \
   --z-spacing-um 5 \
   --hard-alignment-maxiter 40 \
   --voxel-size-um 80 \
@@ -83,9 +83,9 @@ similarity alone:
 
 ```bash
 histoseg-3d reconstruct-stack \
-  --xenium-root "Y:/long/spatialpathologist/3D aligment/polyp" \
-  --segmentation-strategy "Y:/long/spatialpathologist/3D aligment/polyp/contour for alignment/segmentationstrategy.txt" \
-  --out-dir "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction_coda_seed" \
+  --xenium-root data/polyp/xenium_slices \
+  --segmentation-strategy data/polyp/segmentationstrategy.txt \
+  --out-dir outputs/polyp_3d_reconstruction_coda_seed \
   --registration-backend coda-image \
   --coda-raster-size 512 \
   --coda-angle-step 1.0
@@ -137,6 +137,10 @@ For the 32-slice polyp run:
 The hard alignment corrects large global offsets and rotations. The TPS step is
 guarded by a no-degrade rule: if a local warp lowers the union IoU, HistoSeg
 keeps the hard-aligned result for that pair and records the rejected attempt.
+`pairwise_alignment_metrics.csv` also records the selected hard seed, contour
+seed IoU, CODA seed IoU, CODA Radon/phase metadata, topology validity, checked
+grid cells, folded/compressed/expanded cell counts, and min/median/max TPS
+area ratios for broken-part and fold triage.
 
 The surface mesh stage uses voxelization, 3D Gaussian smoothing, and Marching
 Cubes. `mesh_manifest.csv` records mesh QC fields such as vertex count, face
@@ -145,7 +149,17 @@ component count for each structure.
 
 Use `--mesh-smoothing-sigma-um 0` when you want a direct unsmoothed Marching
 Cubes surface. The Marching Cubes `--mesh-level` should be strictly between
-`0` and `1`.
+`0` and `1`. Use `--min-mesh-component-volume-um3` to filter tiny disconnected
+fragments, or `--no-mesh-cleanup` to keep every component for forensic review.
+The mesh manifest records component counts before and after filtering.
+
+## Limited Slice Guidance
+
+With only a limited number of 2D sections, this workflow is useful for checking
+alignment, broken components, branch/merge candidates, and local morphology
+hypotheses. Treat those outputs as QC and hypothesis generation. Strong 3D
+biological claims require denser z sampling, independent samples, or orthogonal
+histology validation.
 
 ## Preview
 

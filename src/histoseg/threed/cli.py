@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict
+from pathlib import Path
 from typing import Sequence
 
 from . import (
@@ -10,6 +11,9 @@ from . import (
     CellCloudProjectionConfig,
     CellCloudRenderConfig,
     GeneStructureQuantificationConfig,
+    GlandInstanceSegmentationConfig,
+    GlandInstanceTrackingConfig,
+    GlandQCAtlasConfig,
     SpatialModuleDiscoveryConfig,
     SpatialModulePlotConfig,
     ThreeDContourReconstructionConfig,
@@ -17,9 +21,11 @@ from . import (
     plot_spatial_module_clustermap,
     quantify_gene_structure_relationships,
     render_cell_cloud_html,
+    render_gland_qc_atlas,
     run_3d_contour_reconstruction,
     run_3d_stack_reconstruction,
     run_cell_cloud_projection,
+    run_gland_instance_detection,
     run_spatial_module_discovery,
 )
 
@@ -479,6 +485,96 @@ def main(argv: Sequence[str] | None = None) -> None:
     render_cells.add_argument("--title", default="HistoSeg 3D cell cloud")
     render_cells.add_argument("--performance-warning-threshold", type=int, default=500000)
 
+    gland_qc = subparsers.add_parser(
+        "render-gland-qc-atlas",
+        help="Render a per-gland 3D QC atlas from an aligned contour stack.",
+    )
+    gland_qc.add_argument("--stack-root", required=True, help="HistoSeg 3D reconstruction output directory.")
+    gland_qc.add_argument("--out-dir", required=True, help="Output directory for the gland QC atlas.")
+    gland_qc.add_argument(
+        "--aligned-cells-parquet",
+        default=None,
+        help="Optional aligned 3D cell Parquet for local cell context.",
+    )
+    gland_qc.add_argument(
+        "--structures",
+        nargs="*",
+        default=(),
+        help="Optional structure labels to include. Comma-separated chunks are accepted.",
+    )
+    gland_qc.add_argument("--group-property", default="structure")
+    gland_qc.add_argument("--pixel-size-um", type=float, default=0.2125)
+    gland_qc.add_argument("--padding-um", type=float, default=250.0)
+    gland_qc.add_argument("--z-visual-scale", type=float, default=8.0)
+    gland_qc.add_argument("--max-cells-per-gland", type=int, default=50000)
+    gland_qc.add_argument(
+        "--max-gland-pages",
+        type=int,
+        default=0,
+        help="Render only the top N priority gland pages. 0 renders every gland page.",
+    )
+    gland_qc.add_argument("--label-column", default="leiden_1_0")
+    gland_qc.add_argument("--random-state", type=int, default=0)
+    gland_qc.add_argument("--min-overlap-fraction", type=float, default=0.05)
+    gland_qc.add_argument("--good-overlap-fraction", type=float, default=0.20)
+    gland_qc.add_argument("--centroid-fallback-um", type=float, default=160.0)
+    gland_qc.add_argument("--max-area-ratio-for-fallback", type=float, default=4.0)
+    gland_qc.add_argument("--centroid-jump-review-um", type=float, default=350.0)
+    gland_qc.add_argument("--area-cv-review-threshold", type=float, default=1.0)
+
+    detect_glands = subparsers.add_parser(
+        "detect-gland-instances",
+        help="Segment and track individual gland/crypt instances across a 3D stack.",
+    )
+    detect_glands.add_argument("--stack-root", required=True, help="HistoSeg 3D reconstruction output directory.")
+    detect_glands.add_argument("--out-dir", required=True, help="Output directory for gland instance artifacts.")
+    detect_glands.add_argument(
+        "--aligned-cells-parquet",
+        default=None,
+        help="Aligned 3D cell Parquet, usually aligned_leiden_3d_cells.parquet.",
+    )
+    detect_glands.add_argument(
+        "--epithelial-structures",
+        nargs="*",
+        default=("Structure 3", "Structure 4"),
+        help="Semantic epithelial structure labels. Comma-separated chunks are accepted.",
+    )
+    detect_glands.add_argument(
+        "--markers",
+        nargs="*",
+        default=("EPCAM", "MUC2", "LGR5", "OLFM4", "MKI67"),
+        help="Epithelial marker genes. Comma-separated chunks are accepted.",
+    )
+    detect_glands.add_argument("--pixel-size-um", type=float, default=0.2125)
+    detect_glands.add_argument("--raster-pixel-size-um", type=float, default=5.0)
+    detect_glands.add_argument("--lumen-density-threshold", type=float, default=0.05)
+    detect_glands.add_argument("--lumen-min-area-um2", type=float, default=200.0)
+    detect_glands.add_argument("--min-gland-area-um2", type=float, default=500.0)
+    detect_glands.add_argument("--min-ring-support-score", type=float, default=0.3)
+    detect_glands.add_argument("--group-property", default="structure")
+    detect_glands.add_argument("--cell-density-sigma-um", type=float, default=12.0)
+    detect_glands.add_argument("--epithelial-density-threshold", type=float, default=0.10)
+    detect_glands.add_argument("--support-closing-um", type=float, default=12.0)
+    detect_glands.add_argument("--max-slices", type=int, default=0)
+    detect_glands.add_argument("--max-centroid-distance-um", type=float, default=300.0)
+    detect_glands.add_argument("--min-overlap-ratio", type=float, default=0.15)
+    detect_glands.add_argument("--min-area-ratio", type=float, default=0.25)
+    detect_glands.add_argument("--max-area-ratio", type=float, default=4.0)
+    detect_glands.add_argument("--lumen-center-weight", type=float, default=0.4)
+    detect_glands.add_argument("--marker-profile-weight", type=float, default=0.3)
+    detect_glands.add_argument(
+        "--allow-many-to-many",
+        action="store_true",
+        help="Use mutual-best links instead of one-to-one Hungarian assignment.",
+    )
+    detect_glands.add_argument(
+        "--max-gland-pages",
+        type=int,
+        default=250,
+        help="Render only the top N gland detail pages. 0 renders every gland page.",
+    )
+    detect_glands.add_argument("--z-visual-scale", type=float, default=8.0)
+
     discover = subparsers.add_parser(
         "discover-spatial-modules",
         help="Batch-map genes into 3D enrichment fields, surfaces, SDF metrics, and spatial module matrices.",
@@ -646,6 +742,74 @@ def main(argv: Sequence[str] | None = None) -> None:
                 title=args.title,
                 performance_warning_threshold=args.performance_warning_threshold,
             )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "render-gland-qc-atlas":
+        result = render_gland_qc_atlas(
+            GlandQCAtlasConfig(
+                stack_root=args.stack_root,
+                out_dir=args.out_dir,
+                aligned_cells_parquet=args.aligned_cells_parquet,
+                structures=tuple(_parse_cli_chunks(args.structures)),
+                group_property=args.group_property,
+                pixel_size_um=args.pixel_size_um,
+                padding_um=args.padding_um,
+                z_visual_scale=args.z_visual_scale,
+                max_cells_per_gland=args.max_cells_per_gland,
+                max_gland_pages=args.max_gland_pages or None,
+                label_column=args.label_column,
+                random_state=args.random_state,
+                min_overlap_fraction=args.min_overlap_fraction,
+                good_overlap_fraction=args.good_overlap_fraction,
+                centroid_fallback_um=args.centroid_fallback_um,
+                max_area_ratio_for_fallback=args.max_area_ratio_for_fallback,
+                centroid_jump_review_um=args.centroid_jump_review_um,
+                area_cv_review_threshold=args.area_cv_review_threshold,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "detect-gland-instances":
+        aligned_cells_parquet = args.aligned_cells_parquet
+        if aligned_cells_parquet is None:
+            default_cells = Path(args.stack_root) / "aligned_leiden_3d_cells.parquet"
+            if not default_cells.exists():
+                parser.error(
+                    "detect-gland-instances requires --aligned-cells-parquet unless "
+                    "stack_root/aligned_leiden_3d_cells.parquet exists."
+                )
+            aligned_cells_parquet = str(default_cells)
+        result = run_gland_instance_detection(
+            segmentation_config=GlandInstanceSegmentationConfig(
+                stack_root=args.stack_root,
+                aligned_cells_parquet=aligned_cells_parquet,
+                out_dir=args.out_dir,
+                structures=tuple(_parse_cli_chunks(args.epithelial_structures)),
+                epithelial_markers=tuple(_parse_cli_chunks(args.markers)),
+                lumen_min_area_um2=args.lumen_min_area_um2,
+                lumen_cell_density_threshold=args.lumen_density_threshold,
+                pixel_size_um=args.pixel_size_um,
+                raster_pixel_size_um=args.raster_pixel_size_um,
+                min_ring_support_score=args.min_ring_support_score,
+                min_gland_area_um2=args.min_gland_area_um2,
+                group_property=args.group_property,
+                cell_density_sigma_um=args.cell_density_sigma_um,
+                epithelial_density_threshold=args.epithelial_density_threshold,
+                support_closing_um=args.support_closing_um,
+                max_slices=args.max_slices or None,
+            ),
+            tracking_config=GlandInstanceTrackingConfig(
+                segmentation_result_dir=args.out_dir,
+                out_dir=args.out_dir,
+                max_centroid_distance_um=args.max_centroid_distance_um,
+                min_overlap_ratio=args.min_overlap_ratio,
+                min_area_ratio=args.min_area_ratio,
+                max_area_ratio=args.max_area_ratio,
+                lumen_center_weight=args.lumen_center_weight,
+                marker_profile_weight=args.marker_profile_weight,
+                use_one_to_one=not args.allow_many_to_many,
+            ),
+            max_gland_pages=args.max_gland_pages or None,
+            z_visual_scale=args.z_visual_scale,
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
     elif args.command == "discover-spatial-modules":

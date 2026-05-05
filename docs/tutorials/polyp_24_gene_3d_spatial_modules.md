@@ -45,10 +45,10 @@ PECAM1 RGS5
 
 ```bash
 histoseg-3d discover-spatial-modules \
-  --h5ad "Y:/long/spatialpathologist/3D aligment/polyp/pdc_merge_leiden/polyp_32samples_min3_count5_leiden_20260501_processed_leiden.h5ad" \
-  --aligned-cells-parquet "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction/aligned_leiden_3d_cells.parquet" \
-  --stack-root "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction" \
-  --out-dir "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel" \
+  --h5ad data/polyp/pdc_merge_leiden/polyp_32samples_processed_leiden.h5ad \
+  --aligned-cells-parquet outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --out-dir outputs/polyp_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel \
   --genes GREM1 COL1A1 COL1A2 ACTA2 PDGFRA TAGLN FAP EPCAM MUC2 OLFM4 LGR5 MKI67 PTPRC CD3D CD3E CD8A CD4 MS4A1 CD79A LYZ CD68 C1QA PECAM1 RGS5 \
   --mesh-export-formats ply
 ```
@@ -148,8 +148,8 @@ After a batch run, rerun only the overlap/SDF step for one gene:
 
 ```bash
 histoseg-3d quantify-gene-structure \
-  --stack-root "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction" \
-  --gene-density-dir "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel/GREM1_density" \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --gene-density-dir outputs/polyp_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel/GREM1_density \
   --gene GREM1
 ```
 
@@ -157,7 +157,7 @@ Regenerate a clustermap from existing matrices:
 
 ```bash
 histoseg-3d plot-spatial-modules \
-  --batch-dir "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel" \
+  --batch-dir outputs/polyp_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel \
   --matrix fraction_inside \
   --hotspot top05
 ```
@@ -166,9 +166,9 @@ Render the aligned Leiden cell cloud as an interactive browser HTML:
 
 ```bash
 histoseg-3d render-cell-cloud \
-  --stack-root "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction" \
-  --aligned-cells-parquet "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction/aligned_leiden_3d_cells.parquet" \
-  --out-html "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction/leiden_3d_cells.html" \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --aligned-cells-parquet outputs/polyp_3d_reconstruction/aligned_leiden_3d_cells.parquet \
+  --out-html outputs/polyp_3d_reconstruction/leiden_3d_cells.html \
   --label-column leiden_1_0 \
   --max-points 300000
 ```
@@ -179,9 +179,9 @@ Render the static hero figures locally with PyVista:
 pip install -e ".[threed,viz,docs]"
 
 python scripts/render_polyp_24gene_figures.py \
-  --stack-root "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction" \
+  --stack-root outputs/polyp_3d_reconstruction \
   --gene GREM1 \
-  --batch-dir "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel" \
+  --batch-dir outputs/polyp_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel \
   --out-dir docs/_static/threed/polyp/24gene \
   --figures all \
   --camera-preset oblique \
