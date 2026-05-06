@@ -34,6 +34,10 @@ the post-merge validation.
 
 **Expected Artifacts:**
 
+- `docs/_static/manuscript/figure1_workflow_schematic.png`
+- `docs/_static/manuscript/figure1_workflow_schematic.svg`
+- `docs/_static/manuscript/figure1_histology_contour_overlay_template.png`
+- `docs/_static/manuscript/figure1_histology_contour_overlay_template.svg`
 - `aligned_slice_manifest.csv`
 - `pairwise_alignment_metrics.csv`
 - `pairwise_alignments/*/soft_tps/soft_tps_diagnostic_report.png`
@@ -117,6 +121,42 @@ from the 32-slice polyp stack.
 - `post_merge_validation_20260503/leiden_3d_cells_300k_main.html`
 - `docs/_static/threed/polyp/24gene/GREM1_nested_3d_hotspot_surfaces.png`
 - `docs/_static/threed/polyp/24gene/GREM1_structure5_focus.png`
+- `docs/_static/threed/polyp/24gene/signed_distance_marker_group_violin.png`
+- `docs/_static/threed/polyp/24gene/compartment_summary_table.csv`
+- `docs/_static/threed/polyp/24gene/compartment_summary_table.png`
+
+## Figure 4: Benchmark Matrix Against Internal And Published Alignment Baselines
+
+**Scientific Conclusion:** HistoSeg must be evaluated as a method against
+internal ablations and published spatial-alignment tools, not only by internal
+SDF validation. The benchmark matrix separates a CI-safe synthetic
+known-transform smoke run from the full public-data benchmark that should be
+completed before submission.
+
+**Panels:**
+
+- **A. Method matrix.** Show naive stack, hard-only HistoSeg, full HistoSeg,
+  PASTE, PASTE2, GPSA, STAligner and SPACEL/Scube with fixed versions,
+  parameter policies and recorded seeds.
+- **B. Geometry recovery.** Report known-transform error, union IoU,
+  per-structure IoU, centroid drift and landmark distance.
+- **C. Topology and biological consistency.** Report fold/compression
+  failures and expression/domain consistency, with failures retained in the
+  table rather than silently dropped.
+- **D. Runtime and memory.** Report wall-clock runtime and peak memory for the
+  small public/demo subset and the full archived dataset.
+
+**Data Source:** `reproducibility/benchmarks/method_matrix.json` plus the
+public polyp bundle after accession/DOI assignment.
+
+**Expected Artifacts:**
+
+- `reproducibility/benchmarks/method_matrix.json`
+- `reproducibility/benchmarks/method_benchmark_metrics.csv`
+- `reproducibility/benchmarks/benchmark_summary.csv`
+- `reproducibility/benchmarks/benchmark_manifest.json`
+- `reproducibility/benchmarks/figure4_benchmark_matrix.png`
+- `reproducibility/benchmarks/figure4_benchmark_matrix.svg`
 
 ## Figure-Generation Discipline
 

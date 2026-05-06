@@ -150,6 +150,38 @@ def test_alignment_manifest_tracks_coda_backend_credit_and_parameters(tmp_path):
     assert hash_alignment_manifest(build_alignment_manifest(stack_root, pixel_size_um=2.0)) != first_hash
 
 
+def test_tps_model_loads_sibling_landmarks_when_summary_path_is_not_portable(tmp_path):
+    import histoseg.threed.cell_cloud as cell_cloud
+
+    soft_dir = tmp_path / "stack" / "pairwise_alignments" / "001_to_002_s2" / "soft_tps"
+    soft_dir.mkdir(parents=True)
+    summary = {
+        "method": {
+            "rbf_kernel": "thin_plate_spline",
+            "rbf_smoothing": 1e-4,
+            "rbf_neighbors": None,
+        },
+        "outputs": {
+            "landmarks_csv": r"\\storage3.ad.scilifelab.se\missing\soft_tps_landmarks.csv",
+        },
+    }
+    summary_path = soft_dir / "soft_tps_alignment_summary.json"
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    pd.DataFrame(
+        {
+            "src_x": [0.0, 10.0, 0.0, 10.0],
+            "src_y": [0.0, 0.0, 10.0, 10.0],
+            "dst_x": [1.0, 11.0, 1.0, 11.0],
+            "dst_y": [2.0, 2.0, 12.0, 12.0],
+        }
+    ).to_csv(soft_dir / "soft_tps_landmarks.csv", index=False)
+
+    model = cell_cloud._load_tps_model(summary_path)
+    warped = model.warp(np.array([[5.0, 5.0]]), chunk_size=10)
+
+    np.testing.assert_allclose(warped, [[6.0, 7.0]], atol=1e-3)
+
+
 def test_write_cell_cloud_cache_uses_histoseg_keys_without_touching_spatial(tmp_path):
     adata = _MiniAnnData(
         pd.DataFrame(

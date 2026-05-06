@@ -1,0 +1,10 @@
+marker_group,histoseg_dominant_structure,genes,n_genes,median_fraction_inside,median_signed_distance_um,total_nonzero_cells
+Epithelial,Structure 4,"EPCAM, LGR5",2,0.49707749999999995,2.5,1997665
+Epithelial,Structure 5,"OLFM4, PECAM1",2,0.5599065000000001,-5.0,514901
+Immune,Structure 2,"CD68, C1QA",2,0.213326,55.0,338063
+Immune,Structure 3,MUC2,1,0.602572,-10.0,285352
+Immune,Structure 5,"PTPRC, CD3D, CD3E, CD8A, CD4, MS4A1, CD79A, LYZ",8,0.7980715,-27.5,1393552
+Other,Structure 3,MKI67,1,0.330801,50.0,129298
+Stromal,Structure 5,"GREM1, COL1A1, COL1A2, ACTA2, TAGLN, FAP",6,0.7828755000000001,-25.0,2223288
+Vascular,Structure 2,PDGFRA,1,0.223846,45.0,170599
+Vascular,Structure 5,RGS5,1,0.751607,-20.0,326806

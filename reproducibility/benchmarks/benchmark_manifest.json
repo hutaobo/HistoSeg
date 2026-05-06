@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "benchmark_name": "histoseg_3d_method_matrix",
+  "execution_mode": "synthetic_known_transform_smoke",
+  "seed": 20260504,
+  "n_replicates": 16,
+  "method_matrix": "D:\\GitHub\\HistoSeg\\reproducibility\\benchmarks\\method_matrix.json",
+  "status_note": "Rows for published external methods are adapter placeholders in the smoke run; replace execution_status with adapter_run in the full archived benchmark.",
+  "outputs": {
+    "metrics_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\benchmarks\\method_benchmark_metrics.csv",
+    "summary_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\benchmarks\\benchmark_summary.csv",
+    "figure_png": "D:\\GitHub\\HistoSeg\\reproducibility\\benchmarks\\figure4_benchmark_matrix.png",
+    "figure_svg": "D:\\GitHub\\HistoSeg\\reproducibility\\benchmarks\\figure4_benchmark_matrix.svg"
+  }
+}

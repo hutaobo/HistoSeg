@@ -137,6 +137,14 @@ class ThreeDStackReconstructionConfig:
     mesh_cleanup: bool = True
     min_mesh_component_volume_um3: float | None = None
     mesh_max_faces_for_html: int = 25000
+    local_z_orientation: str = "off"
+    vertical_qc_backend: str = "none"
+    apply_local_z_flip: bool = False
+    transcript_relpath: str = "transcripts.parquet"
+    ovrlpy_n_components: int = 20
+    ovrlpy_n_workers: int = 1
+    ovrlpy_fit_umap: bool = True
+    ovrlpy_min_transcripts: float = 10.0
     overwrite: bool = False
     dpi: int = 180
 
@@ -151,6 +159,9 @@ class ThreeDStackReconstructionResult:
     summary_json: Path
     visualization_html: Path
     mesh_dir: Path
+    local_z_orientation_manifest_csv: Path | None = None
+    aligned_transcripts_parquet: Path | None = None
+    biological_z_report_html: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -393,7 +404,41 @@ def run_3d_stack_reconstruction(
         title="HistoSeg 3D contour reconstruction",
     )
 
+    local_z_result = None
+    if cfg.local_z_orientation == "auto":
+        from .local_z_orientation import (
+            LocalZOrientationConfig,
+            run_local_z_orientation_correction,
+        )
+
+        local_z_result = run_local_z_orientation_correction(
+            LocalZOrientationConfig(
+                xenium_root=cfg.xenium_root,
+                stack_root=out_dir,
+                out_dir=out_dir,
+                sample_glob=cfg.sample_glob,
+                transcript_relpath=cfg.transcript_relpath,
+                pixel_size_um=cfg.xenium_pixel_size_um,
+                vertical_qc_backend=cfg.vertical_qc_backend,
+                apply_local_z_flip=cfg.apply_local_z_flip,
+                ovrlpy_n_components=cfg.ovrlpy_n_components,
+                ovrlpy_n_workers=cfg.ovrlpy_n_workers,
+                ovrlpy_fit_umap=cfg.ovrlpy_fit_umap,
+                ovrlpy_min_transcripts=cfg.ovrlpy_min_transcripts,
+            )
+        )
+
     summary_path = out_dir / "3d_stack_reconstruction_summary.json"
+    local_z_outputs = (
+        {
+            "local_z_orientation_manifest_csv": str(local_z_result.manifest_csv),
+            "aligned_transcripts_parquet": str(local_z_result.aligned_transcripts_parquet),
+            "biological_z_report_html": str(local_z_result.biological_report_html),
+            "vertical_qc_dir": str(local_z_result.vertical_qc_dir),
+        }
+        if local_z_result is not None
+        else {}
+    )
     summary = {
         "config": _jsonable_config(cfg),
         "slice_count": len(slices),
@@ -406,6 +451,7 @@ def run_3d_stack_reconstruction(
             "visualization_html": str(visualization_path),
             "mesh_dir": str(mesh_dir),
             "mesh_qc_summary_json": str(mesh_dir / "mesh_qc_summary.json"),
+            **local_z_outputs,
         },
     }
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -419,6 +465,15 @@ def run_3d_stack_reconstruction(
         summary_json=summary_path,
         visualization_html=visualization_path,
         mesh_dir=mesh_dir,
+        local_z_orientation_manifest_csv=(
+            local_z_result.manifest_csv if local_z_result is not None else None
+        ),
+        aligned_transcripts_parquet=(
+            local_z_result.aligned_transcripts_parquet if local_z_result is not None else None
+        ),
+        biological_z_report_html=(
+            local_z_result.biological_report_html if local_z_result is not None else None
+        ),
     )
 
 
@@ -1208,6 +1263,16 @@ def write_3d_visualization_html(
 def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
     if cfg.registration_backend not in {"contour-tps", "coda-image"}:
         raise ValueError("registration_backend must be 'contour-tps' or 'coda-image'.")
+    if cfg.local_z_orientation not in {"off", "auto"}:
+        raise ValueError("local_z_orientation must be 'off' or 'auto'.")
+    if cfg.vertical_qc_backend not in {"none", "ovrlpy"}:
+        raise ValueError("vertical_qc_backend must be 'none' or 'ovrlpy'.")
+    if cfg.ovrlpy_n_components < 1:
+        raise ValueError("ovrlpy_n_components must be at least 1.")
+    if cfg.ovrlpy_n_workers < 1:
+        raise ValueError("ovrlpy_n_workers must be at least 1.")
+    if cfg.ovrlpy_min_transcripts <= 0:
+        raise ValueError("ovrlpy_min_transcripts must be greater than 0.")
     if cfg.z_spacing_um <= 0:
         raise ValueError("z_spacing_um must be greater than 0.")
     if cfg.xenium_pixel_size_um <= 0:

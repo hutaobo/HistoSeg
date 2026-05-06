@@ -2,9 +2,10 @@
 
 **Frozen baseline:** `publication-alpha-20260503` at commit `2361fbc`
 
-**Draft status:** manuscript foundation draft. Abstract, Introduction, Results
-and figure legends are in place; Discussion and final references remain to be
-completed after the figure assembly is locked.
+**Draft status:** Nature Methods Article working draft with Discussion,
+references, availability statements, benchmark scaffold and figure-generation
+contracts in place. Public accession and DOI fields remain pending until final
+GEO/Zenodo deposits are assigned.
 
 ## Working Title
 
@@ -270,30 +271,108 @@ compartment label.
 The publication-alpha baseline includes a reproducibility wrapper,
 `reproducibility/run_paper_pipeline.py`, that regenerates the current
 paper-facing artifacts through public `histoseg-3d` commands. By default, the
-wrapper uses the validated 24-gene starter-panel matrices rather than rerunning
-the heavier discovery step. It renders the 300,000-point cell-cloud HTML,
-regenerates the `top05` fraction-inside and signed-distance clustermaps, and
-writes `reproducibility/results_manifest.json` with command records, input
-paths, output sizes, output SHA256 hashes, and the recomputed alignment hash.
-The same wrapper can rerun `discover-spatial-modules` with `--run-discovery`
-when full regeneration is required.
+wrapper resolves required inputs from
+`reproducibility/paper_data_manifest.json` under `--data-root`, using local
+paths only when explicitly supplied as overrides. It uses the validated
+24-gene starter-panel matrices rather than rerunning the heavier discovery
+step, renders the 300,000-point cell-cloud HTML, regenerates the `top05`
+fraction-inside and signed-distance clustermaps, and writes
+`reproducibility/results_manifest.json` with command records, manifest-linked
+input records, output sizes, output SHA256 hashes, and the recomputed alignment
+hash. The same wrapper can rerun `discover-spatial-modules` with
+`--run-discovery` when full regeneration is required.
 
 This design keeps the manuscript artifacts linked to the exact HistoSeg CLI
 surface while avoiding hidden analysis code in the paper directory. Large raw
 inputs, including `.h5ad`, Parquet, and interactive HTML artifacts, are
-referenced by path and hash rather than copied into the repository. The
-resulting manuscript package therefore separates three layers: the frozen
-software baseline, the local data state identified by alignment provenance, and
-the derived figure artifacts used in the paper.
+referenced through manifest records, public DOI/accession fields, size and hash
+metadata rather than copied into the repository. The resulting manuscript
+package therefore separates three layers: the frozen software baseline, the
+public data bundle identified by permanent records, and the derived figure
+artifacts used in the paper.
 
 ## Discussion
 
-[To be written after the Results claims, figure panels, and validation gaps are
-reviewed. Candidate themes: SDFs as a transparent physical-distance contract;
-topology-aware alignment as a conservative safeguard for sparse multi-slice
-data; marker-panel interpretation versus cell-type deconvolution; limitations
-of single-sample biological discovery; required second-cohort or second-tissue
-generalization.]
+HistoSeg addresses a narrow but recurring gap in multi-slice spatial
+transcriptomics: how to turn curated two-dimensional tissue structures into a
+three-dimensional object whose geometry, topology, cell coordinates and
+gene-structure distances are auditable. Most established spatial-transcriptomic
+methods operate on a different primary target. PASTE and PASTE2 align spot
+clouds across adjacent slices through optimal-transport formulations and are
+well suited to transcriptome-driven stack alignment, including partial overlap
+in PASTE2. GPSA estimates shared coordinates through Gaussian-process warps.
+STAligner and SPACEL use graph or deep-learning representations to integrate
+spatial domains across slices and, in SPACEL/Scube, to construct 3D stacks.
+Squidpy and BANKSY provide scalable spatial-omics analysis, neighborhood
+statistics, cell typing and domain segmentation rather than an explicit
+contour-to-SDF physical-distance contract. SEQUOIA illustrates a complementary
+image-to-transcriptome direction: it predicts expression patterns from
+histology rather than reconstructing measured multi-slice molecular geometry.
+HistoSeg is therefore not a replacement for these tools. Its contribution is a
+structure-first layer that preserves semantic contours, exposes hard and soft
+registration diagnostics, and computes downstream association metrics from
+physically sampled 3D masks.
+
+The signed-distance-field representation is deliberately conservative. By
+computing distances from voxelized masks with explicit `(z, y, x)` sampling,
+HistoSeg makes the unit of every reported distance a property of the data
+contract rather than a by-product of a visualization mesh. This avoids several
+failure modes of mesh-based proximity measurements, including sensitivity to
+surface triangulation, local holes, smoothing choices and inconsistent
+inside/outside orientation. The tradeoff is that SDF accuracy is limited by
+voxel discretization and by the sparse sampling of physical sections in the z
+dimension. The anisotropy sweep quantifies this limit for a smooth synthetic
+scene: increasing z spacing tenfold changed fraction-inside by less than 0.25
+percentage points and median signed distance by less than 0.6 um. These values
+do not prove universal accuracy; they establish that the implemented EDT
+contract is numerically stable under a controlled geometry and that future
+biological claims should report voxel size, slice spacing and sensitivity
+summaries alongside any signed-distance interpretation.
+
+Topology-aware alignment is also a safeguard rather than a guarantee. Hard
+similarity registration keeps the transformation easy to inspect, whereas
+TPS/RBF soft alignment can absorb local deformation between sections. The same
+flexibility can introduce folds, local compression or biologically implausible
+warps if accepted uncritically. HistoSeg therefore treats displacement fields,
+area changes and topology QC as first-class outputs. This is especially
+important for sparse z sampling: adjacent sections are not repeated
+measurements of the same physical plane, and aggressive warping can erase real
+through-depth variation. The appropriate benchmark is consequently broader
+than a single overlap score. The publication benchmark matrix must report
+known-transform recovery, union and per-structure IoU, centroid drift,
+landmark distance, topology failures, expression/domain consistency, runtime
+and memory for naive stacking, HistoSeg ablations and published alignment
+methods. The repository now includes the matrix and a deterministic synthetic
+smoke benchmark, but those smoke rows are not a substitute for the full
+adapter-based benchmark on the public bundle.
+
+The 32-slice polyp case study demonstrates how the geometric contract supports
+biological hypothesis generation, but it remains a single-sample discovery
+example. Structure 5 is supported by stromal matrix, activated fibroblast and
+immune markers, and GREM1 has the strongest embedded hotspot in the current
+panel. This is consistent with prior work linking GREM1 and fibroblast-rich
+intestinal niches, and with FAP-positive stromal remodeling in colorectal
+tumor microenvironments. However, the evidence is a marker-panel
+interpretation. It is not cell-type deconvolution, it does not estimate
+cell-state proportions, and it does not establish that Structure 5 is a
+histologically reviewed compartment. Final claims require H&E or morphology
+overlays with structure outlines, orthogonal pathology review, and either a
+second polyp cohort or a second tissue system showing that the same
+contour-to-SDF workflow behaves predictably outside this specimen.
+
+The software and data-release requirements are therefore part of the method,
+not administrative afterthoughts. A Nature Methods Article needs public data
+and code records that allow reviewers to rerun the analysis without private
+Windows paths. The reproduction wrapper now resolves inputs through a
+paper-data manifest with DOI/accession fields and fails by default if required
+public records are still pending. This makes the remaining gap explicit:
+raw/processed expression data, aligned contours, masks, GeoJSON, figure source
+data, benchmark outputs and the frozen software release must be archived with
+permanent identifiers before submission. If the publication code snapshot can
+be relicensed under an OSI-approved license, the Code Availability statement
+should say so and cite the archived release. If rights-holder approval is not
+granted, the manuscript should state the restrictive access terms plainly and
+seek editorial guidance before full submission.
 
 ## Online Methods
 
@@ -305,12 +384,124 @@ The implementation-faithful Online Methods draft is maintained in
 The current draft legends are maintained in
 `docs/manuscripts/figure_legends.md`.
 
+## Data availability
+
+The 32-slice polyp Xenium dataset, processed expression object, aligned
+contours, GeoJSON annotations, binary masks, meshes, figure source data,
+benchmark outputs and reproduction manifests will be deposited before
+submission. Expression-style data should be deposited in GEO where appropriate;
+derived reconstruction artifacts and figure source data should be deposited in
+Zenodo. The repository-level data contract is maintained in
+`reproducibility/paper_data_manifest.json`, which records `role`,
+`relative_path`, `accession_or_doi`, `sha256`, `size_bytes`,
+`license_or_access_terms` and `generated_by` for each required input or output.
+Current accession fields are marked pending and must be replaced with final
+GEO/Zenodo identifiers before peer review.
+
+## Code availability
+
+The HistoSeg source code is available from the project repository and the
+publication version will be frozen as a tagged release with a Zenodo DOI before
+submission. The current repository license is PolyForm Noncommercial 1.0.0.
+Because Springer Nature encourages licenses approved by the Open Source
+Initiative for shared research code, the preferred publication plan is to
+release the manuscript code snapshot under Apache-2.0 or BSD-3-Clause if
+rights-holder approval is granted. If relicensing is not possible, the final
+Code Availability statement must state the non-commercial access terms and the
+authors should query the editor before submission.
+
 ## References
 
-[Reference X: Xenium spatial transcriptomics]
-
-[Reference X: signed distance fields and Euclidean distance transforms]
-
-[Reference X: thin-plate spline registration]
-
-[Reference X: colorectal polyp biology and stromal-immune niches]
+1. Ståhl, P. L. et al. Visualization and analysis of gene expression in tissue
+   sections by spatial transcriptomics. Science 353, 78-82 (2016).
+   https://doi.org/10.1126/science.aaf2403
+2. Moses, L. & Pachter, L. Museum of spatial transcriptomics. Nat. Methods 19,
+   534-546 (2022). https://doi.org/10.1038/s41592-022-01409-2
+3. Janesick, A. et al. High resolution mapping of the tumor microenvironment
+   using integrated single-cell, spatial and in situ analysis. Nat. Commun. 14,
+   8353 (2023). https://doi.org/10.1038/s41467-023-43458-x
+4. Palla, G. et al. Squidpy: a scalable framework for spatial omics analysis.
+   Nat. Methods 19, 171-178 (2022).
+   https://doi.org/10.1038/s41592-021-01358-2
+5. Singhal, V. et al. BANKSY unifies cell typing and tissue domain segmentation
+   for scalable spatial omics data analysis. Nat. Genet. 56, 431-441 (2024).
+   https://doi.org/10.1038/s41588-024-01664-3
+6. Zeira, R., Land, M. & Raphael, B. J. Alignment and integration of spatial
+   transcriptomics data. Nat. Methods 19, 567-575 (2022).
+   https://doi.org/10.1038/s41592-022-01459-6
+7. Liu, X., Zeira, R. & Raphael, B. J. Partial alignment of multislice
+   spatially resolved transcriptomics data. Genome Res. 33, 1124-1132 (2023).
+   https://doi.org/10.1101/gr.277670.123
+8. Jones, A. et al. Alignment of spatial genomics data using deep Gaussian
+   processes. Nat. Methods 20, 1379-1387 (2023).
+   https://doi.org/10.1038/s41592-023-01972-2
+9. Zhou, X., Dong, K. & Zhang, S. Integrating spatial transcriptomics data
+   across different conditions, technologies and developmental stages. Nat.
+   Comput. Sci. 3, 894-906 (2023).
+   https://doi.org/10.1038/s43588-023-00528-w
+10. Weng, W. et al. SPACEL: deep learning-based characterization of spatial
+    transcriptome architectures. Nat. Commun. 14, 7603 (2023).
+    https://doi.org/10.1038/s41467-023-43220-3
+11. Clifton, K. et al. STalign: alignment of spatial transcriptomics data using
+    diffeomorphic metric mapping. Nat. Commun. 14, 8123 (2023).
+    https://doi.org/10.1038/s41467-023-43915-7
+12. Pizurica, M. et al. Digital profiling of gene expression from histology
+    images with linearized attention. Nat. Commun. 15 (2024).
+    https://doi.org/10.1038/s41467-024-54182-5
+13. Biancalani, T. et al. Deep learning and alignment of spatially resolved
+    single-cell transcriptomes with Tangram. Nat. Methods 18, 1352-1362
+    (2021). https://doi.org/10.1038/s41592-021-01264-7
+14. Hu, J. et al. SpaGCN: integrating gene expression, spatial location and
+    histology to identify spatial domains and spatially variable genes by graph
+    convolutional network. Nat. Methods 18, 1342-1351 (2021).
+    https://doi.org/10.1038/s41592-021-01255-8
+15. Zhao, E. et al. Spatial transcriptomics at subspot resolution with
+    BayesSpace. Nat. Biotechnol. 39, 1375-1384 (2021).
+    https://doi.org/10.1038/s41587-021-00935-2
+16. Dries, R. et al. Giotto: a toolbox for integrative analysis and
+    visualization of spatial expression data. Genome Biol. 22, 78 (2021).
+    https://doi.org/10.1186/s13059-021-02286-2
+17. Virtanen, P. et al. SciPy 1.0: fundamental algorithms for scientific
+    computing in Python. Nat. Methods 17, 261-272 (2020).
+    https://doi.org/10.1038/s41592-019-0686-2
+18. Maurer, C. R. Jr, Qi, R. & Raghavan, V. A linear time algorithm for
+    computing exact Euclidean distance transforms of binary images in arbitrary
+    dimensions. IEEE Trans. Pattern Anal. Mach. Intell. 25, 265-270 (2003).
+    https://doi.org/10.1109/TPAMI.2003.1177156
+19. Bookstein, F. L. Principal warps: thin-plate splines and the decomposition
+    of deformations. IEEE Trans. Pattern Anal. Mach. Intell. 11, 567-585
+    (1989). https://doi.org/10.1109/34.24792
+20. Duchon, J. Splines minimizing rotation-invariant semi-norms in Sobolev
+    spaces. In Constructive Theory of Functions of Several Variables 85-100
+    (Springer, 1977). https://doi.org/10.1007/BFb0086566
+21. Schindelin, J. et al. Fiji: an open-source platform for biological-image
+    analysis. Nat. Methods 9, 676-682 (2012).
+    https://doi.org/10.1038/nmeth.2019
+22. van der Walt, S. et al. scikit-image: image processing in Python. PeerJ 2,
+    e453 (2014). https://doi.org/10.7717/peerj.453
+23. Hunter, J. D. Matplotlib: a 2D graphics environment. Comput. Sci. Eng. 9,
+    90-95 (2007). https://doi.org/10.1109/MCSE.2007.55
+24. Pedregosa, F. et al. Scikit-learn: machine learning in Python. J. Mach.
+    Learn. Res. 12, 2825-2830 (2011).
+25. Kosinski, C. et al. Gene expression patterns of human colon tops and basal
+    crypts and BMP antagonists as intestinal stem cell niche factors. Proc.
+    Natl Acad. Sci. USA 104, 15418-15423 (2007).
+    https://doi.org/10.1073/pnas.0707210104
+26. Davis, H. et al. Aberrant epithelial GREM1 expression initiates colonic
+    tumorigenesis from cells outside the stem cell niche. Nat. Med. 21, 62-70
+    (2015). https://doi.org/10.1038/nm.3750
+27. Karagiannis, G. S. et al. Fibroblast-derived Gremlin1 localises to
+    epithelial cells at the base of the intestinal crypt. Oncotarget 10,
+    4630-4639 (2019). https://doi.org/10.18632/oncotarget.27048
+28. Henry, L. R. et al. Clinical implications of fibroblast activation protein
+    in patients with colon cancer. Clin. Cancer Res. 13, 1736-1741 (2007).
+    https://doi.org/10.1158/1078-0432.CCR-06-1746
+29. Gerling, M. et al. Stromal Hedgehog signalling is downregulated in colon
+    cancer and its restoration restrains tumour growth. Nat. Commun. 7, 12321
+    (2016). https://doi.org/10.1038/ncomms12321
+30. Nature Methods. What makes a Nature Methods paper. Nat. Methods 19,
+    1125-1126 (2022). https://doi.org/10.1038/s41592-022-01558-4
+31. Springer Nature. Code policy. https://www.springernature.com/gp/open-science/code-policy
+32. Nature Portfolio. Data availability statements and data citation policy:
+    guidance for authors.
+    https://www.nature.com/documents/nr-data-availability-statements-data-citations.pdf

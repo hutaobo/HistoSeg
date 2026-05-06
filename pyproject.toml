@@ -39,6 +39,9 @@ threed = [
     "pyXenium @ git+https://github.com/hutaobo/pyXenium.git",
     "trimesh>=4.0.0",
 ]
+vertical-qc = [
+    "ovrlpy",
+]
 viz = [
     "pyvista>=0.43",
     "imageio",
