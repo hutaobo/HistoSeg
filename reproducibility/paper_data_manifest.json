@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "dataset": "histoseg_polyp_32_slice_public_bundle",
+  "archive_status": "pending_public_accession",
+  "description": "Public-data contract for the HistoSeg Nature Methods article reproduction bundle. Fill accession_or_doi, sha256 and size_bytes from the final GEO/Zenodo deposits before submission.",
+  "created_for": "HistoSeg Nature Methods article",
+  "files": [
+    {
+      "role": "stack_root",
+      "relative_path": "polyp/histoseg_3d_reconstruction",
+      "accession_or_doi": "PENDING_ZENODO_DOI",
+      "sha256": null,
+      "size_bytes": null,
+      "license_or_access_terms": "Pending public archive terms; expected to include derived masks, GeoJSON and reconstruction metadata.",
+      "generated_by": "histoseg-3d alignment/reconstruction pipeline"
+    },
+    {
+      "role": "aligned_slice_manifest",
+      "relative_path": "polyp/histoseg_3d_reconstruction/aligned_slice_manifest.csv",
+      "accession_or_doi": "PENDING_ZENODO_DOI",
+      "sha256": null,
+      "size_bytes": null,
+      "license_or_access_terms": "Pending public archive terms.",
+      "generated_by": "histoseg-3d alignment/reconstruction pipeline"
+    },
+    {
+      "role": "aligned_cells_parquet",
+      "relative_path": "polyp/histoseg_3d_reconstruction/aligned_leiden_3d_cells.parquet",
+      "accession_or_doi": "PENDING_ZENODO_DOI",
+      "sha256": null,
+      "size_bytes": null,
+      "license_or_access_terms": "Pending public archive terms.",
+      "generated_by": "histoseg-3d render-cell-cloud input export"
+    },
+    {
+      "role": "h5ad",
+      "relative_path": "polyp/expression/polyp_32slice_processed_leiden.h5ad",
+      "accession_or_doi": "PENDING_GEO_ACCESSION_OR_ZENODO_DOI",
+      "sha256": null,
+      "size_bytes": null,
+      "license_or_access_terms": "Pending expression-data archive terms; controlled fields must be removed or documented before release.",
+      "generated_by": "Xenium processing and HistoSeg 3D alignment provenance export"
+    },
+    {
+      "role": "spatial_module_batch_dir",
+      "relative_path": "polyp/histoseg_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel",
+      "accession_or_doi": "PENDING_ZENODO_DOI",
+      "sha256": null,
+      "size_bytes": null,
+      "license_or_access_terms": "Pending public archive terms.",
+      "generated_by": "histoseg-3d discover-spatial-modules"
+    },
+    {
+      "role": "batch_gene_status",
+      "relative_path": "polyp/histoseg_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel/batch_gene_status.csv",
+      "accession_or_doi": "PENDING_ZENODO_DOI",
+      "sha256": null,
+      "size_bytes": null,
+      "license_or_access_terms": "Pending public archive terms.",
+      "generated_by": "histoseg-3d discover-spatial-modules"
+    },
+    {
+      "role": "fraction_inside_matrix",
+      "relative_path": "polyp/histoseg_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel/gene_structure_fraction_inside_matrix.csv",
+      "accession_or_doi": "PENDING_ZENODO_DOI",
+      "sha256": null,
+      "size_bytes": null,
+      "license_or_access_terms": "Pending public archive terms.",
+      "generated_by": "histoseg-3d discover-spatial-modules"
+    },
+    {
+      "role": "signed_distance_matrix",
+      "relative_path": "polyp/histoseg_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel/gene_structure_signed_distance_matrix.csv",
+      "accession_or_doi": "PENDING_ZENODO_DOI",
+      "sha256": null,
+      "size_bytes": null,
+      "license_or_access_terms": "Pending public archive terms.",
+      "generated_by": "histoseg-3d discover-spatial-modules"
+    },
+    {
+      "role": "overlap_fraction_matrix",
+      "relative_path": "polyp/histoseg_3d_reconstruction/gene_overlays/batch_3d_genes_starter_panel/gene_structure_overlap_fraction_matrix.csv",
+      "accession_or_doi": "PENDING_ZENODO_DOI",
+      "sha256": null,
+      "size_bytes": null,
+      "license_or_access_terms": "Pending public archive terms.",
+      "generated_by": "histoseg-3d discover-spatial-modules"
+    },
+    {
+      "role": "benchmark_outputs",
+      "relative_path": "benchmarks",
+      "accession_or_doi": "PENDING_ZENODO_DOI",
+      "sha256": null,
+      "size_bytes": null,
+      "license_or_access_terms": "Pending public archive terms.",
+      "generated_by": "reproducibility/benchmarks/run_method_benchmark.py"
+    },
+    {
+      "role": "figure_source_data",
+      "relative_path": "figure_source_data",
+      "accession_or_doi": "PENDING_ZENODO_DOI",
+      "sha256": null,
+      "size_bytes": null,
+      "license_or_access_terms": "Pending public archive terms.",
+      "generated_by": "reproducibility and manuscript figure-generation scripts"
+    }
+  ]
+}

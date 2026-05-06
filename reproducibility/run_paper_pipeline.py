@@ -21,14 +21,8 @@ from typing import Any, Iterable, Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_STACK_ROOT = Path(
-    "Y:/long/spatialpathologist/3D aligment/polyp/histoseg_3d_reconstruction"
-)
-DEFAULT_H5AD = Path(
-    "Y:/long/spatialpathologist/3D aligment/polyp/pdc_merge_leiden/"
-    "polyp_32samples_min3_count5_leiden_20260501_processed_leiden.h5ad"
-)
-DEFAULT_BATCH_DIR = DEFAULT_STACK_ROOT / "gene_overlays" / "batch_3d_genes_starter_panel"
+DEFAULT_DATA_ROOT = REPO_ROOT / "reproducibility" / "public_data"
+DEFAULT_DATA_MANIFEST = REPO_ROOT / "reproducibility" / "paper_data_manifest.json"
 DEFAULT_RESULTS_DIR = REPO_ROOT / "reproducibility" / "results"
 DEFAULT_MANIFEST_JSON = REPO_ROOT / "reproducibility" / "results_manifest.json"
 DEFAULT_HOTSPOT = "top05"
@@ -65,14 +59,30 @@ SMALL_INPUT_HASH_LIMIT_BYTES = 256 * 1024 * 1024
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    stack_root = Path(args.stack_root).expanduser()
-    h5ad = Path(args.h5ad).expanduser()
-    aligned_cells_parquet = Path(args.aligned_cells_parquet).expanduser()
-    batch_dir = Path(args.batch_dir).expanduser()
+    data_root = Path(args.data_root).expanduser()
+    data_manifest_path = Path(args.data_manifest).expanduser()
+    data_manifest = _load_paper_data_manifest(data_manifest_path)
+    data_records = _manifest_records_by_role(data_manifest)
+
+    stack_root = _resolve_path_arg(args.stack_root, data_records, "stack_root", data_root)
+    h5ad = _resolve_path_arg(args.h5ad, data_records, "h5ad", data_root)
+    aligned_cells_parquet = _resolve_path_arg(
+        args.aligned_cells_parquet,
+        data_records,
+        "aligned_cells_parquet",
+        data_root,
+    )
+    batch_dir = _resolve_path_arg(args.batch_dir, data_records, "spatial_module_batch_dir", data_root)
     results_dir = Path(args.results_dir).expanduser()
     manifest_json = Path(args.manifest_json).expanduser()
     genes = tuple(_parse_tokens(args.genes))
     matrices = tuple(args.matrices)
+    required_roles = _required_input_roles(
+        matrices,
+        run_discovery=args.run_discovery,
+        skip_cell_cloud=args.skip_cell_cloud,
+        skip_clustermaps=args.skip_clustermaps,
+    )
 
     outputs = _planned_outputs(results_dir, args.hotspot, matrices)
     inputs = _input_records(
@@ -82,15 +92,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         batch_dir=batch_dir,
         matrices=matrices,
         hash_large_inputs=args.hash_large_inputs,
+        data_records=data_records,
     )
 
-    _validate_inputs(
-        inputs,
-        matrices=matrices,
-        run_discovery=args.run_discovery,
-        skip_cell_cloud=args.skip_cell_cloud,
-        skip_clustermaps=args.skip_clustermaps,
+    _validate_manifest_accessions(
+        data_records,
+        required_roles=required_roles,
+        allow_pending=bool(args.allow_pending_accessions),
     )
+    _validate_inputs(inputs, required_roles=required_roles)
     _validate_cli(args.histoseg_cli, dry_run=args.dry_run)
 
     manifest: dict[str, Any] = {
@@ -104,6 +114,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "h5ad": str(h5ad),
             "aligned_cells_parquet": str(aligned_cells_parquet),
             "batch_dir": str(batch_dir),
+            "data_root": str(data_root),
+            "data_manifest": str(data_manifest_path),
+            "allow_pending_accessions": bool(args.allow_pending_accessions),
             "results_dir": str(results_dir),
             "hotspot": args.hotspot,
             "genes": list(genes),
@@ -114,6 +127,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             "run_discovery": bool(args.run_discovery),
             "skip_cell_cloud": bool(args.skip_cell_cloud),
             "skip_clustermaps": bool(args.skip_clustermaps),
+        },
+        "paper_data_manifest": {
+            "path": str(data_manifest_path),
+            "schema_version": data_manifest.get("schema_version"),
+            "dataset": data_manifest.get("dataset"),
+            "archive_status": data_manifest.get("archive_status"),
         },
         "inputs": inputs,
         "commands": [],
@@ -211,13 +230,36 @@ def build_parser() -> argparse.ArgumentParser:
             "existing histoseg-3d CLI commands."
         )
     )
-    parser.add_argument("--stack-root", default=str(DEFAULT_STACK_ROOT))
-    parser.add_argument("--h5ad", default=str(DEFAULT_H5AD))
+    parser.add_argument("--data-root", default=str(DEFAULT_DATA_ROOT))
+    parser.add_argument("--data-manifest", default=str(DEFAULT_DATA_MANIFEST))
+    parser.add_argument(
+        "--allow-pending-accessions",
+        action="store_true",
+        help=(
+            "Permit manifest records whose accession_or_doi is still marked as pending. "
+            "Use only before the public archive DOI/accession is assigned."
+        ),
+    )
+    parser.add_argument(
+        "--stack-root",
+        default=None,
+        help="Optional local override for the reconstructed stack root; defaults to the data manifest.",
+    )
+    parser.add_argument(
+        "--h5ad",
+        default=None,
+        help="Optional local override for the processed expression object; defaults to the data manifest.",
+    )
     parser.add_argument(
         "--aligned-cells-parquet",
-        default=str(DEFAULT_STACK_ROOT / "aligned_leiden_3d_cells.parquet"),
+        default=None,
+        help="Optional local override for aligned cells Parquet; defaults to the data manifest.",
     )
-    parser.add_argument("--batch-dir", default=str(DEFAULT_BATCH_DIR))
+    parser.add_argument(
+        "--batch-dir",
+        default=None,
+        help="Optional local override for spatial-module batch outputs; defaults to the data manifest.",
+    )
     parser.add_argument("--results-dir", default=str(DEFAULT_RESULTS_DIR))
     parser.add_argument("--manifest-json", default=str(DEFAULT_MANIFEST_JSON))
     parser.add_argument("--histoseg-cli", default="histoseg-3d")
@@ -266,6 +308,94 @@ def _planned_outputs(results_dir: Path, hotspot: str, matrices: Sequence[str]) -
     }
 
 
+def _load_paper_data_manifest(path: Path) -> dict[str, Any]:
+    expanded = Path(path).expanduser()
+    if not expanded.exists():
+        raise FileNotFoundError(
+            f"Paper data manifest not found: {expanded}. "
+            "Pass --data-manifest or create the public data manifest first."
+        )
+    payload = json.loads(expanded.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"Paper data manifest must be a JSON object: {expanded}")
+    files = payload.get("files")
+    if not isinstance(files, list) or not files:
+        raise ValueError(f"Paper data manifest requires a non-empty 'files' list: {expanded}")
+    required_fields = {
+        "role",
+        "relative_path",
+        "accession_or_doi",
+        "sha256",
+        "size_bytes",
+        "license_or_access_terms",
+        "generated_by",
+    }
+    for index, record in enumerate(files):
+        if not isinstance(record, dict):
+            raise ValueError(f"Manifest file entry {index} must be an object.")
+        missing = sorted(required_fields.difference(record))
+        if missing:
+            raise ValueError(
+                f"Manifest file entry {index} is missing required field(s): {', '.join(missing)}"
+            )
+    return payload
+
+
+def _manifest_records_by_role(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    records: dict[str, dict[str, Any]] = {}
+    for record in manifest.get("files", []):
+        role = str(record["role"])
+        if role in records:
+            raise ValueError(f"Duplicate role in paper data manifest: {role}")
+        records[role] = dict(record)
+    return records
+
+
+def _resolve_path_arg(
+    value: str | None,
+    data_records: dict[str, dict[str, Any]],
+    role: str,
+    data_root: Path,
+) -> Path:
+    if value:
+        return Path(value).expanduser()
+    record = data_records.get(role)
+    if record is None:
+        raise KeyError(f"Paper data manifest is missing required role: {role}")
+    relative_path = Path(str(record["relative_path"]))
+    if relative_path.is_absolute():
+        return relative_path.expanduser()
+    return (data_root / relative_path).expanduser()
+
+
+def _validate_manifest_accessions(
+    data_records: dict[str, dict[str, Any]],
+    *,
+    required_roles: set[str],
+    allow_pending: bool,
+) -> None:
+    missing_roles = sorted(role for role in required_roles if role not in data_records)
+    if missing_roles:
+        raise KeyError(
+            "Paper data manifest is missing required role(s): " + ", ".join(missing_roles)
+        )
+    if allow_pending:
+        return
+    pending_prefixes = ("PENDING", "TBD", "TODO")
+    pending = []
+    for role in sorted(required_roles):
+        accession = str(data_records[role].get("accession_or_doi", "")).strip().upper()
+        if not accession or accession.startswith(pending_prefixes):
+            pending.append(f"{role}: {data_records[role].get('accession_or_doi')!r}")
+    if pending:
+        details = "\n  - ".join(pending)
+        raise ValueError(
+            "Required public-data manifest records must have DOI/accession-backed "
+            "accession_or_doi values before full reproduction:\n  - "
+            f"{details}\nPass --allow-pending-accessions only for presubmission local checks."
+        )
+
+
 def _input_records(
     *,
     stack_root: Path,
@@ -274,6 +404,7 @@ def _input_records(
     batch_dir: Path,
     matrices: Sequence[str],
     hash_large_inputs: bool,
+    data_records: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     records = [
         _file_record(stack_root, role="stack_root", sha256=False),
@@ -295,17 +426,16 @@ def _input_records(
     }
     for matrix in matrices:
         records.append(_file_record(batch_dir / matrix_filenames[matrix], role=f"{matrix}_matrix"))
-    return records
+    return [_with_manifest_record(record, data_records.get(record["role"])) for record in records]
 
 
-def _validate_inputs(
-    inputs: Sequence[dict[str, Any]],
-    *,
+def _required_input_roles(
     matrices: Sequence[str],
+    *,
     run_discovery: bool,
     skip_cell_cloud: bool,
     skip_clustermaps: bool,
-) -> None:
+) -> set[str]:
     required_roles = {"stack_root", "aligned_slice_manifest"}
     if run_discovery:
         required_roles.update({"h5ad", "aligned_cells_parquet"})
@@ -314,6 +444,10 @@ def _validate_inputs(
     if not skip_clustermaps:
         required_roles.update({"spatial_module_batch_dir", "batch_gene_status"})
         required_roles.update(f"{matrix}_matrix" for matrix in matrices)
+    return required_roles
+
+
+def _validate_inputs(inputs: Sequence[dict[str, Any]], *, required_roles: set[str]) -> None:
     missing = [
         f"{record['role']}: {record['path']}"
         for record in inputs
@@ -480,6 +614,24 @@ def _file_record(
         "sha256": digest,
         "hash_status": hash_status,
     }
+
+
+def _with_manifest_record(
+    record: dict[str, Any],
+    manifest_record: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if manifest_record is None:
+        record["manifest"] = None
+        return record
+    record["manifest"] = {
+        "relative_path": manifest_record.get("relative_path"),
+        "accession_or_doi": manifest_record.get("accession_or_doi"),
+        "license_or_access_terms": manifest_record.get("license_or_access_terms"),
+        "generated_by": manifest_record.get("generated_by"),
+        "sha256": manifest_record.get("sha256"),
+        "size_bytes": manifest_record.get("size_bytes"),
+    }
+    return record
 
 
 def _sha256_path(path: Path) -> str:

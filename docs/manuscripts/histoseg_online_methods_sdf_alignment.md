@@ -165,6 +165,15 @@ $$
 \tau_{g,\mathrm{top05}} = Q_{0.95}(E_g).
 $$
 
+The 24-gene polyp manuscript panels use `top05` as the primary hotspot level
+because it emphasizes the most spatially concentrated enrichment volumes. The
+same quantification code emits `top10` and `top15` matrices, and the
+reproducibility plan treats threshold sensitivity across all three levels as a
+required supplementary analysis. Biological interpretations are considered
+robust only when the dominant structure assignment and signed-distance sign are
+stable across this top-5%, top-10% and top-15% sweep, or when a threshold
+specificity is explicitly stated.
+
 For a hotspot level $k$, the binary hotspot mask is
 
 $$
@@ -318,7 +327,11 @@ above followed by topology-safe TPS refinement. The optional `coda-image`
 backend is a CODA-inspired hard-seed backend: HistoSeg rasterizes the contour
 union as a tissue-mask proxy, estimates image-derived rotation and translation
 seeds, and selects the higher-IoU hard seed before the same topology-safe TPS
-step. This backend is not a full CODA reimplementation.
+step. This backend is optional and intended for supplementary robustness checks
+or difficult initial poses, not as the primary manuscript method. It is not a
+full CODA reimplementation. The default parameters are a 512-pixel square
+raster, 1-degree Radon angle step, phase-correlation upsample factor of 1, and
+5% square-bounds mask padding.
 
 After hard alignment, HistoSeg can apply conservative soft alignment. The
 moving contours are represented by structure-specific boundaries, and boundary
@@ -406,9 +419,15 @@ $$
 
 When `rbf_smoothing="auto"`, HistoSeg selects the smoothing value from
 `rbf_smoothing_candidates` by k-fold cross-validation on landmark displacement
-prediction error. Otherwise the configured numeric smoothing value is passed
-directly to `RBFInterpolator`. The optional neighbor limit is used when the
-number of landmarks exceeds `rbf_neighbors`.
+prediction error. The current candidate set is
+$(10^{-5}, 10^{-4}, 10^{-3}, 10^{-2})$. Up to 200 landmarks are sampled with
+random seed 42, split into five folds or fewer when fewer validation points are
+available, and scored by the mean Euclidean norm of the normalized displacement
+prediction residual on held-out landmarks. If fewer than eight landmarks are
+available, HistoSeg falls back to $10^{-4}$. Otherwise the configured numeric
+smoothing value is passed directly to `RBFInterpolator`. The optional neighbor
+limit is used when the number of landmarks exceeds `rbf_neighbors`, which
+defaults to 96.
 
 Before fitting, HistoSeg adds zero-displacement anchor landmarks on a padded
 convex-hull perimeter around the combined fixed and moving boundaries. The

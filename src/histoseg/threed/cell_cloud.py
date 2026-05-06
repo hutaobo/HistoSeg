@@ -891,6 +891,10 @@ def _load_tps_model(summary_path: Path) -> TpsModel:
         base=summary_path.parent,
     )
     if landmarks_path is None:
+        sibling_landmarks = summary_path.parent / "soft_tps_landmarks.csv"
+        if sibling_landmarks.exists():
+            landmarks_path = sibling_landmarks
+    if landmarks_path is None:
         raise FileNotFoundError(f"Could not resolve landmarks_csv from {summary_path}")
     landmarks = pd.read_csv(landmarks_path)
     required = {"src_x", "src_y", "dst_x", "dst_y"}

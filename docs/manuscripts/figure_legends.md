@@ -35,6 +35,10 @@ from 2,785,128 aligned cells by deterministic sampling to 300,000 Plotly WebGL
 points, with 32 Leiden labels and five contour traces.
 
 **Source artifacts:** `aligned_slice_manifest.csv`;
+`docs/_static/manuscript/figure1_workflow_schematic.png`;
+`docs/_static/manuscript/figure1_workflow_schematic.svg`;
+`docs/_static/manuscript/figure1_histology_contour_overlay_template.png`;
+`docs/_static/manuscript/figure1_histology_contour_overlay_template.svg`;
 `pairwise_alignment_metrics.csv`;
 `pairwise_alignments/*/soft_tps/soft_tps_diagnostic_report.png`;
 `aligned_contour_3d_points.csv`; `histoseg_3d_contour_stack.html`;
@@ -112,6 +116,36 @@ interpretations and should not be read as cell-type deconvolution.
 `docs/_static/threed/polyp/24gene/signed_distance_top05_spatial_clustermap.png`;
 `docs/_static/threed/polyp/24gene/GREM1_nested_3d_hotspot_surfaces.png`;
 `docs/_static/threed/polyp/24gene/GREM1_structure5_focus.png`;
+`docs/_static/threed/polyp/24gene/signed_distance_marker_group_violin.png`;
+`docs/_static/threed/polyp/24gene/compartment_summary_table.csv`;
+`docs/_static/threed/polyp/24gene/compartment_summary_table.png`;
 `reproducibility/results/figure1_leiden_3d_cells_300k.html`;
 `reproducibility/results_manifest.json`;
 `docs/manuscripts/polyp_24_gene_evidence.tsv`.
+
+## Figure 4 | Benchmark matrix for geometry, topology and expression-domain consistency
+
+**A,** Planned method matrix for the Nature Methods Article benchmark. The
+matrix includes naive stacking, hard-only HistoSeg, full HistoSeg, PASTE,
+PASTE2, GPSA, STAligner and SPACEL/Scube, with adapter status, version policy,
+default-parameter policy and seed recording specified in
+`reproducibility/benchmarks/method_matrix.json`. **B,** Synthetic
+known-transform smoke benchmark for geometry recovery. The CI-safe smoke run
+reports known-transform error, union IoU, mean per-structure IoU, centroid
+drift and landmark distance, allowing the benchmark machinery to be tested
+without private data. Published external methods are explicitly marked as
+`synthetic_proxy` in this smoke run until full adapters are executed on the
+archived public bundle. **C,** Topology and expression-domain consistency
+summary. Fold and compression failures are reported as metrics rather than
+filtered away, and expression/domain consistency is retained as a separate
+biological plausibility readout. **D,** Runtime and memory summary. Wall-clock
+runtime and peak memory are recorded for each method and should be regenerated
+for both the public demo subset and the full archived dataset before
+submission.
+
+**Source artifacts:** `reproducibility/benchmarks/method_matrix.json`;
+`reproducibility/benchmarks/method_benchmark_metrics.csv`;
+`reproducibility/benchmarks/benchmark_summary.csv`;
+`reproducibility/benchmarks/benchmark_manifest.json`;
+`reproducibility/benchmarks/figure4_benchmark_matrix.png`;
+`reproducibility/benchmarks/figure4_benchmark_matrix.svg`.

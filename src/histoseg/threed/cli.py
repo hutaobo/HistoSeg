@@ -11,9 +11,13 @@ from . import (
     CellCloudProjectionConfig,
     CellCloudRenderConfig,
     GeneStructureQuantificationConfig,
+    GlandBiologyMiningConfig,
     GlandInstanceSegmentationConfig,
     GlandInstanceTrackingConfig,
+    GlandPositionAtlasConfig,
     GlandQCAtlasConfig,
+    GlandSurfaceAtlasConfig,
+    LocalZOrientationConfig,
     SpatialModuleDiscoveryConfig,
     SpatialModulePlotConfig,
     ThreeDContourReconstructionConfig,
@@ -22,10 +26,14 @@ from . import (
     quantify_gene_structure_relationships,
     render_cell_cloud_html,
     render_gland_qc_atlas,
+    render_gland_position_atlas,
     run_3d_contour_reconstruction,
     run_3d_stack_reconstruction,
     run_cell_cloud_projection,
     run_gland_instance_detection,
+    run_gland_biology_mining,
+    run_local_z_orientation_correction,
+    render_gland_surface_atlas,
     run_spatial_module_discovery,
 )
 
@@ -395,6 +403,82 @@ def main(argv: Sequence[str] | None = None) -> None:
         action="store_true",
         help="Use global soft/hard acceptance instead of per-structure acceptance.",
     )
+    stack.add_argument(
+        "--local-z-orientation",
+        default="off",
+        choices=["off", "auto"],
+        help="Optionally infer transcript-level local-z preserve/reverse states after stack reconstruction.",
+    )
+    stack.add_argument(
+        "--vertical-qc-backend",
+        default="none",
+        choices=["none", "ovrlpy"],
+        help="Vertical transcript QC backend used by --local-z-orientation auto.",
+    )
+    stack.add_argument(
+        "--apply-local-z-flip",
+        action="store_true",
+        help="Apply inferred local-z reverse states to aligned_transcripts_3d.parquet.",
+    )
+    stack.add_argument(
+        "--transcript-relpath",
+        default="transcripts.parquet",
+        help="Transcript table path relative to each Xenium output directory.",
+    )
+    stack.add_argument("--ovrlpy-n-components", type=int, default=20)
+    stack.add_argument("--ovrlpy-n-workers", type=int, default=1)
+    stack.add_argument(
+        "--ovrlpy-fit-umap",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Fit Ovrlpy UMAP embeddings during vertical QC.",
+    )
+    stack.add_argument("--ovrlpy-min-transcripts", type=float, default=10.0)
+
+    local_z = subparsers.add_parser(
+        "infer-local-z-orientation",
+        help="Infer and apply transcript-level local-z orientation for an existing stack.",
+    )
+    local_z.add_argument("--stack-root", required=True, help="HistoSeg 3D reconstruction output directory.")
+    local_z.add_argument("--xenium-root", required=True, help="Folder containing Xenium slice folders.")
+    local_z.add_argument("--out-dir", default=None, help="Output directory. Defaults to --stack-root.")
+    local_z.add_argument("--sample-glob", default="*")
+    local_z.add_argument("--transcript-relpath", default="transcripts.parquet")
+    local_z.add_argument("--gene-column", default=None)
+    local_z.add_argument("--x-column", default=None)
+    local_z.add_argument("--y-column", default=None)
+    local_z.add_argument("--z-column", default=None)
+    local_z.add_argument("--transcript-id-column", default=None)
+    local_z.add_argument("--structure-column", default=None)
+    local_z.add_argument("--pixel-size-um", type=float, default=0.2125)
+    local_z.add_argument("--z-band-fraction", type=float, default=0.25)
+    local_z.add_argument("--min-band-transcripts", type=int, default=10)
+    local_z.add_argument("--max-signature-genes", type=int, default=256)
+    local_z.add_argument("--low-confidence-margin", type=float, default=0.02)
+    local_z.add_argument(
+        "--vertical-qc-backend",
+        default="ovrlpy",
+        choices=["none", "ovrlpy"],
+    )
+    local_z.add_argument(
+        "--apply-local-z-flip",
+        action="store_true",
+        help="Write reversed local-z values for slices inferred as reverse.",
+    )
+    local_z.add_argument("--ovrlpy-kde-bandwidth", type=float, default=2.5)
+    local_z.add_argument("--ovrlpy-n-components", type=int, default=20)
+    local_z.add_argument("--ovrlpy-n-workers", type=int, default=1)
+    local_z.add_argument(
+        "--ovrlpy-fit-umap",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Fit Ovrlpy UMAP embeddings during vertical QC.",
+    )
+    local_z.add_argument("--ovrlpy-min-transcripts", type=float, default=10.0)
+    local_z.add_argument("--doublet-min-signal", type=float, default=4.0)
+    local_z.add_argument("--doublet-integrity-sigma", type=float, default=1.0)
+    local_z.add_argument("--doublet-exclusion-radius-um", type=float, default=20.0)
+    local_z.add_argument("--chunk-size", type=int, default=100000)
 
     project_cells = subparsers.add_parser(
         "project-cells",
@@ -575,6 +659,111 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     detect_glands.add_argument("--z-visual-scale", type=float, default=8.0)
 
+    gland_position = subparsers.add_parser(
+        "render-gland-position-atlas",
+        help="Render an interactive 3D atlas of tracked gland positions and fission-family links.",
+    )
+    gland_position.add_argument(
+        "--gland-instance-dir",
+        required=True,
+        help="Directory containing gland_instance_tracks.csv and gland_instance_qc_index.csv.",
+    )
+    gland_position.add_argument(
+        "--out-dir",
+        default=None,
+        help="Output directory for the position atlas. Defaults to gland_instance_dir/gland_position_atlas.",
+    )
+    gland_position.add_argument(
+        "--biology-dir",
+        default=None,
+        help="Optional biology mining directory with gland_biology_feature_matrix.csv.",
+    )
+    gland_position.add_argument(
+        "--candidate-score-threshold",
+        type=float,
+        default=0.55,
+        help="Minimum branch/merge candidate score included in the derived family graph.",
+    )
+    gland_position.add_argument("--z-visual-scale", type=float, default=8.0)
+    gland_position.add_argument(
+        "--color-by",
+        default="gland_family_id",
+        choices=[
+            "gland_family_id",
+            "semantic_structure",
+            "qc_flags",
+            "slice_count",
+            "state_entropy",
+            "fission_candidate_score",
+            "boundary_wnt_niche_score",
+            "lumen_collapse_score",
+        ],
+        help="Initial color mode for the interactive atlas.",
+    )
+    gland_position.add_argument(
+        "--max-fission-pages",
+        type=int,
+        default=50,
+        help="Render local detail pages for the top N fission/budding candidate edges.",
+    )
+
+    gland_surface = subparsers.add_parser(
+        "render-gland-surface-atlas",
+        help="Render SpaceMap-style solid 3D gland/lumen surface meshes.",
+    )
+    gland_surface.add_argument(
+        "--gland-instance-dir",
+        required=True,
+        help="Directory containing gland_instance_tracks.csv and slice_gland_instances.geojson.",
+    )
+    gland_surface.add_argument("--out-dir", required=True, help="Output directory for solid surface artifacts.")
+    gland_surface.add_argument(
+        "--aligned-cells-parquet",
+        default=None,
+        help="Optional aligned 3D cell Parquet for local cell overlays.",
+    )
+    gland_surface.add_argument("--biology-dir", default=None, help="Optional biology/family output directory.")
+    gland_surface.add_argument("--gland-ids", nargs="*", default=(), help="Explicit gland IDs to render.")
+    gland_surface.add_argument("--family-ids", nargs="*", default=(), help="Family IDs to expand into glands.")
+    gland_surface.add_argument("--max-glands", type=int, default=30)
+    gland_surface.add_argument("--padding-um", type=float, default=120.0)
+    gland_surface.add_argument("--voxel-size-xy-um", type=float, default=6.0)
+    gland_surface.add_argument("--voxel-size-z-um", type=float, default=None)
+    gland_surface.add_argument("--z-interpolation-factor", type=int, default=3)
+    gland_surface.add_argument("--z-visual-scale", type=float, default=8.0)
+    gland_surface.add_argument("--surface-smoothing-iterations", type=int, default=10)
+    gland_surface.add_argument("--surface-smoothing-lambda", type=float, default=0.35)
+    gland_surface.add_argument("--max-faces-per-mesh", type=int, default=50000)
+    gland_surface.add_argument("--max-vertices-per-mesh", type=int, default=30000)
+    gland_surface.add_argument("--max-cells-per-view", type=int, default=25000)
+    gland_surface.add_argument("--cell-color-by", default="leiden_1_0")
+    gland_surface.add_argument("--preset", choices=["publication", "qc"], default="publication")
+    gland_surface.add_argument("--export-meshes", action="store_true")
+    gland_surface.add_argument("--transparent-shell", action="store_true")
+    gland_surface.add_argument("--random-state", type=int, default=0)
+
+    gland_biology = subparsers.add_parser(
+        "analyze-gland-biology",
+        help="Mine gland-level biology from tracked 3D gland instances.",
+    )
+    gland_biology.add_argument(
+        "--gland-instance-dir",
+        required=True,
+        help="Directory containing gland_instance_tracks.csv and slice_gland_instances.geojson.",
+    )
+    gland_biology.add_argument("--stack-root", required=True, help="HistoSeg 3D reconstruction output directory.")
+    gland_biology.add_argument("--out-dir", default=None, help="Output directory for biology mining tables.")
+    gland_biology.add_argument(
+        "--aligned-cells-parquet",
+        default=None,
+        help="Aligned 3D cell Parquet. Defaults to stack_root/aligned_leiden_3d_cells.parquet.",
+    )
+    gland_biology.add_argument("--outer-ring-inner-um", type=float, default=10.0)
+    gland_biology.add_argument("--outer-ring-outer-um", type=float, default=30.0)
+    gland_biology.add_argument("--max-slices", type=int, default=0)
+    gland_biology.add_argument("--high-confidence-min-slice-count", type=int, default=3)
+    gland_biology.add_argument("--high-confidence-max-branch-candidates", type=int, default=0)
+
     discover = subparsers.add_parser(
         "discover-spatial-modules",
         help="Batch-map genes into 3D enrichment fields, surfaces, SDF metrics, and spatial module matrices.",
@@ -697,6 +886,39 @@ def main(argv: Sequence[str] | None = None) -> None:
             )
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "infer-local-z-orientation":
+        result = run_local_z_orientation_correction(
+            LocalZOrientationConfig(
+                xenium_root=args.xenium_root,
+                stack_root=args.stack_root,
+                out_dir=args.out_dir,
+                sample_glob=args.sample_glob,
+                transcript_relpath=args.transcript_relpath,
+                gene_column=args.gene_column,
+                x_column=args.x_column,
+                y_column=args.y_column,
+                z_column=args.z_column,
+                transcript_id_column=args.transcript_id_column,
+                structure_column=args.structure_column,
+                pixel_size_um=args.pixel_size_um,
+                z_band_fraction=args.z_band_fraction,
+                min_band_transcripts=args.min_band_transcripts,
+                max_signature_genes=args.max_signature_genes,
+                low_confidence_margin=args.low_confidence_margin,
+                vertical_qc_backend=args.vertical_qc_backend,
+                apply_local_z_flip=args.apply_local_z_flip,
+                ovrlpy_kde_bandwidth=args.ovrlpy_kde_bandwidth,
+                ovrlpy_n_components=args.ovrlpy_n_components,
+                ovrlpy_n_workers=args.ovrlpy_n_workers,
+                ovrlpy_fit_umap=args.ovrlpy_fit_umap,
+                ovrlpy_min_transcripts=args.ovrlpy_min_transcripts,
+                doublet_min_signal=args.doublet_min_signal,
+                doublet_integrity_sigma=args.doublet_integrity_sigma,
+                doublet_exclusion_radius_um=args.doublet_exclusion_radius_um,
+                chunk_size=args.chunk_size,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
     elif args.command == "render-cell-cloud":
         aligned_cells_parquet = args.aligned_cells_parquet
         if aligned_cells_parquet:
@@ -810,6 +1032,62 @@ def main(argv: Sequence[str] | None = None) -> None:
             ),
             max_gland_pages=args.max_gland_pages or None,
             z_visual_scale=args.z_visual_scale,
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "render-gland-position-atlas":
+        result = render_gland_position_atlas(
+            GlandPositionAtlasConfig(
+                gland_instance_dir=args.gland_instance_dir,
+                out_dir=args.out_dir,
+                biology_dir=args.biology_dir,
+                candidate_score_threshold=args.candidate_score_threshold,
+                z_visual_scale=args.z_visual_scale,
+                color_by=args.color_by,
+                max_fission_pages=args.max_fission_pages,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "render-gland-surface-atlas":
+        result = render_gland_surface_atlas(
+            GlandSurfaceAtlasConfig(
+                gland_instance_dir=args.gland_instance_dir,
+                out_dir=args.out_dir,
+                aligned_cells_parquet=args.aligned_cells_parquet,
+                biology_dir=args.biology_dir,
+                gland_ids=tuple(_parse_cli_chunks(args.gland_ids)),
+                family_ids=tuple(_parse_cli_chunks(args.family_ids)),
+                max_glands=args.max_glands,
+                padding_um=args.padding_um,
+                voxel_size_xy_um=args.voxel_size_xy_um,
+                voxel_size_z_um=args.voxel_size_z_um,
+                z_interpolation_factor=args.z_interpolation_factor,
+                z_visual_scale=args.z_visual_scale,
+                surface_smoothing_iterations=args.surface_smoothing_iterations,
+                surface_smoothing_lambda=args.surface_smoothing_lambda,
+                max_faces_per_mesh=args.max_faces_per_mesh,
+                max_vertices_per_mesh=args.max_vertices_per_mesh,
+                max_cells_per_view=args.max_cells_per_view,
+                cell_color_by=args.cell_color_by,
+                preset=args.preset,
+                export_meshes=args.export_meshes,
+                transparent_shell=args.transparent_shell,
+                random_state=args.random_state,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "analyze-gland-biology":
+        result = run_gland_biology_mining(
+            GlandBiologyMiningConfig(
+                gland_instance_dir=args.gland_instance_dir,
+                stack_root=args.stack_root,
+                out_dir=args.out_dir,
+                aligned_cells_parquet=args.aligned_cells_parquet,
+                outer_ring_inner_um=args.outer_ring_inner_um,
+                outer_ring_outer_um=args.outer_ring_outer_um,
+                max_slices=args.max_slices or None,
+                high_confidence_min_slice_count=args.high_confidence_min_slice_count,
+                high_confidence_max_branch_candidates=args.high_confidence_max_branch_candidates,
+            )
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
     elif args.command == "discover-spatial-modules":
@@ -970,6 +1248,14 @@ def main(argv: Sequence[str] | None = None) -> None:
                 mesh_cleanup=not args.no_mesh_cleanup,
                 min_mesh_component_volume_um3=args.min_mesh_component_volume_um3,
                 mesh_max_faces_for_html=args.mesh_max_faces_for_html,
+                local_z_orientation=args.local_z_orientation,
+                vertical_qc_backend=args.vertical_qc_backend,
+                apply_local_z_flip=args.apply_local_z_flip,
+                transcript_relpath=args.transcript_relpath,
+                ovrlpy_n_components=args.ovrlpy_n_components,
+                ovrlpy_n_workers=args.ovrlpy_n_workers,
+                ovrlpy_fit_umap=args.ovrlpy_fit_umap,
+                ovrlpy_min_transcripts=args.ovrlpy_min_transcripts,
                 overwrite=args.overwrite,
                 dpi=args.dpi,
             )

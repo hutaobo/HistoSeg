@@ -22,11 +22,15 @@ def test_feature_group_import_contracts():
     assert callable(threed.segment_gland_instances)
     assert callable(threed.track_gland_instances)
     assert callable(threed.render_gland_instance_atlas)
+    assert callable(threed.render_gland_position_atlas)
+    assert callable(threed.render_gland_surface_atlas)
     assert callable(threed.run_gland_instance_detection)
+    assert callable(threed.run_gland_biology_mining)
     assert callable(threed.run_spatial_module_discovery)
     assert callable(threed.quantify_gene_structure_relationships)
     assert callable(threed.plot_spatial_module_clustermap)
     assert callable(threed.discover_xenium_slices)
+    assert callable(threed.run_local_z_orientation_correction)
 
 
 def test_top_level_exports_feature_group_namespaces():

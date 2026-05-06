@@ -56,6 +56,13 @@ from .cell_cloud import (
     run_cell_cloud_projection,
     write_cell_cloud_cache,
 )
+from .local_z_orientation import (
+    LOCAL_Z_ORIENTATION_SCHEMA_VERSION,
+    LOCAL_Z_ORIENTATION_STATES,
+    LocalZOrientationConfig,
+    LocalZOrientationResult,
+    run_local_z_orientation_correction,
+)
 from .gland_qc import (
     GlandQCAtlasConfig,
     GlandQCAtlasResult,
@@ -79,6 +86,23 @@ from .gland_atlas import (
     render_gland_instance_atlas,
     run_gland_instance_detection,
 )
+from .gland_position_atlas import (
+    GlandPositionAtlasConfig,
+    GlandPositionAtlasResult,
+    render_gland_position_atlas,
+)
+from .gland_surface_atlas import (
+    GlandSurfaceAtlasConfig,
+    GlandSurfaceAtlasResult,
+    render_gland_surface_atlas,
+)
+from .gland_biology import (
+    BOUNDARY_INTERACTIONS,
+    SIGNATURES,
+    GlandBiologyMiningConfig,
+    GlandBiologyMiningResult,
+    run_gland_biology_mining,
+)
 from .spatial_modules import (
     GeneStructureQuantificationConfig,
     GeneStructureQuantificationResult,
@@ -98,6 +122,7 @@ __all__ = [
     "CELL_CLOUD_OBS_SLICE_KEY",
     "CELL_CLOUD_OBSM_KEY",
     "CELL_CLOUD_UNS_KEY",
+    "BOUNDARY_INTERACTIONS",
     "CODA_METHOD_CREDIT",
     "CODA_METHOD_REFERENCE_DOI",
     "CODA_METHOD_REFERENCE_URL",
@@ -112,15 +137,26 @@ __all__ = [
     "DEFAULT_EPITHELIAL_STRUCTURES",
     "GeneStructureQuantificationConfig",
     "GeneStructureQuantificationResult",
+    "GlandBiologyMiningConfig",
+    "GlandBiologyMiningResult",
     "GlandInstanceAtlasResult",
     "GlandInstanceDetectionResult",
     "GlandInstanceSegmentationConfig",
     "GlandInstanceSegmentationResult",
     "GlandInstanceTrackingConfig",
     "GlandInstanceTrackingResult",
+    "GlandPositionAtlasConfig",
+    "GlandPositionAtlasResult",
     "GlandQCAtlasConfig",
     "GlandQCAtlasResult",
+    "GlandSurfaceAtlasConfig",
+    "GlandSurfaceAtlasResult",
+    "LOCAL_Z_ORIENTATION_SCHEMA_VERSION",
+    "LOCAL_Z_ORIENTATION_STATES",
+    "LocalZOrientationConfig",
+    "LocalZOrientationResult",
     "RadonRotationResult",
+    "SIGNATURES",
     "SpatialModuleDiscoveryConfig",
     "SpatialModuleDiscoveryResult",
     "SpatialModulePlotConfig",
@@ -150,10 +186,14 @@ __all__ = [
     "reconstruct_3d_contour_meshes",
     "render_cell_cloud_html",
     "render_gland_instance_atlas",
+    "render_gland_position_atlas",
     "render_gland_qc_atlas",
+    "render_gland_surface_atlas",
     "run_3d_contour_reconstruction",
     "run_cell_cloud_projection",
+    "run_gland_biology_mining",
     "run_gland_instance_detection",
+    "run_local_z_orientation_correction",
     "run_spatial_module_discovery",
     "run_3d_stack_reconstruction",
     "segment_gland_instances",
