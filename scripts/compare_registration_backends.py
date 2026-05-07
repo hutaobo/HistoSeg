@@ -301,7 +301,7 @@ def _plot_sdf_backend_profile(
         ax.scatter(frame["Space-map LDDMM"], y, label="Space-map LDDMM", marker="^", s=42)
         ax.set_yticks(y)
         ax.set_yticklabels(frame["gene"])
-        ax.set_xlabel(f"Median signed distance to {focus_structure} (um)")
+        ax.set_xlabel(f"Median signed distance to {focus_structure} (µm)")
         ax.set_title("Backend SDF profile stability")
         ax.legend(frameon=False)
         ax.grid(axis="x", alpha=0.2)

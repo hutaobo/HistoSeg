@@ -228,7 +228,7 @@ def test_min_component_volume_filters_small_fragments(tmp_path):
     # Structure 2 is ~4px × 4px = ~0.68µm × 0.68µm at 0.2125 µm/px, so its
     # mesh volume will be near zero.  Setting a min threshold above that but
     # below Structure 1's volume (~293 000 µm³) keeps only Structure 1.
-    _MIN_VOLUME_FILTER_UM3 = 50_000  # µm³: below Structure 1 (~293 000), above tiny fragments.
+    min_volume_filter_um3 = 50_000  # µm³: below Structure 1 (~293 000), above tiny fragments.
     payloads = reconstruct_3d_contour_meshes(
         aligned_rows,
         mesh_dir,
@@ -237,7 +237,7 @@ def test_min_component_volume_filters_small_fragments(tmp_path):
         z_spacing_um=5.0,
         xenium_pixel_size_um=0.2125,
         mesh_export_formats=("ply",),
-        min_mesh_component_volume_um3=_MIN_VOLUME_FILTER_UM3,
+        min_mesh_component_volume_um3=min_volume_filter_um3,
     )
 
     # Structure 1 is large enough and should survive, and Structure 2 should
