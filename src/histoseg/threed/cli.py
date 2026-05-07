@@ -17,6 +17,7 @@ from . import (
     GlandPositionAtlasConfig,
     GlandQCAtlasConfig,
     GlandSurfaceAtlasConfig,
+    LabelFreeContourAlignmentConfig,
     LocalZOrientationConfig,
     SpatialModuleDiscoveryConfig,
     SpatialModulePlotConfig,
@@ -27,6 +28,7 @@ from . import (
     render_cell_cloud_html,
     render_gland_qc_atlas,
     render_gland_position_atlas,
+    align_contours_label_free,
     run_3d_contour_reconstruction,
     run_3d_stack_reconstruction,
     run_cell_cloud_projection,
@@ -195,6 +197,220 @@ def main(argv: Sequence[str] | None = None) -> None:
         action="store_true",
         help="Disable per-structure soft/hard acceptance mixing.",
     )
+
+    label_free = subparsers.add_parser(
+        "align-contours-label-free",
+        help="Align two contour GeoJSON files without relying on structure labels.",
+    )
+    label_free.add_argument("--fixed-geojson", required=True, help="Reference contour GeoJSON.")
+    label_free.add_argument("--moving-geojson", required=True, help="Moving contour GeoJSON.")
+    label_free.add_argument("--out-dir", required=True, help="Output directory.")
+    label_free.add_argument(
+        "--maxiter",
+        type=int,
+        default=80,
+        help="Maximum Nelder-Mead iterations for hard alignment.",
+    )
+    label_free.add_argument(
+        "--no-multistart",
+        action="store_true",
+        help="Disable 0/90/180/270 degree multi-start similarity seeds.",
+    )
+    label_free.add_argument(
+        "--affine-fallback-iou-threshold",
+        type=float,
+        default=0.15,
+        help="Try affine fallback when label-free hard-alignment IoU is below this value.",
+    )
+    label_free.add_argument(
+        "--no-soft-tps",
+        action="store_true",
+        help="Skip unlabeled boundary-landmark TPS refinement.",
+    )
+    label_free.add_argument(
+        "--sampling-distance-um",
+        type=float,
+        default=80.0,
+        help="Boundary sampling interval for moving landmarks.",
+    )
+    label_free.add_argument(
+        "--max-landmark-distance-um",
+        type=float,
+        default=250.0,
+        help="Reject unlabeled landmark pairs farther than this distance.",
+    )
+    label_free.add_argument(
+        "--landmark-candidate-count",
+        type=int,
+        default=8,
+        help="K nearest fixed-boundary candidates for each moving landmark.",
+    )
+    label_free.add_argument(
+        "--landmark-candidate-spacing-um",
+        type=float,
+        default=None,
+        help="Fixed-boundary candidate sampling interval. Defaults to an auto value.",
+    )
+    label_free.add_argument(
+        "--landmark-normal-weight-um",
+        type=float,
+        default=0.0,
+        help="Normal-alignment penalty weight for unlabeled landmark matching.",
+    )
+    label_free.add_argument(
+        "--landmark-normal-step-um",
+        type=float,
+        default=None,
+        help="Arc-length step used to estimate boundary normals.",
+    )
+    label_free.add_argument("--rbf-kernel", default="thin_plate_spline")
+    label_free.add_argument(
+        "--rbf-neighbors",
+        type=int,
+        default=96,
+        help="Local RBF neighbor count. Use 0 for a global interpolator.",
+    )
+    label_free.add_argument("--rbf-smoothing", type=float, default=1e-4)
+    label_free.add_argument("--topology-grid-size", type=int, default=24)
+    label_free.add_argument("--topology-min-area-ratio", type=float, default=0.5)
+    label_free.add_argument("--topology-max-area-ratio", type=float, default=2.0)
+    label_free.add_argument(
+        "--min-component-area-um2",
+        type=float,
+        default=0.0,
+        help="Ignore contour components smaller than this area.",
+    )
+    label_free.add_argument(
+        "--max-component-weight",
+        type=float,
+        default=0.08,
+        help="Cap each component's contribution to the layout objective.",
+    )
+    label_free.add_argument(
+        "--boundary-sample-count",
+        type=int,
+        default=6000,
+        help="Maximum sampled boundary points used in the label-free objective.",
+    )
+    label_free.add_argument(
+        "--component-sample-count",
+        type=int,
+        default=800,
+        help="Maximum area-ranked components used in the layout objective.",
+    )
+    label_free.add_argument(
+        "--partial-correspondence",
+        action="store_true",
+        help="Run v2 partial-correspondence candidate matching instead of warping.",
+    )
+    label_free.add_argument(
+        "--diagnostic-only",
+        action="store_true",
+        help="With --partial-correspondence, write diagnostics only and do not warp coordinates.",
+    )
+    label_free.add_argument(
+        "--search-window",
+        type=float,
+        default=800.0,
+        help="Centroid search window for partial-correspondence candidates.",
+    )
+    label_free.add_argument(
+        "--knn-neighbors",
+        type=int,
+        default=6,
+        help="Local neighbor count for partial-correspondence topology descriptors.",
+    )
+    label_free.add_argument(
+        "--min-anchor-score",
+        type=float,
+        default=0.72,
+        help="Minimum score for a mutual candidate to become a matched anchor.",
+    )
+    label_free.add_argument(
+        "--min-review-score",
+        type=float,
+        default=0.55,
+        help="Minimum score for a plausible review match.",
+    )
+    label_free.add_argument(
+        "--min-anchor-count",
+        type=int,
+        default=8,
+        help="Warn when fewer than this many anchors are found.",
+    )
+    label_free.add_argument(
+        "--overlap-ransac",
+        action="store_true",
+        help=(
+            "With --partial-correspondence, estimate alignment from a descriptor-first "
+            "RANSAC overlap subset instead of current-coordinate anchors."
+        ),
+    )
+    label_free.add_argument(
+        "--overlap-candidate-count",
+        type=int,
+        default=8,
+        help="Descriptor candidates retained per fixed contour for overlap RANSAC.",
+    )
+    label_free.add_argument(
+        "--overlap-ransac-trials",
+        type=int,
+        default=20000,
+        help="Maximum deterministic candidate-pair trials for overlap RANSAC.",
+    )
+    label_free.add_argument(
+        "--overlap-min-descriptor-score",
+        type=float,
+        default=0.42,
+        help="Minimum descriptor-only score for overlap RANSAC candidate pairs.",
+    )
+    label_free.add_argument(
+        "--overlap-allow-scale",
+        action="store_true",
+        help="Allow overlap RANSAC to estimate scale. By default it is rigid rotation/translation.",
+    )
+    label_free.add_argument(
+        "--group-correspondence",
+        action="store_true",
+        help=(
+            "With --partial-correspondence, match assigned_structure groups across slices "
+            "before estimating an overlap transform. This allows fixed Structure 2 to "
+            "match moving Structure 3, for example."
+        ),
+    )
+    label_free.add_argument(
+        "--group-candidate-count",
+        type=int,
+        default=12,
+        help="Descriptor candidates retained per fixed contour inside each group-pair.",
+    )
+    label_free.add_argument(
+        "--group-ransac-trials",
+        type=int,
+        default=15000,
+        help="Maximum RANSAC trials per fixed-group/moving-group pair.",
+    )
+    label_free.add_argument(
+        "--group-min-descriptor-score",
+        type=float,
+        default=0.35,
+        help="Minimum descriptor-only score for group correspondence candidates.",
+    )
+    label_free.add_argument(
+        "--group-residual-limit-um",
+        type=float,
+        default=900.0,
+        help="Maximum centroid residual for group correspondence inliers.",
+    )
+    label_free.add_argument(
+        "--group-min-component-area-um2",
+        type=float,
+        default=5000.0,
+        help="Minimum contour area included in group-correspondence constellation matching.",
+    )
+    label_free.add_argument("--dpi", type=int, default=180, help="Preview PNG resolution.")
+    label_free.add_argument("--no-preview", action="store_true", help="Skip overlay PNGs.")
+    label_free.add_argument("--overwrite", action="store_true", help="Overwrite existing outputs.")
 
     stack = subparsers.add_parser(
         "reconstruct-stack",
@@ -862,6 +1078,56 @@ def main(argv: Sequence[str] | None = None) -> None:
                     else None
                 ),
                 per_structure_soft_acceptance=not args.no_per_structure_soft_acceptance,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "align-contours-label-free":
+        result = align_contours_label_free(
+            LabelFreeContourAlignmentConfig(
+                fixed_geojson=args.fixed_geojson,
+                moving_geojson=args.moving_geojson,
+                out_dir=args.out_dir,
+                maxiter=args.maxiter,
+                multistart=not args.no_multistart,
+                affine_fallback_iou_threshold=args.affine_fallback_iou_threshold,
+                run_soft_tps=not args.no_soft_tps,
+                sampling_distance_um=args.sampling_distance_um,
+                max_landmark_distance_um=args.max_landmark_distance_um,
+                landmark_candidate_count=args.landmark_candidate_count,
+                landmark_candidate_spacing_um=args.landmark_candidate_spacing_um,
+                landmark_normal_weight_um=args.landmark_normal_weight_um,
+                landmark_normal_step_um=args.landmark_normal_step_um,
+                rbf_kernel=args.rbf_kernel,
+                rbf_neighbors=args.rbf_neighbors or None,
+                rbf_smoothing=args.rbf_smoothing,
+                topology_grid_size=args.topology_grid_size,
+                topology_min_area_ratio=args.topology_min_area_ratio,
+                topology_max_area_ratio=args.topology_max_area_ratio,
+                min_component_area_um2=args.min_component_area_um2,
+                max_component_weight=args.max_component_weight,
+                boundary_sample_count=args.boundary_sample_count,
+                component_sample_count=args.component_sample_count,
+                partial_correspondence=args.partial_correspondence,
+                diagnostic_only=args.diagnostic_only,
+                search_window=args.search_window,
+                knn_neighbors=args.knn_neighbors,
+                min_anchor_score=args.min_anchor_score,
+                min_review_score=args.min_review_score,
+                min_anchor_count=args.min_anchor_count,
+                overlap_ransac=args.overlap_ransac,
+                overlap_candidate_count=args.overlap_candidate_count,
+                overlap_ransac_trials=args.overlap_ransac_trials,
+                overlap_min_descriptor_score=args.overlap_min_descriptor_score,
+                overlap_allow_scale=args.overlap_allow_scale,
+                group_correspondence=args.group_correspondence,
+                group_candidate_count=args.group_candidate_count,
+                group_ransac_trials=args.group_ransac_trials,
+                group_min_descriptor_score=args.group_min_descriptor_score,
+                group_residual_limit_um=args.group_residual_limit_um,
+                group_min_component_area_um2=args.group_min_component_area_um2,
+                save_preview_png=not args.no_preview,
+                overwrite=args.overwrite,
+                dpi=args.dpi,
             )
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))

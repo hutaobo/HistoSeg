@@ -37,6 +37,11 @@ from .multislice import (
     write_3d_contour_points,
     write_3d_visualization_html,
 )
+from .label_free_alignment import (
+    LabelFreeContourAlignmentConfig,
+    LabelFreeContourAlignmentResult,
+    align_contours_label_free,
+)
 from .cell_cloud import (
     CELL_CLOUD_ALIGNED_XY_OBSM_KEY,
     CELL_CLOUD_OBS_SLICE_KEY,
@@ -151,6 +156,8 @@ __all__ = [
     "GlandQCAtlasResult",
     "GlandSurfaceAtlasConfig",
     "GlandSurfaceAtlasResult",
+    "LabelFreeContourAlignmentConfig",
+    "LabelFreeContourAlignmentResult",
     "LOCAL_Z_ORIENTATION_SCHEMA_VERSION",
     "LOCAL_Z_ORIENTATION_STATES",
     "LocalZOrientationConfig",
@@ -167,6 +174,7 @@ __all__ = [
     "ThreeDStackReconstructionConfig",
     "ThreeDStackReconstructionResult",
     "TranslationResult",
+    "align_contours_label_free",
     "apply_similarity_to_points",
     "compute_hotspot_overlap_metrics",
     "compute_hotspot_sdf_metrics",
