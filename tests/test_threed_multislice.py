@@ -43,6 +43,31 @@ def test_discover_xenium_slices_uses_numeric_order(tmp_path):
     assert [item.order for item in slices] == [1, 2, 3]
 
 
+def test_discover_xenium_slices_accepts_pyxenium_slide_zarr(tmp_path):
+    for name in [
+        "A079-C-008_10.pyxenium.slide.zarr",
+        "A079-C-008_1.pyxenium.slide.zarr",
+        "A079-C-008_2.pyxenium.slide.zarr",
+    ]:
+        slide = tmp_path / name
+        (slide / "tables").mkdir(parents=True)
+        (slide / "zarr.json").write_text("{}", encoding="utf-8")
+
+    slices = discover_xenium_slices(tmp_path, sample_glob="*.pyxenium.slide.zarr")
+
+    assert [item.sample_id for item in slices] == [
+        "A079-C-008_1",
+        "A079-C-008_2",
+        "A079-C-008_10",
+    ]
+    assert [item.xenium_dir.name for item in slices] == [
+        "A079-C-008_1.pyxenium.slide.zarr",
+        "A079-C-008_2.pyxenium.slide.zarr",
+        "A079-C-008_10.pyxenium.slide.zarr",
+    ]
+    assert [item.order for item in slices] == [1, 2, 3]
+
+
 def test_segmentation_strategy_parses_one_structure_per_line(tmp_path):
     strategy = tmp_path / "segmentationstrategy.txt"
     strategy.write_text("18\n31,3,30\n", encoding="utf-8")

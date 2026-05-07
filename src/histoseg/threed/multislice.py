@@ -525,7 +525,7 @@ def discover_xenium_slices(
         slices.append(
             _SliceInput(
                 order=0,
-                sample_id=candidate.name,
+                sample_id=_sample_id_from_slice_path(candidate),
                 sample_dir=candidate,
                 xenium_dir=xenium_dir,
             )
@@ -1705,6 +1705,9 @@ def _build_slice_contours(
 
 
 def _read_xenium_slide(xenium_dir: Path, cfg: ThreeDStackReconstructionConfig) -> Any:
+    if _looks_like_pyxenium_slide_zarr(xenium_dir):
+        return _read_pyxenium_slide_zarr(xenium_dir)
+
     read_xenium = _import_pyxenium_read_xenium()
     try:
         return read_xenium(
@@ -1720,6 +1723,23 @@ def _read_xenium_slide(xenium_dir: Path, cfg: ThreeDStackReconstructionConfig) -
         )
     except TypeError:
         return read_xenium(str(xenium_dir), as_="slide")
+
+
+def _read_pyxenium_slide_zarr(slide_zarr: Path) -> Any:
+    try:
+        from pyXenium.io import read_xenium_slide
+
+        return read_xenium_slide(str(slide_zarr))
+    except Exception as first_error:
+        try:
+            from pyXenium.io import read_slide
+
+            return read_slide(str(slide_zarr))
+        except Exception as second_error:
+            raise ImportError(
+                "Reading .pyxenium.slide.zarr inputs requires pyXenium with "
+                "read_xenium_slide or read_slide support."
+            ) from second_error or first_error
 
 
 def _import_pyxenium_read_xenium():
@@ -1912,10 +1932,30 @@ def _find_xenium_output_dir(path: Path) -> Path | None:
 
 
 def _looks_like_xenium_dir(path: Path) -> bool:
-    return (path / "cells.parquet").exists() and (
-        (path / "cell_feature_matrix.h5").exists()
-        or (path / "cell_feature_matrix").exists()
+    return _looks_like_pyxenium_slide_zarr(path) or (
+        (path / "cells.parquet").exists()
+        and (
+            (path / "cell_feature_matrix.h5").exists()
+            or (path / "cell_feature_matrix").exists()
+        )
     )
+
+
+def _looks_like_pyxenium_slide_zarr(path: Path) -> bool:
+    return (
+        path.is_dir()
+        and path.name.endswith(".pyxenium.slide.zarr")
+        and (path / "zarr.json").exists()
+        and (path / "tables").exists()
+    )
+
+
+def _sample_id_from_slice_path(path: Path) -> str:
+    name = path.name
+    suffix = ".pyxenium.slide.zarr"
+    if name.endswith(suffix):
+        return name[: -len(suffix)]
+    return name
 
 
 def _sample_sort_key(sample_id: str) -> tuple[int, str]:
