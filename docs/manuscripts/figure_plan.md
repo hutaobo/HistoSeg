@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # HistoSeg Manuscript Figure Plan
 
 This plan defines the burden of proof for the first HistoSeg methods paper.

@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # HistoSeg Main Text Draft
 
 **Frozen baseline:** `publication-alpha-20260503` at commit `2361fbc`

@@ -62,6 +62,12 @@ contours from those definitions.
 - Xenium Explorer annotation exports.
 - Hugging Face dataset helper workflows for Xenium-style public datasets.
 
+For an interactive dendrogram-guided entry point, use the
+{doc}`AI Driven Spatial Pathologist Serve app <ai_driven_spatial_pathologist_serve_app>`.
+The web app builds candidate structures from uploaded Xenium cluster tables,
+lets you select dendrogram branches, and then runs the multi-structure contour
+workflow with downloadable HistoSeg outputs.
+
 ## Inputs And Outputs
 
 Pattern1 and multi-structure contour workflows use:
@@ -185,5 +191,6 @@ histoseg-contour adjacency --contours-csv contours.csv --groupby structure --out
 
 ## Related Pages
 
+- {doc}`ai_driven_spatial_pathologist_serve_app`
 - {doc}`tutorials/pattern1_isoline`
 - {doc}`workflows/contour_generation`

@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # CODA-Inspired Tournament Backend Report
 
 Date: 2026-05-04

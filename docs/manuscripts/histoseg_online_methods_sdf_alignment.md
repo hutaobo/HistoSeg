@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # HistoSeg Online Methods: Semantic Contours, SDF Quantification And Topology-Aware Alignment
 
 This draft describes the current HistoSeg implementation from semantic contour

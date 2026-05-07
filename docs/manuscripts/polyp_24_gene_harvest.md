@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # Polyp 24-Gene 3D Harvest Memo
 
 ## Scope

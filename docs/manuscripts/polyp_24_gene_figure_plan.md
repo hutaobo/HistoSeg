@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # Polyp 24-Gene Figure Plan
 
 ## Figure 1: 32-Slice 3D Reconstruction And Cell-Cloud Validation

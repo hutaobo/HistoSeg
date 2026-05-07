@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # HistoSeg Figure Legends Draft
 
 **Draft baseline:** manuscript evidence anchored to `publication-alpha-20260503`

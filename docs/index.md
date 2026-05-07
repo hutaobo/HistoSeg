@@ -192,6 +192,7 @@ Track the package direction and the public feature groups exposed today.
 :caption: Additional Guides
 
 contour
+ai_driven_spatial_pathologist_serve_app
 ```
 
 ```{toctree}
