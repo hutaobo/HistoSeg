@@ -72,6 +72,19 @@ and hypothesis generation about local continuity. They should not be presented
 as strong 3D biological claims without denser sectioning, independent samples,
 or orthogonal validation.
 
+## Label-Free Cross-Group Alignment
+
+When two adjacent contour slices were clustered independently, their
+`assigned_structure` names may not be comparable across files. In that setting,
+HistoSeg can run a label-free preflight that treats labels only as within-slice
+groups, evaluates cross-group contour constellations, and estimates the moving
+slice transform from the best local overlap anchor. The workflow preserves all
+original labels and does not perform semantic harmonization.
+
+See the {doc}`validated breast label-free group alignment example
+<label_free_alignment>` for the interactive RTD overlay and command used to
+align `breastrep1S2.geojson` with `breastrep2S3.geojson`.
+
 ## Python API
 
 ```python
