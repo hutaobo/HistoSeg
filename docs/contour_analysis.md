@@ -9,8 +9,10 @@ Contour Analysis is the spatial or cell-coordinate workflow group exposed as
 `histoseg.contour`. Use it when the primary input is a table of cells with
 spatial coordinates and cluster assignments, and the goal is to generate
 review-ready semantic spatial structures rather than image-first segmentation
-masks. Structure groups can be curated directly or selected after sfplot
-Search-and-Find / cophenetic StructureMap analysis.
+masks. Its central contribution is a StructureMap-guided semantic contour
+layer: sfplot Search-and-Find / cophenetic StructureMap relationships can
+define or audit spatially coherent structure groups, and HistoSeg converts
+selected or curated groups into continuous named contours.
 :::
 
 :::{div} hs-metadata
@@ -26,7 +28,7 @@ Choose this workflow group when you want to:
 - extract Pattern1 isolines from clustered cell coordinates;
 - extract gene/transcript-defined isolines from Xenium transcript tables;
 - partition cells into multiple named structures with non-overlapping contours;
-- convert selected or curated structure groups into continuous semantic
+- convert sfplot-supported or curated structure groups into continuous semantic
   contours for 3D reconstruction and SDF quantification;
 - export Xenium Explorer-compatible review layers; or
 - analyze how generated structures touch, overlap, or enclose one another.
@@ -34,11 +36,12 @@ Choose this workflow group when you want to:
 ## Semantic Contour Chain
 
 HistoSeg's contour workflow is designed to bridge relationship-level structure
-analysis and geometry-level reconstruction. sfplot can be used upstream to
-compute Search-and-Find relationships and cophenetic StructureMap summaries
-between spatial labels. Those results help define or audit structure groups,
-while HistoSeg produces the final continuous contour geometry. HistoSeg consumes
-selected or curated structure groups and synthesizes continuous semantic
+analysis and geometry-level reconstruction. In the relationship layer, sfplot
+can compute directed Searcher-Findee distance matrices and cophenetic
+StructureMap summaries from coordinate tables or Xenium objects. Those results
+help define or audit cluster groups that behave as spatially coherent tissue
+structures. In the contour layer, HistoSeg consumes those selected groups, or
+equivalent curated strategy files, and synthesizes continuous semantic
 boundaries from the observed cells or transcripts.
 
 The implemented chain is:
@@ -54,8 +57,35 @@ The selection step remains explicit: users provide target clusters, transcript
 targets, or multi-structure specifications, and HistoSeg builds the geometric
 contours from those definitions.
 
+For single-target Pattern1-style contours, HistoSeg treats selected clusters as
+the target class, samples non-target and optional synthetic background points,
+fits a distance-weighted `KNeighborsRegressor` over spatial coordinates,
+smooths the predicted target-probability field with a Gaussian filter, masks
+the field to the tissue neighborhood, and extracts the configured isoline
+level, usually 0.5. Candidate loops are retained only when they contain enough
+target cells.
+
+For gene/transcript isolines, selected Xenium transcript coordinates are
+adapted into the same target-versus-background engine, with cell centroids
+providing the spatial background. For multi-structure contours, HistoSeg builds
+one smoothed density field per selected structure group, converts normalized
+density fields into posterior-like dominance maps, forms confident seed masks,
+resolves overlaps by posterior winners, fills unassigned tissue pixels from
+nearest seeds, and extracts non-overlapping named contour boundaries from the
+final partition. The result is a semantic contour set: each polygon carries a
+structure name or identifier and can be exported to Xenium Explorer, reviewed
+as a 2D artifact, or passed into HistoSeg 3D reconstruction.
+
+This separation is intentional. StructureMap analysis helps decide which labels
+belong together; HistoSeg contour generation turns that decision into explicit
+geometry; HistoSeg 3D then aligns and quantifies that geometry. Image-guided
+registration backends such as `coda-image` belong to the downstream 3D alignment
+stage and do not change the selected structure groups.
+
 ## Workflows
 
+- StructureMap-guided semantic contour synthesis from selected or curated
+  structure groups.
 - Pattern1 isoline contours from clustered cell coordinates.
 - Gene/transcript isoline contours from Xenium transcript tables.
 - Multi-structure contour partitioning.
@@ -75,7 +105,9 @@ Pattern1 and multi-structure contour workflows use:
 - `clusters.csv` with barcode and cluster columns.
 - `cells.parquet` with cell identifiers and x/y coordinates.
 - optional `tissue_boundary.csv` for tissue-aware background generation.
-- selected cluster IDs for the target Pattern1 or named structures.
+- selected cluster IDs for the target Pattern1 or named structures. These may
+  be selected from sfplot StructureMap interpretation or supplied as a curated
+  segmentation strategy.
 - contour vertices and preview PNGs.
 - region partition tables.
 - Xenium Explorer-compatible GeoJSON/CSV exports for multi-structure contours.

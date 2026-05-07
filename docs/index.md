@@ -19,12 +19,14 @@ history
   <p class="hs-tagline">StructureMap-guided semantic contours and 3D Xenium tissue reconstruction.</p>
   <p class="hs-lead">
     HistoSeg is a Python toolkit centered on same-sample, multi-slice Xenium
-    contour reconstruction. It turns sfplot Search-and-Find/StructureMap-guided
-    or curated structure groups into continuous semantic contours, then aligns
-    neighboring contour slices, builds 3D contour stacks, exports PLY/OBJ
-    meshes, and writes QC artifacts. <code>histoseg.contour</code> and
-    <code>histoseg.he</code> support the 2D spatial and image workflows that
-    prepare those structures for reconstruction.
+    contour reconstruction. The <code>histoseg.contour</code> workflow converts
+    structure groups defined or audited by sfplot Search-and-Find / StructureMap
+    relationships, or by curated strategy files, into continuous named
+    contours. The flagship <code>histoseg.threed</code> workflow aligns those
+    semantic contour slices, builds 3D contour stacks, exports PLY/OBJ meshes,
+    writes QC artifacts, and supports SDF-based gene-structure quantification.
+    <code>histoseg.he</code> supports image workflows that prepare or review
+    structures for reconstruction.
   </p>
   <div class="hs-link-row">
     <a href="3d_analysis.html">3D reconstruction</a>
@@ -39,6 +41,7 @@ history
 
 :::{div} hs-metadata
 <span>Same-sample 3D Xenium reconstruction</span>
+<span>StructureMap-guided semantic contour generation</span>
 <span>TPS soft alignment for neighboring contour slices</span>
 <span>PLY/OBJ mesh export and QC reports</span>
 <span>StructureMap-guided semantic 2D contours</span>
@@ -47,8 +50,10 @@ history
 
 ```{note}
 Start with **3D Reconstruction** when the goal is a multi-slice Xenium contour
-stack or 3D mesh. Use **Contour Analysis** to generate 2D structures from
-cell-coordinate data, and **H&E Analysis** when the primary input is an image.
+stack, SDF quantification, or 3D mesh. Use **Contour Analysis** to convert
+StructureMap-supported or curated structure groups into 2D semantic contours
+from cell-coordinate data, and **H&E Analysis** when the primary input is an
+image.
 ```
 
 ## Start Here
@@ -129,8 +134,8 @@ meshes.
 :link: contour_analysis
 :link-type: doc
 
-Extract Pattern1 isolines, build StructureMap-guided named structure partitions,
-and export Xenium-ready review layers.
+Convert StructureMap-supported or curated groups into Pattern1, gene, and
+named multi-structure contours.
 :::
 
 :::{grid-item-card} H&E Analysis

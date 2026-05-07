@@ -13,7 +13,7 @@ GEO/Zenodo deposits are assigned.
 
 ## Working Title
 
-HistoSeg: StructureMap-guided semantic contours for signed-distance
+HistoSeg: StructureMap-guided semantic contour synthesis, signed-distance
 reconstruction and 3D spatial quantification of multi-slice spatial
 transcriptomics tissue architecture
 
@@ -61,6 +61,17 @@ render a volume. It must preserve slice provenance, guard against topological
 fold-over, expose its alignment state, and define gene-structure association in
 physical units that remain interpretable under anisotropic sampling.
 
+An additional bottleneck is semantic geometry. A 3D tissue object is only as
+interpretable as the 2D structures that enter the stack. HistoSeg addresses
+this by connecting two layers of analysis developed in the same method family:
+sfplot provides Search-and-Find and cophenetic StructureMap relationships for
+identifying or auditing spatially coherent structure groups, and HistoSeg
+converts selected or curated groups into continuous named contours through
+isoline and multi-structure partitioning. These contours are not arbitrary
+image masks. They are semantic tissue boundaries that retain structure labels,
+can be reviewed in Xenium Explorer, and become the geometric primitives for
+alignment, rasterization and SDF quantification.
+
 HistoSeg addresses this problem by treating 3D reconstruction as a set of
 explicit contracts, beginning with semantic contour definition. The upstream
 sfplot layer computes Search-and-Find relationships and cophenetic StructureMap
@@ -76,7 +87,10 @@ registration step followed by optional thin-plate spline soft alignment, each
 accepted only when objective geometry and topology checks pass. The hard step
 estimates rotation, translation and uniform scale; it is therefore not a
 pure rigid-only registration, although rigid registration is its scale-fixed
-special case. Accepted contours define a stack manifest that anchors downstream
+special case. When the CODA-inspired backend is enabled, image-derived Radon
+and phase-correlation estimates are evaluated only as an alternative hard seed
+in this alignment stage; they do not alter the upstream semantic structure
+definitions. Accepted contours define a stack manifest that anchors downstream
 cell-cloud projection, surface visualization and gene-structure quantification.
 For quantification, HistoSeg rasterizes aligned contours into 3D structure masks
 and computes signed-distance fields using
@@ -86,17 +100,18 @@ outside it, and undefined empty-mask cases are reported as NaN summaries with
 zero inside/touching fractions rather than as hidden failures.
 
 Here we describe the HistoSeg 3D workflow and validate its core SDF
-quantification contract. We first show how topology-aware alignment and
-manifest-based provenance convert a serial Xenium stack into an auditable 3D
-analysis object. We then demonstrate that the implemented SDF metrics have
-stable behavior in unit-scale truth tables, empty-mask edge cases and a
-synthetic anisotropy sweep. Finally, we apply the workflow to a 32-slice polyp
-dataset containing 2,785,128 aligned cells and a 24-gene marker panel. The
-analysis resolves interpretable 3D compartments, including a mixed
-stromal-immune Structure 5 niche with embedded GREM1, fibroblast, extracellular
-matrix, T-cell and B-cell marker signals. These results position HistoSeg as a
-reproducible foundation for moving spatial transcriptomics analysis from
-section-level visualization toward volumetric tissue architecture.
+quantification contract. We first show how StructureMap-supported semantic
+contours, topology-aware alignment and manifest-based provenance convert a
+serial Xenium stack into an auditable 3D analysis object. We then demonstrate
+that the implemented SDF metrics have stable behavior in unit-scale truth
+tables, empty-mask edge cases and a synthetic anisotropy sweep. Finally, we
+apply the workflow to a 32-slice polyp dataset containing 2,785,128 aligned
+cells and a 24-gene marker panel. The analysis resolves interpretable 3D
+compartments, including a mixed stromal-immune Structure 5 niche with embedded
+GREM1, fibroblast, extracellular matrix, T-cell and B-cell marker signals.
+These results position HistoSeg as a reproducible foundation for moving spatial
+transcriptomics analysis from section-level visualization toward volumetric
+tissue architecture.
 
 ## Results
 
@@ -122,6 +137,9 @@ slice, HistoSeg first aligns the moving slice to the previously accepted slice.
 The hard step estimates rotation, translation and uniform scale by optimizing
 contour-union IoU from PCA/centroid-derived and multi-start seeds; it is
 accepted only if the union IoU between matched structures does not decrease.
+The optional CODA-inspired backend adds an image-derived hard-seed candidate
+to this step and promotes it only when it improves hard-alignment IoU, leaving
+the semantic contour definitions unchanged.
 Soft alignment is then fit from matched structure-boundary landmarks and
 accepted only when topology and geometry quality-control checks pass. With the
 default per-structure acceptance rule, a structure keeps its soft-aligned
