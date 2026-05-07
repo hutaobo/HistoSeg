@@ -148,6 +148,13 @@ class ThreeDStackReconstructionConfig:
     vertical_qc_backend: str = "none"
     apply_local_z_flip: bool = False
     transcript_relpath: str = "transcripts.parquet"
+    orientation_spatial_unit: str = "auto"
+    contour_group_property: str = "structure"
+    contour_min_transcripts: int = 50
+    contour_match_min_iou: float = 0.01
+    contour_match_max_distance_um: float = 120.0
+    orientation_bootstrap_iterations: int = 100
+    orientation_bootstrap_seed: int = 0
     ovrlpy_n_components: int = 20
     ovrlpy_n_workers: int = 1
     ovrlpy_fit_umap: bool = True
@@ -439,6 +446,13 @@ def run_3d_stack_reconstruction(
                 sample_glob=cfg.sample_glob,
                 transcript_relpath=cfg.transcript_relpath,
                 pixel_size_um=cfg.xenium_pixel_size_um,
+                orientation_spatial_unit=cfg.orientation_spatial_unit,
+                contour_group_property=cfg.contour_group_property,
+                contour_min_transcripts=cfg.contour_min_transcripts,
+                contour_match_min_iou=cfg.contour_match_min_iou,
+                contour_match_max_distance_um=cfg.contour_match_max_distance_um,
+                orientation_bootstrap_iterations=cfg.orientation_bootstrap_iterations,
+                orientation_bootstrap_seed=cfg.orientation_bootstrap_seed,
                 vertical_qc_backend=cfg.vertical_qc_backend,
                 apply_local_z_flip=cfg.apply_local_z_flip,
                 ovrlpy_n_components=cfg.ovrlpy_n_components,
@@ -1564,6 +1578,16 @@ def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
         raise ValueError("label_free_group_min_component_area_um2 must be non-negative.")
     if cfg.local_z_orientation not in {"off", "auto"}:
         raise ValueError("local_z_orientation must be 'off' or 'auto'.")
+    if cfg.orientation_spatial_unit not in {"auto", "global", "contour"}:
+        raise ValueError("orientation_spatial_unit must be 'auto', 'global', or 'contour'.")
+    if cfg.contour_min_transcripts < 1:
+        raise ValueError("contour_min_transcripts must be at least 1.")
+    if not (0.0 <= cfg.contour_match_min_iou <= 1.0):
+        raise ValueError("contour_match_min_iou must be in [0, 1].")
+    if cfg.contour_match_max_distance_um < 0:
+        raise ValueError("contour_match_max_distance_um must be non-negative.")
+    if cfg.orientation_bootstrap_iterations < 0:
+        raise ValueError("orientation_bootstrap_iterations must be non-negative.")
     if cfg.vertical_qc_backend not in {"none", "ovrlpy"}:
         raise ValueError("vertical_qc_backend must be 'none' or 'ovrlpy'.")
     if cfg.ovrlpy_n_components < 1:

@@ -650,6 +650,18 @@ def main(argv: Sequence[str] | None = None) -> None:
         default="transcripts.parquet",
         help="Transcript table path relative to each Xenium output directory.",
     )
+    stack.add_argument(
+        "--orientation-spatial-unit",
+        default="auto",
+        choices=["auto", "global", "contour"],
+        help="Spatial unit used by local-z orientation scoring.",
+    )
+    stack.add_argument("--contour-group-property", default="structure")
+    stack.add_argument("--contour-min-transcripts", type=int, default=50)
+    stack.add_argument("--contour-match-min-iou", type=float, default=0.01)
+    stack.add_argument("--contour-match-max-distance-um", type=float, default=120.0)
+    stack.add_argument("--orientation-bootstrap-iterations", type=int, default=100)
+    stack.add_argument("--orientation-bootstrap-seed", type=int, default=0)
     stack.add_argument("--ovrlpy-n-components", type=int, default=20)
     stack.add_argument("--ovrlpy-n-workers", type=int, default=1)
     stack.add_argument(
@@ -680,6 +692,18 @@ def main(argv: Sequence[str] | None = None) -> None:
     local_z.add_argument("--min-band-transcripts", type=int, default=10)
     local_z.add_argument("--max-signature-genes", type=int, default=256)
     local_z.add_argument("--low-confidence-margin", type=float, default=0.02)
+    local_z.add_argument(
+        "--orientation-spatial-unit",
+        default="auto",
+        choices=["auto", "global", "contour"],
+        help="Use contour-aware scoring when available, force global scoring, or force contour scoring.",
+    )
+    local_z.add_argument("--contour-group-property", default="structure")
+    local_z.add_argument("--contour-min-transcripts", type=int, default=50)
+    local_z.add_argument("--contour-match-min-iou", type=float, default=0.01)
+    local_z.add_argument("--contour-match-max-distance-um", type=float, default=120.0)
+    local_z.add_argument("--orientation-bootstrap-iterations", type=int, default=100)
+    local_z.add_argument("--orientation-bootstrap-seed", type=int, default=0)
     local_z.add_argument(
         "--vertical-qc-backend",
         default="ovrlpy",
@@ -1180,6 +1204,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                 min_band_transcripts=args.min_band_transcripts,
                 max_signature_genes=args.max_signature_genes,
                 low_confidence_margin=args.low_confidence_margin,
+                orientation_spatial_unit=args.orientation_spatial_unit,
+                contour_group_property=args.contour_group_property,
+                contour_min_transcripts=args.contour_min_transcripts,
+                contour_match_min_iou=args.contour_match_min_iou,
+                contour_match_max_distance_um=args.contour_match_max_distance_um,
+                orientation_bootstrap_iterations=args.orientation_bootstrap_iterations,
+                orientation_bootstrap_seed=args.orientation_bootstrap_seed,
                 vertical_qc_backend=args.vertical_qc_backend,
                 apply_local_z_flip=args.apply_local_z_flip,
                 ovrlpy_kde_bandwidth=args.ovrlpy_kde_bandwidth,
@@ -1535,6 +1566,13 @@ def main(argv: Sequence[str] | None = None) -> None:
                 vertical_qc_backend=args.vertical_qc_backend,
                 apply_local_z_flip=args.apply_local_z_flip,
                 transcript_relpath=args.transcript_relpath,
+                orientation_spatial_unit=args.orientation_spatial_unit,
+                contour_group_property=args.contour_group_property,
+                contour_min_transcripts=args.contour_min_transcripts,
+                contour_match_min_iou=args.contour_match_min_iou,
+                contour_match_max_distance_um=args.contour_match_max_distance_um,
+                orientation_bootstrap_iterations=args.orientation_bootstrap_iterations,
+                orientation_bootstrap_seed=args.orientation_bootstrap_seed,
                 ovrlpy_n_components=args.ovrlpy_n_components,
                 ovrlpy_n_workers=args.ovrlpy_n_workers,
                 ovrlpy_fit_umap=args.ovrlpy_fit_umap,
