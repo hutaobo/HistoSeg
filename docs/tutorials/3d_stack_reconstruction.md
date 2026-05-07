@@ -153,6 +153,101 @@ Cubes surface. The Marching Cubes `--mesh-level` should be strictly between
 fragments, or `--no-mesh-cleanup` to keep every component for forensic review.
 The mesh manifest records component counts before and after filtering.
 
+## Contour-Aware Transcript Local-Z Validation
+
+After the contour stack was fixed, the 32 native `pyXeniumSlide` zarr stores
+were processed on A100 with transcript-only local-z correction and
+contour-aware Ovrlpy QC. This run reused the existing stack metadata and did
+not regenerate cell/cloud outputs.
+
+Run root:
+
+```text
+/data/taobo.hu/projects/histoseg_polyp_xeniumslide/a100_contour_local_z_20260507
+```
+
+Command:
+
+```bash
+histoseg-3d infer-local-z-orientation \
+  --stack-root "$RUN/stack" \
+  --xenium-root /data/taobo.hu/projects/histoseg_polyp_xeniumslide/slides \
+  --out-dir "$RUN/output/full" \
+  --sample-glob "*.pyxenium.slide.zarr" \
+  --vertical-qc-backend ovrlpy \
+  --apply-local-z-flip \
+  --orientation-spatial-unit contour \
+  --contour-group-property structure \
+  --contour-min-transcripts 50 \
+  --contour-match-min-iou 0.01 \
+  --contour-match-max-distance-um 120 \
+  --orientation-bootstrap-iterations 100 \
+  --orientation-bootstrap-seed 0 \
+  --no-ovrlpy-fit-umap \
+  --ovrlpy-min-transcripts 3 \
+  --ovrlpy-n-components 10 \
+  --ovrlpy-n-workers 1 \
+  --chunk-size 250000
+```
+
+Validation summary from the 2026-05-07 A100 full run:
+
+| Metric | Value |
+| --- | ---: |
+| Manifest rows | 32 |
+| Aligned transcript rows | 174,478,290 |
+| Parquet row groups | 184 |
+| Parquet size | 9,023,941,741 bytes |
+| Slice contour profiles | 32 / 32 |
+| Ovrlpy QC files | 32 signal-integrity, 32 signal-map, 32 doublet CSV |
+| Adjacent edges with contour pairs | 31 / 31 |
+| Contour pair rows | 6,541 |
+| Contour pairs per edge, min/median/max | 165 / 211 / 252 |
+| Scoring backend | contour for 32 / 32 slices |
+| Fallback edge fraction | 0.0 |
+| Preserve / reverse calls | 16 / 16 |
+| Best score / second score | 0.982684 / 0.982298 |
+| Confidence margin | 0.000386 |
+| Bootstrap support, min/median/mean/max | 0.55 / 0.98 / 0.973 / 1.00 |
+| Bootstrap support below 0.70 | 1 slice |
+| Wall clock time | 5:55:10 |
+| Peak RSS | 9.06 GiB |
+
+The selected orientations alternated with slice order: `A079-C-008_1` was
+`preserve`, `A079-C-008_2` was `reverse`, and the odd/even pattern continued
+through `A079-C-008_40`. The run was accepted because all row-count and QC-file
+checks passed and every adjacent edge used contour scoring without global
+fallback.
+
+The result is still marked low confidence in the manifest. The selected path
+was only slightly better than the second-best path, and the first slice had
+bootstrap support of 0.55. HistoSeg therefore applies the forced local-z
+correction requested by the workflow while preserving the low-confidence QC
+reason: `score_margin_below_threshold;bootstrap_support_below_threshold`.
+
+The compact machine-readable summaries were written on A100 as:
+
+```text
+$RUN/output/full/a100_contour_local_z_summary.json
+$RUN/output/full/a100_contour_local_z_summary.csv
+```
+
+The runtime monitor used for manuscript timing was written to:
+
+```text
+$RUN/logs/runtime_speed_monitor.csv
+$RUN/logs/runtime_speed_summary.txt
+```
+
+The speed monitor recorded contour profile generation at about 13.17 profiles
+per hour and the observed Parquet-writing phase at about 1.20 MiB/s. These
+numbers are run-environment measurements, not algorithmic complexity claims.
+
+Treat this result as vertical QC and validation evidence: it supports a
+consistent transcript local-z orientation decision for this 32-slice polyp run,
+but it is not standalone proof of biological 3D structure without denser
+sampling or orthogonal validation.
+
 ## Limited Slice Guidance
 
 With only a limited number of 2D sections, this workflow is useful for checking

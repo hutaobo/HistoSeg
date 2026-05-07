@@ -31,6 +31,8 @@ The flagship 3D surface currently has these public workflows:
 - Per-gland 3D QC atlas rendering from aligned GeoJSON contours, assigning
   cross-slice gland IDs and writing local zoom pages for small-component
   reconstruction review.
+- Transcript-only local-z orientation correction for Xenium transcript
+  coordinates, with contour-aware Ovrlpy vertical QC and continuity scoring.
 
 ## Current Scope
 
@@ -295,6 +297,77 @@ and min/median/max TPS area ratios. These columns are the first stop for
 broken or folded reconstruction triage before inspecting overlay PNGs and HTML
 views.
 
+## Transcript Local-Z Orientation
+
+Xenium transcript tables can contain a slice-local `z` coordinate, while
+HistoSeg cell and contour reconstruction treats each physical section as one
+stack plane. HistoSeg therefore keeps the existing contour, cell, and `x/y`
+stack alignment unchanged, and writes a separate transcript-only 3D layer that
+can flip the local transcript `z` direction per slice.
+
+The `infer-local-z-orientation` workflow considers two states for each slice:
+`preserve` and `reverse`. In global mode it compares top and bottom molecular
+signatures between adjacent slices. In contour mode it first assigns aligned
+transcripts to individual aligned contour polygons, builds lower and upper
+local-z layer profiles inside each contour, masks or down-weights regions near
+Ovrlpy doublet calls, and scores adjacent-slice continuity between matched
+contour layers. A dynamic-programming pass then selects the sequence of
+per-slice states that maximizes corrected upper-to-lower molecular continuity.
+
+`--orientation-spatial-unit auto` uses contour-aware scoring when
+`aligned_slice_manifest.csv` contains loadable aligned GeoJSON paths, otherwise
+it falls back to global scoring. `--orientation-spatial-unit contour` records
+per-edge global fallbacks when too few contour pairs can be matched, and
+`--orientation-spatial-unit global` preserves the original slide-global
+signature method. Bootstrap resampling over matched contour pairs reports
+per-slice support and low-confidence reasons.
+
+The corrected transcript coordinates are:
+
+```text
+local_z_corrected_um = z_raw_um
+```
+
+for `preserve`, and:
+
+```text
+local_z_corrected_um = z_min_um + z_max_um - z_raw_um
+```
+
+for `reverse`. The final transcript stack coordinate is:
+
+```text
+z_3d_um = slice_stack_z_um + (local_z_corrected_um - local_z_mid_um)
+```
+
+Cell/cloud outputs are intentionally unchanged because cells do not carry this
+transcript-level local z stack.
+
+```bash
+histoseg-3d infer-local-z-orientation \
+  --stack-root outputs/polyp_3d_reconstruction \
+  --xenium-root data/polyp/xenium_slides \
+  --out-dir outputs/polyp_local_z \
+  --sample-glob "*.pyxenium.slide.zarr" \
+  --vertical-qc-backend ovrlpy \
+  --apply-local-z-flip \
+  --orientation-spatial-unit contour \
+  --contour-group-property structure \
+  --contour-min-transcripts 50 \
+  --contour-match-min-iou 0.01 \
+  --contour-match-max-distance-um 120 \
+  --orientation-bootstrap-iterations 100 \
+  --no-ovrlpy-fit-umap \
+  --ovrlpy-min-transcripts 3 \
+  --chunk-size 250000
+```
+
+This workflow is a QC and validation layer. Ovrlpy-derived doublets,
+signal-integrity maps, contour-level layer profiles, and adjacent-slice
+continuity can support hypotheses about vertical overlaps, tissue folds,
+smears, and layer-like molecular signals, but they are not standalone proof of
+biological 3D structure without denser sampling or orthogonal validation.
+
 Render aligned cells into a Plotly/WebGL HTML view:
 
 ```bash
@@ -401,6 +474,18 @@ Multi-slice reconstruction writes:
 - `gland_instances/slice_gland_instances.geojson`,
   `gland_instance_tracks.csv`, `gland_instance_qc_index.csv`, and
   `gland_instance_atlas.html` from `detect-gland-instances`
+
+Transcript local-z orientation writes:
+
+- `local_z_orientation_manifest.csv`
+- `aligned_transcripts_3d.parquet`
+- `vertical_qc/<sample_id>/signal_integrity.npy`
+- `vertical_qc/<sample_id>/signal_map.npy`
+- `vertical_qc/<sample_id>/doublets.csv`
+- `vertical_qc/<sample_id>/contour_layer_profiles.parquet`
+- `vertical_qc/contour_pair_continuity.csv`
+- `vertical_qc/contour_bootstrap_support.csv`
+- `vertical_qc/biological_z_report.html`
 
 Mesh cleanup removes tiny disconnected fragments by default when a minimum
 component volume is provided. Use `--min-mesh-component-volume-um3` to set the
