@@ -45,6 +45,30 @@ histoseg-3d align-contours-label-free \
   --overwrite
 ```
 
+## Stack Reconstruction Integration
+
+The same group-correspondence logic is also available in
+`histoseg-3d reconstruct-stack`. The default stack backend is now
+`--registration-backend auto`, which evaluates the semantic contour seed and the
+label-free group seed for each adjacent pair. The label-free candidate is used
+only when the anchor transform is accepted, the number of used anchor pairs is
+sufficient, and the median residual is below the configured threshold.
+
+```bash
+histoseg-3d reconstruct-stack \
+  --xenium-root stack_root \
+  --segmentation-strategy segmentationstrategy.txt \
+  --out-dir outputs/stack_3d \
+  --registration-backend auto
+```
+
+For independent contour files, force the label-free seed with
+`--registration-backend label-free-group`. The stack wrapper calls the
+label-free hard seed without internal TPS refinement, then applies the
+stack-level semantic TPS policy. If the selected fixed and moving groups have
+different names, HistoSeg skips semantic TPS for that pair and records
+`semantic_soft_skipped_reason="cross_named_label_free_group_match"`.
+
 ## Interpretation
 
 This mode is for cases where two contour slices have a real spatial overlap but
@@ -59,3 +83,8 @@ The output should be read as a geometric preflight and QC result. It identifies
 which local contour constellation can act as the alignment anchor, then moves
 the full moving slice according to that local transform. Regions outside the
 overlapping tissue area are allowed to remain non-overlapping.
+
+Label-free group alignment does not solve semantic harmonization. The aligned
+GeoJSON preserves the original labels from the moving file, and any downstream
+3D analysis that requires cross-slice biological identity should add a separate
+label review or harmonization step.

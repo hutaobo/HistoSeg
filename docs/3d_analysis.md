@@ -85,6 +85,15 @@ See the {doc}`validated breast label-free group alignment example
 <label_free_alignment>` for the interactive RTD overlay and command used to
 align `breastrep1S2.geojson` with `breastrep2S3.geojson`.
 
+The same group-correspondence seed is available inside stack reconstruction.
+With the default `--registration-backend auto`, HistoSeg evaluates both the
+standard semantic contour seed and the label-free group seed. The label-free
+seed is selected only when the anchor transform is accepted, enough anchor
+pairs are used, and the median residual is below the configured limit. If the
+selected label-free seed matches different fixed and moving group names,
+semantic TPS refinement is skipped for that slice pair because cross-slice
+biological structure identity has not been harmonized.
+
 ## Python API
 
 ```python
@@ -235,12 +244,24 @@ histoseg-3d reconstruct-stack \
 Set `--mesh-smoothing-sigma-um 0` to disable the 3D Gaussian smoothing step.
 `--mesh-level` must stay between `0` and `1` for the Marching Cubes surface.
 
-## CODA-Inspired Image Registration
+## Registration Backends
 
-`histoseg-3d reconstruct-stack` defaults to `--registration-backend contour-tps`,
-the established contour-derived hard alignment followed by topology-safe contour
-TPS refinement. For stacks where the tissue silhouette gives a better global
-initial pose, use `--registration-backend coda-image`.
+`histoseg-3d reconstruct-stack` defaults to `--registration-backend auto`.
+The automatic backend runs the established semantic contour seed
+(`contour-tps`) and the label-free cross-group seed (`label-free-group`) as hard
+alignment candidates. HistoSeg selects `label-free-group` only when its local
+anchor transform passes the configured acceptance checks; otherwise it falls
+back to `contour-tps`. For stacks where the tissue silhouette gives a better
+global initial pose, use `--registration-backend coda-image` explicitly.
+
+`label-free-group` is geometric only. It preserves original contour properties
+and can align a moving slice using a cross-named local contour group, but it
+does not rename structures or infer biological identity. When the selected
+fixed and moving groups have different names, HistoSeg records
+`semantic_soft_skipped_reason="cross_named_label_free_group_match"` and uses the
+label-free hard result directly for that pair.
+
+### CODA-Inspired Image Registration
 
 The `coda-image` backend is inspired by CODA's image-registration strategy from
 Kiemen et al., "CODA: quantitative 3D reconstruction of large tissues at

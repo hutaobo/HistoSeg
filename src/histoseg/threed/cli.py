@@ -482,13 +482,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     stack.add_argument("--min-component-pixels", type=int, default=180)
     stack.add_argument(
         "--registration-backend",
-        default="contour-tps",
-        choices=["contour-tps", "coda-image"],
+        default="auto",
+        choices=["auto", "contour-tps", "label-free-group", "coda-image"],
         help=(
-            "Hard-alignment seed backend. 'contour-tps' uses the existing contour "
-            "similarity seed before TPS. 'coda-image' uses a CODA-inspired tissue-mask "
-            f"Radon rotation plus phase-correlation translation seed (DOI: {CODA_METHOD_REFERENCE_DOI}) "
-            "before the same topology-safe contour TPS refinement."
+            "Hard-alignment seed backend. 'auto' compares same-label contour alignment "
+            "with label-free group correspondence and promotes the reliable seed. "
+            "'contour-tps' preserves the existing contour similarity seed. "
+            "'label-free-group' forces cross-group geometry matching. 'coda-image' uses "
+            f"a CODA-inspired tissue-mask seed (DOI: {CODA_METHOD_REFERENCE_DOI})."
         ),
     )
     stack.add_argument("--hard-alignment-maxiter", type=int, default=80)
@@ -516,6 +517,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         default=0.05,
         help="Fractional square-bounds padding for CODA-inspired mask rasterization.",
     )
+    stack.add_argument("--label-free-search-window", type=float, default=800.0)
+    stack.add_argument("--label-free-knn-neighbors", type=int, default=6)
+    stack.add_argument("--label-free-min-anchor-count", type=int, default=8)
+    stack.add_argument("--label-free-group-candidate-count", type=int, default=12)
+    stack.add_argument("--label-free-group-ransac-trials", type=int, default=15000)
+    stack.add_argument("--label-free-group-min-descriptor-score", type=float, default=0.35)
+    stack.add_argument("--label-free-group-residual-limit-um", type=float, default=900.0)
+    stack.add_argument("--label-free-group-min-component-area-um2", type=float, default=5000.0)
     stack.add_argument(
         "--sampling-distance-um",
         type=float,
@@ -1478,6 +1487,14 @@ def main(argv: Sequence[str] | None = None) -> None:
                 coda_angle_step=args.coda_angle_step,
                 coda_phase_upsample_factor=args.coda_phase_upsample_factor,
                 coda_mask_padding_fraction=args.coda_mask_padding_fraction,
+                label_free_search_window=args.label_free_search_window,
+                label_free_knn_neighbors=args.label_free_knn_neighbors,
+                label_free_min_anchor_count=args.label_free_min_anchor_count,
+                label_free_group_candidate_count=args.label_free_group_candidate_count,
+                label_free_group_ransac_trials=args.label_free_group_ransac_trials,
+                label_free_group_min_descriptor_score=args.label_free_group_min_descriptor_score,
+                label_free_group_residual_limit_um=args.label_free_group_residual_limit_um,
+                label_free_group_min_component_area_um2=args.label_free_group_min_component_area_um2,
                 global_drift_correction=args.global_drift_correction,
                 run_soft_alignment=not args.no_soft,
                 sampling_distance_um=args.sampling_distance_um,

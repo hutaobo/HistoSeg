@@ -435,7 +435,7 @@ def test_reconstruct_stack_cli_parses_registration_backend(monkeypatch, tmp_path
     )
 
     capsys.readouterr()
-    assert calls[0].registration_backend == "contour-tps"
+    assert calls[0].registration_backend == "auto"
     assert calls[1].registration_backend == "coda-image"
     assert calls[1].coda_raster_size == 128
     assert calls[1].coda_angle_step == 0.5

@@ -133,7 +133,10 @@ histoseg-3d reconstruct-stack \
 metrics, sampled 3D contour points, per-structure PLY/OBJ meshes, mesh QC
 metrics, and an interactive Plotly HTML visualization. Use
 `--mesh-smoothing-sigma-um 0` to disable 3D smoothing for direct Marching Cubes
-output.
+output. The stack CLI defaults to `--registration-backend auto`, which compares
+the standard semantic contour seed with a label-free cross-group seed and keeps
+labels unchanged when cross-named contour groups provide the best geometric
+anchor.
 
 Render an aligned 3D cell cloud as a browser-shareable Plotly HTML:
 

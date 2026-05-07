@@ -45,7 +45,6 @@ from .image_registration import (
     CodaImageRegistrationConfig,
     estimate_coda_image_registration,
 )
-
 try:  # Shapely 2.x fast vectorized containment.
     from shapely import contains_xy as _contains_xy
 except Exception:  # pragma: no cover - only used on older Shapely versions.
@@ -89,7 +88,7 @@ class ThreeDStackReconstructionConfig:
     min_cells: int = 500
     min_component_pixels: int = 180
     save_slice_preview_png: bool = False
-    registration_backend: str = "contour-tps"
+    registration_backend: str = "auto"
     hard_alignment_maxiter: int = 80
     # Enable multi-start similarity search (tries PCA rotation + 0/90/180/270° seeds).
     hard_alignment_multistart: bool = True
@@ -100,6 +99,14 @@ class ThreeDStackReconstructionConfig:
     coda_angle_step: float = 1.0
     coda_phase_upsample_factor: int = 1
     coda_mask_padding_fraction: float = 0.05
+    label_free_search_window: float = 800.0
+    label_free_knn_neighbors: int = 6
+    label_free_min_anchor_count: int = 8
+    label_free_group_candidate_count: int = 12
+    label_free_group_ransac_trials: int = 15000
+    label_free_group_min_descriptor_score: float = 0.35
+    label_free_group_residual_limit_um: float = 900.0
+    label_free_group_min_component_area_um2: float = 5000.0
     # Apply a linear drift correction after the full pairwise alignment chain to reduce
     # cumulative translation drift across the stack.
     global_drift_correction: bool = False
@@ -267,7 +274,20 @@ def run_3d_stack_reconstruction(
             summary_json=hard_summary_path,
         )
 
-        if cfg.run_soft_alignment:
+        semantic_soft_allowed, semantic_soft_skipped_reason = _semantic_soft_alignment_policy(
+            hard_summary
+        )
+        hard_summary = {
+            **hard_summary,
+            "semantic_soft_allowed": semantic_soft_allowed,
+            "semantic_soft_skipped_reason": (
+                semantic_soft_skipped_reason
+                if cfg.run_soft_alignment and not semantic_soft_allowed
+                else None
+            ),
+        }
+
+        if cfg.run_soft_alignment and semantic_soft_allowed:
             soft_result = run_3d_contour_reconstruction(
                 ThreeDContourReconstructionConfig(
                     fixed_geojson=fixed_path,
@@ -531,6 +551,14 @@ def _run_hard_alignment_backend(
     output_geojson: PathLike,
     summary_json: PathLike,
 ) -> dict[str, Any]:
+    if cfg.registration_backend == "auto":
+        return _run_auto_hard_alignment(
+            cfg,
+            fixed_geojson=fixed_geojson,
+            moving_geojson=moving_geojson,
+            output_geojson=output_geojson,
+            summary_json=summary_json,
+        )
     if cfg.registration_backend == "contour-tps":
         return hard_align_geojson(
             fixed_geojson=fixed_geojson,
@@ -543,6 +571,16 @@ def _run_hard_alignment_backend(
             multistart=cfg.hard_alignment_multistart,
             affine_fallback_iou_threshold=cfg.affine_fallback_iou_threshold,
             registration_backend="contour-tps",
+        )
+    if cfg.registration_backend == "label-free-group":
+        return _run_label_free_group_hard_alignment(
+            cfg,
+            fixed_geojson=fixed_geojson,
+            moving_geojson=moving_geojson,
+            output_geojson=output_geojson,
+            summary_json=summary_json,
+            registration_backend="label-free-group",
+            selected_hard_seed_backend="label-free-group",
         )
     if cfg.registration_backend == "coda-image":
         return _run_tournament_hard_alignment(
@@ -561,6 +599,249 @@ def _run_hard_alignment_backend(
             mask_padding_fraction=cfg.coda_mask_padding_fraction,
         )
     raise ValueError(f"Unsupported registration_backend: {cfg.registration_backend!r}.")
+
+
+def _run_auto_hard_alignment(
+    cfg: ThreeDStackReconstructionConfig,
+    *,
+    fixed_geojson: PathLike,
+    moving_geojson: PathLike,
+    output_geojson: PathLike,
+    summary_json: PathLike | None = None,
+) -> dict[str, Any]:
+    """Run contour and label-free group hard seeds, then select the reliable seed."""
+
+    output_path = Path(output_geojson)
+    summary_path = Path(summary_json) if summary_json is not None else None
+    if (
+        output_path.exists()
+        and not cfg.overwrite
+        and summary_path is not None
+        and summary_path.exists()
+    ):
+        return json.loads(summary_path.read_text(encoding="utf-8"))
+
+    candidate_dir = output_path.parent / "hard_alignment_candidates"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    contour_summary_path = candidate_dir / "contour_tps_summary.json"
+    contour_output_path = candidate_dir / "contour_tps_moving_hard_aligned.geojson"
+    label_free_summary_path = candidate_dir / "label_free_group_summary.json"
+    label_free_output_path = candidate_dir / "label_free_group_moving_hard_aligned.geojson"
+
+    contour_summary = hard_align_geojson(
+        fixed_geojson=fixed_geojson,
+        moving_geojson=moving_geojson,
+        output_geojson=contour_output_path,
+        summary_json=contour_summary_path,
+        group_property=cfg.group_property,
+        maxiter=cfg.hard_alignment_maxiter,
+        overwrite=True,
+        multistart=cfg.hard_alignment_multistart,
+        affine_fallback_iou_threshold=cfg.affine_fallback_iou_threshold,
+        registration_backend="contour-tps",
+    )
+    label_free_summary = _run_label_free_group_hard_alignment(
+        cfg,
+        fixed_geojson=fixed_geojson,
+        moving_geojson=moving_geojson,
+        output_geojson=label_free_output_path,
+        summary_json=label_free_summary_path,
+        artifact_dir=candidate_dir / "label_free_group_artifacts",
+        registration_backend="label-free-group",
+        selected_hard_seed_backend="label-free-group",
+    )
+
+    label_free_ok = _label_free_group_candidate_ok(label_free_summary, cfg)
+    if label_free_ok:
+        selected_backend = "label-free-group"
+        selected_summary = label_free_summary
+        selected_output_path = label_free_output_path
+    else:
+        selected_backend = "contour-tps"
+        selected_summary = contour_summary
+        selected_output_path = contour_output_path
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(selected_output_path, output_path)
+
+    summary = copy.deepcopy(selected_summary)
+    if selected_backend != "label-free-group":
+        summary.update(
+            {
+                "label_free_fixed_group": None,
+                "label_free_moving_group": None,
+                "label_free_used_anchor_pair_count": None,
+                "label_free_residual_median": None,
+            }
+        )
+    summary.update(
+        {
+            "fixed_geojson": str(Path(fixed_geojson)),
+            "moving_geojson": str(Path(moving_geojson)),
+            "output_geojson": str(output_path),
+            "registration_backend": "auto",
+            "selected_hard_seed_backend": selected_backend,
+            "method_note": (
+                "Auto hard alignment compares the same-label contour seed with "
+                "label-free group correspondence. The label-free seed is promoted only "
+                "when its group-RANSAC anchor count and residual pass configured thresholds."
+            ),
+            "hard_alignment_tournament": {
+                "strategy": "prefer_valid_label_free_group_else_contour_tps",
+                "selected_backend": selected_backend,
+                "label_free_candidate_accepted": bool(label_free_ok),
+                "label_free_min_anchor_count": int(cfg.label_free_min_anchor_count),
+                "label_free_group_residual_limit_um": float(
+                    cfg.label_free_group_residual_limit_um
+                ),
+            },
+            "hard_alignment_candidates": [
+                _hard_alignment_candidate_payload(
+                    contour_summary,
+                    summary_json=contour_summary_path,
+                ),
+                _hard_alignment_candidate_payload(
+                    label_free_summary,
+                    summary_json=label_free_summary_path,
+                ),
+            ],
+        }
+    )
+    if summary_path is not None:
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    return summary
+
+
+def _run_label_free_group_hard_alignment(
+    cfg: ThreeDStackReconstructionConfig,
+    *,
+    fixed_geojson: PathLike,
+    moving_geojson: PathLike,
+    output_geojson: PathLike,
+    summary_json: PathLike | None = None,
+    artifact_dir: PathLike | None = None,
+    registration_backend: str = "label-free-group",
+    selected_hard_seed_backend: str = "label-free-group",
+) -> dict[str, Any]:
+    """Run label-free group correspondence and adapt it to the hard-summary schema."""
+
+    from .label_free_alignment import (  # Local import avoids a multislice import cycle.
+        LabelFreeContourAlignmentConfig,
+        align_contours_label_free,
+    )
+
+    output_path = Path(output_geojson)
+    summary_path = Path(summary_json) if summary_json is not None else None
+    if (
+        output_path.exists()
+        and not cfg.overwrite
+        and summary_path is not None
+        and summary_path.exists()
+    ):
+        return json.loads(summary_path.read_text(encoding="utf-8"))
+
+    label_free_dir = (
+        Path(artifact_dir)
+        if artifact_dir is not None
+        else output_path.parent / "hard_alignment_candidates" / "label_free_group_artifacts"
+    )
+    result = align_contours_label_free(
+        LabelFreeContourAlignmentConfig(
+            fixed_geojson=fixed_geojson,
+            moving_geojson=moving_geojson,
+            out_dir=label_free_dir,
+            maxiter=cfg.hard_alignment_maxiter,
+            multistart=cfg.hard_alignment_multistart,
+            affine_fallback_iou_threshold=cfg.affine_fallback_iou_threshold,
+            run_soft_tps=False,
+            partial_correspondence=True,
+            diagnostic_only=False,
+            search_window=cfg.label_free_search_window,
+            knn_neighbors=cfg.label_free_knn_neighbors,
+            min_anchor_count=cfg.label_free_min_anchor_count,
+            group_correspondence=True,
+            group_candidate_count=cfg.label_free_group_candidate_count,
+            group_ransac_trials=cfg.label_free_group_ransac_trials,
+            group_min_descriptor_score=cfg.label_free_group_min_descriptor_score,
+            group_residual_limit_um=cfg.label_free_group_residual_limit_um,
+            group_min_component_area_um2=cfg.label_free_group_min_component_area_um2,
+            save_preview_png=cfg.save_alignment_preview_png,
+            overwrite=True,
+            dpi=cfg.dpi,
+        )
+    )
+    if result.aligned_geojson is None:
+        raise RuntimeError("label-free group alignment did not produce an aligned GeoJSON.")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(result.aligned_geojson, output_path)
+
+    label_free_summary = json.loads(result.summary_json.read_text(encoding="utf-8"))
+    anchor_transform = label_free_summary.get("anchor_transform") or {}
+    global_scores = label_free_summary.get("global_context_scores_not_used_for_fitting") or {}
+    transform = _label_free_transform_for_hard_schema(label_free_summary.get("transform") or {})
+    summary = {
+        "fixed_geojson": str(Path(fixed_geojson)),
+        "moving_geojson": str(Path(moving_geojson)),
+        "output_geojson": str(output_path),
+        "registration_backend": registration_backend,
+        "selected_hard_seed_backend": selected_hard_seed_backend,
+        "transform": transform,
+        "affine_params": None,
+        "optimization": {
+            "method": "label_free_group_correspondence_ransac",
+            "success": bool(anchor_transform.get("accepted", False)),
+            "accepted": bool(anchor_transform.get("accepted", False)),
+            "accepted_reason": anchor_transform.get("reason"),
+            "union_iou_before": global_scores.get("union_iou_before"),
+            "union_iou_final": global_scores.get("union_iou_after"),
+        },
+        "union_iou_before_hard": global_scores.get("union_iou_before"),
+        "union_iou_after_hard": global_scores.get("union_iou_after"),
+        "hard_alignment_accepted": bool(anchor_transform.get("accepted", False)),
+        "per_structure_iou_after_hard": {},
+        "label_free_summary_json": str(result.summary_json),
+        "label_free_overlay_html": str(result.overlay_html) if result.overlay_html else None,
+        "label_free_group_matrix_csv": (
+            str(result.group_matrix_csv) if result.group_matrix_csv else None
+        ),
+        "label_free_group_matrix_html": (
+            str(result.group_matrix_html) if result.group_matrix_html else None
+        ),
+        "label_free_fixed_group": anchor_transform.get("fixed_group"),
+        "label_free_moving_group": anchor_transform.get("moving_group"),
+        "label_free_used_anchor_pair_count": anchor_transform.get("used_anchor_pair_count"),
+        "label_free_residual_median": anchor_transform.get("residual_median"),
+        "label_free_residual_p90": anchor_transform.get("residual_p90"),
+        "label_free_anchor_transform": anchor_transform,
+        "method_note": (
+            "Label-free group correspondence hard seed. Contour labels are preserved; "
+            "fixed and moving groups may have different names and are used only to find "
+            "a geometric overlap constellation."
+        ),
+    }
+    if summary_path is not None:
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    return summary
+
+
+def _label_free_transform_for_hard_schema(transform: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": transform.get("kind", "similarity"),
+        "origin_x": transform.get("origin_x", 0.0),
+        "origin_y": transform.get("origin_y", 0.0),
+        "rotation_degrees": transform.get("rotation_degrees", 0.0),
+        "scale": transform.get("scale", 1.0),
+        "translate_x": transform.get("translate_x", 0.0),
+        "translate_y": transform.get("translate_y", 0.0),
+    }
 
 
 def _run_tournament_hard_alignment(
@@ -1261,8 +1542,26 @@ def write_3d_visualization_html(
 
 
 def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
-    if cfg.registration_backend not in {"contour-tps", "coda-image"}:
-        raise ValueError("registration_backend must be 'contour-tps' or 'coda-image'.")
+    if cfg.registration_backend not in {"auto", "contour-tps", "label-free-group", "coda-image"}:
+        raise ValueError(
+            "registration_backend must be 'auto', 'contour-tps', 'label-free-group', or 'coda-image'."
+        )
+    if cfg.label_free_search_window <= 0:
+        raise ValueError("label_free_search_window must be greater than 0.")
+    if cfg.label_free_knn_neighbors < 1:
+        raise ValueError("label_free_knn_neighbors must be at least 1.")
+    if cfg.label_free_min_anchor_count < 1:
+        raise ValueError("label_free_min_anchor_count must be at least 1.")
+    if cfg.label_free_group_candidate_count < 1:
+        raise ValueError("label_free_group_candidate_count must be at least 1.")
+    if cfg.label_free_group_ransac_trials < 1:
+        raise ValueError("label_free_group_ransac_trials must be at least 1.")
+    if not (0 <= cfg.label_free_group_min_descriptor_score <= 1):
+        raise ValueError("label_free_group_min_descriptor_score must be in [0, 1].")
+    if cfg.label_free_group_residual_limit_um <= 0:
+        raise ValueError("label_free_group_residual_limit_um must be greater than 0.")
+    if cfg.label_free_group_min_component_area_um2 < 0:
+        raise ValueError("label_free_group_min_component_area_um2 must be non-negative.")
     if cfg.local_z_orientation not in {"off", "auto"}:
         raise ValueError("local_z_orientation must be 'off' or 'auto'.")
     if cfg.vertical_qc_backend not in {"none", "ovrlpy"}:
@@ -1974,6 +2273,20 @@ def _hard_alignment_candidate_payload(
         "translate_x": transform.get("translate_x"),
         "translate_y": transform.get("translate_y"),
     }
+    if summary.get("registration_backend") == "label-free-group":
+        payload.update(
+            {
+                "label_free_fixed_group": summary.get("label_free_fixed_group"),
+                "label_free_moving_group": summary.get("label_free_moving_group"),
+                "label_free_used_anchor_pair_count": summary.get(
+                    "label_free_used_anchor_pair_count"
+                ),
+                "label_free_residual_median": summary.get("label_free_residual_median"),
+                "label_free_residual_p90": summary.get("label_free_residual_p90"),
+                "label_free_group_matrix_csv": summary.get("label_free_group_matrix_csv"),
+                "label_free_group_matrix_html": summary.get("label_free_group_matrix_html"),
+            }
+        )
 
     coda_image = summary.get("coda_image")
     if isinstance(coda_image, Mapping):
@@ -1994,6 +2307,42 @@ def _hard_alignment_iou(summary: Mapping[str, Any]) -> float:
     return value if math.isfinite(value) else float("-inf")
 
 
+def _label_free_group_candidate_ok(
+    summary: Mapping[str, Any],
+    cfg: ThreeDStackReconstructionConfig,
+) -> bool:
+    if summary.get("registration_backend") != "label-free-group":
+        return False
+    if not bool(summary.get("hard_alignment_accepted")):
+        return False
+    try:
+        used = int(summary.get("label_free_used_anchor_pair_count") or 0)
+    except (TypeError, ValueError):
+        used = 0
+    try:
+        residual = float(summary.get("label_free_residual_median"))
+    except (TypeError, ValueError):
+        residual = math.inf
+    return (
+        used >= int(cfg.label_free_min_anchor_count)
+        and math.isfinite(residual)
+        and residual <= float(cfg.label_free_group_residual_limit_um)
+    )
+
+
+def _semantic_soft_alignment_policy(summary: Mapping[str, Any]) -> tuple[bool, str | None]:
+    selected = summary.get("selected_hard_seed_backend") or summary.get("registration_backend")
+    if selected != "label-free-group":
+        return True, None
+    fixed_group = summary.get("label_free_fixed_group")
+    moving_group = summary.get("label_free_moving_group")
+    if fixed_group is None or moving_group is None:
+        return False, "missing_label_free_group_metadata"
+    if str(fixed_group) != str(moving_group):
+        return False, "cross_named_label_free_group_match"
+    return True, None
+
+
 def _rotation_difference_degrees(first: Any, second: Any) -> float | None:
     try:
         delta = (float(first) - float(second) + 180.0) % 360.0 - 180.0
@@ -2006,6 +2355,13 @@ def _hard_candidate_iou(summary: Mapping[str, Any], backend: str) -> Any:
     for candidate in summary.get("hard_alignment_candidates") or ():
         if isinstance(candidate, Mapping) and candidate.get("backend") == backend:
             return candidate.get("union_iou_after_hard")
+    return None
+
+
+def _hard_candidate_label_free_residual(summary: Mapping[str, Any]) -> Any:
+    for candidate in summary.get("hard_alignment_candidates") or ():
+        if isinstance(candidate, Mapping) and candidate.get("backend") == "label-free-group":
+            return candidate.get("label_free_residual_median")
     return None
 
 
@@ -2027,6 +2383,9 @@ def _pairwise_row(
         "hard_union_iou_after": hard_summary.get("union_iou_after_hard"),
         "hard_candidate_contour_iou_after": _hard_candidate_iou(hard_summary, "contour-tps"),
         "hard_candidate_coda_iou_after": _hard_candidate_iou(hard_summary, "coda-image"),
+        "hard_candidate_label_free_group_residual_median": _hard_candidate_label_free_residual(
+            hard_summary
+        ),
         "hard_tournament_rotation_difference_degrees": (
             hard_summary.get("hard_alignment_tournament") or {}
         ).get("rotation_difference_degrees"),
@@ -2035,6 +2394,14 @@ def _pairwise_row(
         "hard_transform_translate_x": hard_summary["transform"]["translate_x"],
         "hard_transform_translate_y": hard_summary["transform"]["translate_y"],
         "hard_accepted": hard_summary.get("hard_alignment_accepted"),
+        "label_free_fixed_group": hard_summary.get("label_free_fixed_group"),
+        "label_free_moving_group": hard_summary.get("label_free_moving_group"),
+        "label_free_used_anchor_pair_count": hard_summary.get(
+            "label_free_used_anchor_pair_count"
+        ),
+        "label_free_residual_median": hard_summary.get("label_free_residual_median"),
+        "semantic_soft_allowed": hard_summary.get("semantic_soft_allowed"),
+        "semantic_soft_skipped_reason": hard_summary.get("semantic_soft_skipped_reason"),
         "coda_radon_rotation_degrees": (hard_summary.get("coda_image") or {}).get(
             "radon_rotation_degrees"
         ),
