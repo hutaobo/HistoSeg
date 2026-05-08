@@ -61,9 +61,38 @@ histoseg-3d reconstruct-stack \
   --point-sample-distance-um 80 \
   --mesh-smoothing-sigma-um 40 \
   --mesh-export-formats ply,obj \
+  --soft-alignment-mode auto \
   --no-alignment-preview \
   --overwrite
 ```
+
+With `--soft-alignment-mode auto`, HistoSeg keeps the existing semantic TPS
+soft alignment for traditional `contour-tps` and `coda-image` hard seeds. If a
+slice pair is best explained by the `label-free-group` hard seed, HistoSeg
+switches the soft stage to anchor-only residual TPS. That mode refines only the
+residuals of trusted label-free anchors and leaves torn, shifted, or
+no-counterpart contours as passive geometry.
+
+For challenging partial-overlap reviews, force the new mode explicitly:
+
+```bash
+histoseg-3d reconstruct-stack \
+  --xenium-root data/polyp/xenium_slices \
+  --segmentation-strategy data/polyp/segmentationstrategy.txt \
+  --out-dir outputs/polyp_anchor_only_review \
+  --registration-backend label-free-group \
+  --soft-alignment-mode anchor-only \
+  --anchor-only-bbox-padding-fraction 0.10 \
+  --anchor-only-identity-padding-count 16 \
+  --anchor-only-jacobian-grid-size 50 \
+  --anchor-only-max-negative-jacobian-ratio 0.001 \
+  --overwrite
+```
+
+In anchor-only mode, low or unchanged global IoU is not automatically a failure.
+Review `pairwise_alignment_metrics.csv` and
+`pairwise_alignments/*/anchor_only_soft_tps/anchor_only_tps_review.html` for
+anchor residuals, passive/no-counterpart behavior, and Jacobian topology QC.
 
 On Windows, installing GitHub `pyXenium` can require long path support:
 

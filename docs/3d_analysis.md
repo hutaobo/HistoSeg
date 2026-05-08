@@ -92,9 +92,46 @@ With the default `--registration-backend auto`, HistoSeg evaluates both the
 standard semantic contour seed and the label-free group seed. The label-free
 seed is selected only when the anchor transform is accepted, enough anchor
 pairs are used, and the median residual is below the configured limit. If the
-selected label-free seed matches different fixed and moving group names,
-semantic TPS refinement is skipped for that slice pair because cross-slice
-biological structure identity has not been harmonized.
+selected label-free seed wins, stack soft alignment now uses anchor-only
+residual TPS instead of semantic boundary attraction.
+
+## Anchor-Only Residual TPS
+
+Anchor-only residual TPS is the default soft-alignment behavior for
+`label-free-group` hard seeds when `--soft-alignment-mode auto` is used. It
+keeps the hard transform as the global consensus and fits only the remaining
+local residual field from high-confidence anchors:
+
+```text
+s_i = hard_transform(moving_anchor_i)
+r_i = fixed_anchor_i - s_i
+x_soft = x_hard + R(x_hard)
+```
+
+`R` is a thin-plate RBF residual field. Its control points are only the
+`used_for_transform=True` anchors written by the label-free hard stage. Matched
+review contours, passive contours, and no-counterpart contours are transformed
+by the resulting field but never generate force. This is the key distinction
+from semantic TPS, which samples same-label boundaries and can pull torn or
+missing tissue fragments toward boundaries that should not be homologous.
+
+The model adds zero-residual identity padding points around the fixed plus
+hard-aligned moving bounding box. This limits extrapolation in tissue regions
+without anchor evidence. Acceptance in anchor-only mode is based on anchor
+count, post-warp anchor residuals, invalid geometry count, and a uniform
+Jacobian check over the padded bounding box. Global IoU is still reported, but
+it is context rather than the pass/fail criterion for partial-overlap cases.
+
+Important outputs for each pair include:
+
+- `anchor_only_soft_tps/anchor_only_soft_aligned_contours.geojson`
+- `anchor_only_soft_tps/anchor_only_tps_landmarks.csv`
+- `anchor_only_soft_tps/anchor_only_tps_summary.json`
+- `anchor_only_soft_tps/anchor_only_tps_review.html`
+
+Use `--soft-alignment-mode semantic` only when the slice pair is expected to
+have homologous same-label boundaries. Use `--soft-alignment-mode none` or
+`--no-soft` for hard-only reconstruction.
 
 ## Python API
 
