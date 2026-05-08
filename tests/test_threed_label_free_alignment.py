@@ -4,13 +4,16 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pandas as pd
 from shapely import affinity
 from shapely.geometry import Polygon, mapping, shape
 from shapely.ops import unary_union
 
 from histoseg.threed import (
+    AnchorOnlyResidualTPSConfig,
     LabelFreeContourAlignmentConfig,
     align_contours_label_free,
+    run_anchor_only_residual_tps,
 )
 from histoseg.threed.cli import main
 from histoseg.threed.label_free_alignment import _topology_similarity
@@ -166,6 +169,95 @@ def test_label_free_alignment_cli_smoke(tmp_path):
     assert (tmp_path / "aligned" / "moving_label_free_aligned.geojson").exists()
     assert (tmp_path / "aligned" / "label_free_alignment_summary.json").exists()
     assert (tmp_path / "aligned" / "label_free_alignment_overlay.html").exists()
+
+
+def test_anchor_only_residual_tps_corrects_hard_translation_from_used_anchors(tmp_path):
+    fixed = tmp_path / "fixed.geojson"
+    hard = tmp_path / "hard.geojson"
+    fixed_geoms = [
+        Polygon([(0, 0), (100, 0), (100, 80), (0, 80)]),
+        Polygon([(180, 0), (240, 0), (240, 50), (180, 50)]),
+    ]
+    hard_geoms = [affinity.translate(geom, xoff=8, yoff=-3) for geom in fixed_geoms]
+    _write_geojson(fixed, fixed_geoms, ["A", "B"])
+    _write_geojson(hard, hard_geoms, ["A", "B"])
+    anchors = pd.DataFrame(
+        [
+            _anchor_row(i, src=(x + 8, y - 3), dst=(x, y))
+            for i, (x, y) in enumerate([(10, 10), (90, 10), (90, 70), (10, 70)])
+        ]
+    )
+    anchor_csv = tmp_path / "anchors.csv"
+    anchors.to_csv(anchor_csv, index=False)
+
+    result = run_anchor_only_residual_tps(
+        AnchorOnlyResidualTPSConfig(
+            fixed_geojson=fixed,
+            moving_hard_aligned_geojson=hard,
+            anchor_landmarks_csv=anchor_csv,
+            out_dir=tmp_path / "anchor_only",
+            min_anchor_count=3,
+            residual_limit_um=50,
+            identity_padding_count=8,
+            jacobian_grid_size=20,
+            save_preview_png=False,
+            overwrite=True,
+        )
+    )
+    summary = json.loads(result.summary_json.read_text(encoding="utf-8"))
+    payload = json.loads(result.soft_aligned_geojson.read_text(encoding="utf-8"))
+    soft_union = unary_union([shape(feature["geometry"]) for feature in payload["features"]])
+
+    assert summary["method"] == "anchor_only_residual_tps"
+    assert summary["accepted"] is True
+    assert summary["landmarks"]["anchor_landmark_count"] == 4
+    assert summary["landmarks"]["identity_padding_count"] == 8
+    assert summary["qc"]["jacobian_check"]["checked_cells"] == 19 * 19
+    assert _iou(unary_union(fixed_geoms), soft_union) > _iou(
+        unary_union(fixed_geoms), unary_union(hard_geoms)
+    )
+    landmark_text = result.landmarks_csv.read_text(encoding="utf-8")
+    assert "identity_padding" in landmark_text
+    assert "used_for_tps" in landmark_text
+
+
+def test_anchor_only_identity_padding_limits_far_passive_geometry_drift(tmp_path):
+    fixed = tmp_path / "fixed.geojson"
+    hard = tmp_path / "hard.geojson"
+    fixed_geoms = [Polygon([(0, 0), (30, 0), (30, 30), (0, 30)])]
+    passive = Polygon([(1000, 1000), (1040, 1000), (1040, 1040), (1000, 1040)])
+    hard_geoms = [fixed_geoms[0], passive]
+    _write_geojson(fixed, fixed_geoms, ["anchor"])
+    _write_geojson(hard, hard_geoms, ["anchor", "passive"])
+    anchors = pd.DataFrame(
+        [
+            _anchor_row(i, src=(x, y), dst=(x + 12, y))
+            for i, (x, y) in enumerate([(5, 5), (25, 5), (15, 25), (8, 22)])
+        ]
+    )
+    anchor_csv = tmp_path / "clustered_anchors.csv"
+    anchors.to_csv(anchor_csv, index=False)
+
+    result = run_anchor_only_residual_tps(
+        AnchorOnlyResidualTPSConfig(
+            fixed_geojson=fixed,
+            moving_hard_aligned_geojson=hard,
+            anchor_landmarks_csv=anchor_csv,
+            out_dir=tmp_path / "anchor_only_clustered",
+            min_anchor_count=3,
+            residual_limit_um=50,
+            bbox_padding_fraction=0.10,
+            identity_padding_count=16,
+            jacobian_grid_size=20,
+            max_negative_jacobian_ratio=1.0,
+            save_preview_png=False,
+            overwrite=True,
+        )
+    )
+    payload = json.loads(result.soft_aligned_geojson.read_text(encoding="utf-8"))
+    warped_passive = shape(payload["features"][1]["geometry"])
+
+    assert abs(warped_passive.centroid.x - passive.centroid.x) < 6.0
 
 
 def test_label_free_alignment_warns_when_internal_contours_are_not_homologous(tmp_path):
@@ -532,6 +624,26 @@ def _write_geojson(path: Path, geometries: list[Polygon], labels: list[str]) -> 
 
 def _iou(a, b) -> float:
     return float(a.intersection(b).area / a.union(b).area)
+
+
+def _anchor_row(index: int, *, src: tuple[float, float], dst: tuple[float, float]) -> dict:
+    return {
+        "fixed_node_id": f"fixed_{index}",
+        "moving_node_id": f"moving_{index}",
+        "fixed_feature_index": index,
+        "moving_feature_index": index,
+        "fixed_status": "matched_anchor",
+        "moving_status": "matched_anchor",
+        "fixed_label": "fixed",
+        "moving_label": "moving",
+        "used_for_transform": True,
+        "aligned_moving_centroid_x": float(src[0]),
+        "aligned_moving_centroid_y": float(src[1]),
+        "fixed_centroid_x": float(dst[0]),
+        "fixed_centroid_y": float(dst[1]),
+        "anchor_residual": float(((dst[0] - src[0]) ** 2 + (dst[1] - src[1]) ** 2) ** 0.5),
+        "total_score": 1.0,
+    }
 
 
 def _constellation_geometries() -> list[Polygon]:

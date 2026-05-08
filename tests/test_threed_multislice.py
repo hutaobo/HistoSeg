@@ -458,14 +458,55 @@ def test_reconstruct_stack_cli_parses_registration_backend(monkeypatch, tmp_path
             "0.1",
         ]
     )
+    cli.main(
+        [
+            "reconstruct-stack",
+            "--xenium-root",
+            str(tmp_path / "xenium"),
+            "--segmentation-strategy",
+            str(tmp_path / "segmentationstrategy.txt"),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--soft-alignment-mode",
+            "anchor-only",
+            "--anchor-only-bbox-padding-fraction",
+            "0.2",
+            "--anchor-only-identity-padding-count",
+            "20",
+            "--anchor-only-jacobian-grid-size",
+            "30",
+            "--anchor-only-max-negative-jacobian-ratio",
+            "0.01",
+        ]
+    )
+    cli.main(
+        [
+            "reconstruct-stack",
+            "--xenium-root",
+            str(tmp_path / "xenium"),
+            "--segmentation-strategy",
+            str(tmp_path / "segmentationstrategy.txt"),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--no-soft",
+        ]
+    )
 
     capsys.readouterr()
     assert calls[0].registration_backend == "auto"
+    assert calls[0].soft_alignment_mode == "auto"
     assert calls[1].registration_backend == "coda-image"
     assert calls[1].coda_raster_size == 128
     assert calls[1].coda_angle_step == 0.5
     assert calls[1].coda_phase_upsample_factor == 4
     assert calls[1].coda_mask_padding_fraction == 0.1
+    assert calls[2].soft_alignment_mode == "anchor-only"
+    assert calls[2].anchor_only_bbox_padding_fraction == 0.2
+    assert calls[2].anchor_only_identity_padding_count == 20
+    assert calls[2].anchor_only_jacobian_grid_size == 30
+    assert calls[2].anchor_only_max_negative_jacobian_ratio == 0.01
+    assert calls[3].soft_alignment_mode == "none"
+    assert calls[3].run_soft_alignment is False
 
 
 def test_hard_align_affine_fallback_accepted_when_triggered(tmp_path):

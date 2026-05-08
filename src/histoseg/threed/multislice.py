@@ -5,6 +5,7 @@ import json
 import math
 import re
 import shutil
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence, Union
@@ -111,6 +112,12 @@ class ThreeDStackReconstructionConfig:
     # cumulative translation drift across the stack.
     global_drift_correction: bool = False
     run_soft_alignment: bool = True
+    soft_alignment_mode: str = "auto"
+    anchor_only_bbox_padding_fraction: float = 0.10
+    anchor_only_identity_padding_count: int = 16
+    anchor_only_rbf_smoothing: float = 1e-4
+    anchor_only_jacobian_grid_size: int = 50
+    anchor_only_max_negative_jacobian_ratio: float = 0.001
     sampling_distance_um: float = 50.0
     max_landmark_distance_um: float = 180.0
     landmarks_per_structure: int | None = 260
@@ -284,6 +291,12 @@ def run_3d_stack_reconstruction(
         semantic_soft_allowed, semantic_soft_skipped_reason = _semantic_soft_alignment_policy(
             hard_summary
         )
+        active_soft_mode, soft_alignment_skipped_reason = _resolve_soft_alignment_mode(
+            cfg,
+            hard_summary,
+            semantic_soft_allowed=semantic_soft_allowed,
+            semantic_soft_skipped_reason=semantic_soft_skipped_reason,
+        )
         hard_summary = {
             **hard_summary,
             "semantic_soft_allowed": semantic_soft_allowed,
@@ -292,9 +305,15 @@ def run_3d_stack_reconstruction(
                 if cfg.run_soft_alignment and not semantic_soft_allowed
                 else None
             ),
+            "soft_alignment_mode_requested": (
+                "none" if not cfg.run_soft_alignment else cfg.soft_alignment_mode
+            ),
+            "active_soft_alignment_mode": active_soft_mode,
+            "soft_alignment_skipped_reason": soft_alignment_skipped_reason,
         }
 
-        if cfg.run_soft_alignment and semantic_soft_allowed:
+        if active_soft_mode == "semantic":
+            semantic_start = time.perf_counter()
             soft_result = run_3d_contour_reconstruction(
                 ThreeDContourReconstructionConfig(
                     fixed_geojson=fixed_path,
@@ -327,6 +346,10 @@ def run_3d_stack_reconstruction(
                 )
             )
             soft_summary = json.loads(soft_result.summary_json.read_text(encoding="utf-8"))
+            hard_summary = {
+                **hard_summary,
+                "soft_alignment_runtime_seconds": time.perf_counter() - semantic_start,
+            }
             topology_valid = bool(soft_summary["qc"].get("topology_check", {}).get("valid", True))
             geometry_valid = int(soft_summary["qc"].get("geometry_status_counts", {}).get("invalid", 0)) == 0
             if cfg.overwrite or not aligned_path.exists():
@@ -367,6 +390,84 @@ def run_3d_stack_reconstruction(
                     soft_accepted=soft_accepted,
                 )
             )
+        elif active_soft_mode == "anchor-only":
+            anchor_start = time.perf_counter()
+            anchor_csv = _resolve_label_free_anchor_landmarks_csv(hard_summary)
+            if anchor_csv is None:
+                hard_summary = {
+                    **hard_summary,
+                    "soft_alignment_skipped_reason": "missing_label_free_anchor_landmarks_csv",
+                    "soft_alignment_runtime_seconds": 0.0,
+                }
+                if cfg.overwrite or not aligned_path.exists():
+                    shutil.copy2(hard_path, aligned_path)
+                pairwise_rows.append(_pairwise_row(slice_input, hard_summary, None, None))
+            else:
+                from .label_free_alignment import (  # Local import avoids a module cycle.
+                    AnchorOnlyResidualTPSConfig,
+                    run_anchor_only_residual_tps,
+                )
+
+                try:
+                    soft_result = run_anchor_only_residual_tps(
+                        AnchorOnlyResidualTPSConfig(
+                            fixed_geojson=fixed_path,
+                            moving_hard_aligned_geojson=hard_path,
+                            anchor_landmarks_csv=anchor_csv,
+                            out_dir=pair_dir / "anchor_only_soft_tps",
+                            group_property=cfg.group_property,
+                            min_anchor_count=cfg.label_free_min_anchor_count,
+                            residual_limit_um=cfg.label_free_group_residual_limit_um,
+                            bbox_padding_fraction=cfg.anchor_only_bbox_padding_fraction,
+                            identity_padding_count=cfg.anchor_only_identity_padding_count,
+                            rbf_neighbors=cfg.rbf_neighbors,
+                            rbf_smoothing=cfg.anchor_only_rbf_smoothing,
+                            jacobian_grid_size=cfg.anchor_only_jacobian_grid_size,
+                            max_negative_jacobian_ratio=(
+                                cfg.anchor_only_max_negative_jacobian_ratio
+                            ),
+                            save_preview_png=cfg.save_alignment_preview_png,
+                            overwrite=cfg.overwrite,
+                            dpi=cfg.dpi,
+                        )
+                    )
+                    soft_summary = json.loads(
+                        soft_result.summary_json.read_text(encoding="utf-8")
+                    )
+                    soft_accepted = bool(soft_summary.get("accepted", False))
+                    hard_summary = {
+                        **hard_summary,
+                        "soft_alignment_runtime_seconds": (
+                            time.perf_counter() - anchor_start
+                        ),
+                    }
+                    if cfg.overwrite or not aligned_path.exists():
+                        shutil.copy2(
+                            soft_result.soft_aligned_geojson if soft_accepted else hard_path,
+                            aligned_path,
+                        )
+                    pairwise_rows.append(
+                        _pairwise_row(
+                            slice_input,
+                            hard_summary,
+                            soft_summary,
+                            soft_result,
+                            soft_accepted=soft_accepted,
+                        )
+                    )
+                except Exception as exc:
+                    hard_summary = {
+                        **hard_summary,
+                        "soft_alignment_skipped_reason": (
+                            f"anchor_only_residual_tps_failed:{type(exc).__name__}"
+                        ),
+                        "soft_alignment_runtime_seconds": (
+                            time.perf_counter() - anchor_start
+                        ),
+                    }
+                    if cfg.overwrite or not aligned_path.exists():
+                        shutil.copy2(hard_path, aligned_path)
+                    pairwise_rows.append(_pairwise_row(slice_input, hard_summary, None, None))
         else:
             if cfg.overwrite or not aligned_path.exists():
                 shutil.copy2(hard_path, aligned_path)
@@ -818,6 +919,15 @@ def _run_label_free_group_hard_alignment(
         "hard_alignment_accepted": bool(anchor_transform.get("accepted", False)),
         "per_structure_iou_after_hard": {},
         "label_free_summary_json": str(result.summary_json),
+        "label_free_anchor_landmarks_csv": (
+            str(result.landmarks_csv) if result.landmarks_csv else None
+        ),
+        "label_free_partial_matches_csv": (
+            str(result.partial_matches_csv) if result.partial_matches_csv else None
+        ),
+        "label_free_partial_nodes_csv": (
+            str(result.partial_nodes_csv) if result.partial_nodes_csv else None
+        ),
         "label_free_overlay_html": str(result.overlay_html) if result.overlay_html else None,
         "label_free_group_matrix_csv": (
             str(result.group_matrix_csv) if result.group_matrix_csv else None
@@ -1560,6 +1670,20 @@ def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
         raise ValueError(
             "registration_backend must be 'auto', 'contour-tps', 'label-free-group', or 'coda-image'."
         )
+    if cfg.soft_alignment_mode not in {"auto", "semantic", "anchor-only", "none"}:
+        raise ValueError(
+            "soft_alignment_mode must be 'auto', 'semantic', 'anchor-only', or 'none'."
+        )
+    if cfg.anchor_only_bbox_padding_fraction < 0:
+        raise ValueError("anchor_only_bbox_padding_fraction must be non-negative.")
+    if cfg.anchor_only_identity_padding_count < 4:
+        raise ValueError("anchor_only_identity_padding_count must be at least 4.")
+    if cfg.anchor_only_rbf_smoothing < 0:
+        raise ValueError("anchor_only_rbf_smoothing must be non-negative.")
+    if cfg.anchor_only_jacobian_grid_size < 2:
+        raise ValueError("anchor_only_jacobian_grid_size must be at least 2.")
+    if not (0.0 <= cfg.anchor_only_max_negative_jacobian_ratio <= 1.0):
+        raise ValueError("anchor_only_max_negative_jacobian_ratio must be in [0, 1].")
     if cfg.label_free_search_window <= 0:
         raise ValueError("label_free_search_window must be greater than 0.")
     if cfg.label_free_knn_neighbors < 1:
@@ -2394,6 +2518,32 @@ def _label_free_group_candidate_ok(
     )
 
 
+def _resolve_soft_alignment_mode(
+    cfg: ThreeDStackReconstructionConfig,
+    summary: Mapping[str, Any],
+    *,
+    semantic_soft_allowed: bool,
+    semantic_soft_skipped_reason: str | None,
+) -> tuple[str, str | None]:
+    if not cfg.run_soft_alignment or cfg.soft_alignment_mode == "none":
+        return "none", "soft_alignment_disabled"
+    selected = summary.get("selected_hard_seed_backend") or summary.get("registration_backend")
+    requested = str(cfg.soft_alignment_mode)
+    if requested == "auto":
+        if selected == "label-free-group":
+            return "anchor-only", None
+        if semantic_soft_allowed:
+            return "semantic", None
+        return "none", semantic_soft_skipped_reason or "semantic_soft_not_allowed"
+    if requested == "anchor-only":
+        return "anchor-only", None
+    if requested == "semantic":
+        if semantic_soft_allowed:
+            return "semantic", None
+        return "none", semantic_soft_skipped_reason or "semantic_soft_not_allowed"
+    return "none", "soft_alignment_disabled"
+
+
 def _semantic_soft_alignment_policy(summary: Mapping[str, Any]) -> tuple[bool, str | None]:
     selected = summary.get("selected_hard_seed_backend") or summary.get("registration_backend")
     if selected != "label-free-group":
@@ -2404,7 +2554,30 @@ def _semantic_soft_alignment_policy(summary: Mapping[str, Any]) -> tuple[bool, s
         return False, "missing_label_free_group_metadata"
     if str(fixed_group) != str(moving_group):
         return False, "cross_named_label_free_group_match"
-    return True, None
+    return False, "label_free_group_uses_anchor_only_soft_alignment"
+
+
+def _resolve_label_free_anchor_landmarks_csv(summary: Mapping[str, Any]) -> Path | None:
+    for key in ("label_free_anchor_landmarks_csv", "anchor_landmarks_csv"):
+        value = summary.get(key)
+        if value:
+            path = Path(str(value))
+            if path.exists():
+                return path
+    summary_json = summary.get("label_free_summary_json")
+    if not summary_json:
+        return None
+    try:
+        payload = json.loads(Path(str(summary_json)).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    for key in ("anchor_landmarks_csv", "label_free_anchor_landmarks_csv"):
+        value = payload.get(key)
+        if value:
+            path = Path(str(value))
+            if path.exists():
+                return path
+    return None
 
 
 def _rotation_difference_degrees(first: Any, second: Any) -> float | None:
@@ -2466,6 +2639,12 @@ def _pairwise_row(
         "label_free_residual_median": hard_summary.get("label_free_residual_median"),
         "semantic_soft_allowed": hard_summary.get("semantic_soft_allowed"),
         "semantic_soft_skipped_reason": hard_summary.get("semantic_soft_skipped_reason"),
+        "soft_alignment_mode_requested": hard_summary.get("soft_alignment_mode_requested"),
+        "active_soft_alignment_mode": hard_summary.get("active_soft_alignment_mode"),
+        "soft_alignment_skipped_reason": hard_summary.get("soft_alignment_skipped_reason"),
+        "soft_alignment_runtime_seconds": hard_summary.get(
+            "soft_alignment_runtime_seconds"
+        ),
         "coda_radon_rotation_degrees": (hard_summary.get("coda_image") or {}).get(
             "radon_rotation_degrees"
         ),
@@ -2485,6 +2664,16 @@ def _pairwise_row(
         "soft_topology_expanded_cells": None,
         "soft_boundary_landmarks": None,
         "soft_summary_json": None,
+        "anchor_only_accepted": None,
+        "anchor_only_anchor_count": None,
+        "anchor_only_identity_padding_count": None,
+        "anchor_only_input_residual_median": None,
+        "anchor_only_input_residual_p90": None,
+        "anchor_only_post_residual_median": None,
+        "anchor_only_post_residual_p90": None,
+        "anchor_only_negative_jacobian_ratio": None,
+        "anchor_only_min_jacobian_ratio": None,
+        "anchor_only_fallback_reason": None,
     }
     if soft_summary is not None and soft_result is not None:
         topology = soft_summary["qc"].get("topology_check", {})
@@ -2508,6 +2697,34 @@ def _pairwise_row(
                 "soft_summary_json": str(soft_result.summary_json),
             }
         )
+        if soft_summary.get("method") == "anchor_only_residual_tps":
+            input_residual = soft_summary.get("landmarks", {}).get("input_residual_um") or {}
+            post_residual = soft_summary.get("qc", {}).get("post_warp_residual_um") or {}
+            jacobian = soft_summary.get("qc", {}).get("jacobian_check") or {}
+            row.update(
+                {
+                    "anchor_only_accepted": bool(soft_summary.get("accepted", False)),
+                    "anchor_only_anchor_count": soft_summary.get("landmarks", {}).get(
+                        "anchor_landmark_count"
+                    ),
+                    "anchor_only_identity_padding_count": soft_summary.get(
+                        "landmarks", {}
+                    ).get("identity_padding_count"),
+                    "anchor_only_input_residual_median": input_residual.get("median"),
+                    "anchor_only_input_residual_p90": input_residual.get("p90"),
+                    "anchor_only_post_residual_median": post_residual.get("median"),
+                    "anchor_only_post_residual_p90": post_residual.get("p90"),
+                    "anchor_only_negative_jacobian_ratio": jacobian.get(
+                        "negative_jacobian_ratio"
+                    ),
+                    "anchor_only_min_jacobian_ratio": jacobian.get("min_jacobian_ratio"),
+                    "anchor_only_fallback_reason": (
+                        None
+                        if bool(soft_summary.get("accepted", False))
+                        else soft_summary.get("reason")
+                    ),
+                }
+            )
     return row
 
 

@@ -38,9 +38,12 @@ from .multislice import (
     write_3d_visualization_html,
 )
 from .label_free_alignment import (
+    AnchorOnlyResidualTPSConfig,
+    AnchorOnlyResidualTPSResult,
     LabelFreeContourAlignmentConfig,
     LabelFreeContourAlignmentResult,
     align_contours_label_free,
+    run_anchor_only_residual_tps,
 )
 from .cell_cloud import (
     CELL_CLOUD_ALIGNED_XY_OBSM_KEY,
@@ -156,6 +159,8 @@ __all__ = [
     "GlandQCAtlasResult",
     "GlandSurfaceAtlasConfig",
     "GlandSurfaceAtlasResult",
+    "AnchorOnlyResidualTPSConfig",
+    "AnchorOnlyResidualTPSResult",
     "LabelFreeContourAlignmentConfig",
     "LabelFreeContourAlignmentResult",
     "LOCAL_Z_ORIENTATION_SCHEMA_VERSION",
@@ -198,6 +203,7 @@ __all__ = [
     "render_gland_qc_atlas",
     "render_gland_surface_atlas",
     "run_3d_contour_reconstruction",
+    "run_anchor_only_residual_tps",
     "run_cell_cloud_projection",
     "run_gland_biology_mining",
     "run_gland_instance_detection",

@@ -580,8 +580,22 @@ def main(argv: Sequence[str] | None = None) -> None:
     stack.add_argument(
         "--no-soft",
         action="store_true",
-        help="Use only hard similarity alignment between slices.",
+        help="Use only hard alignment between slices. Equivalent to --soft-alignment-mode none.",
     )
+    stack.add_argument(
+        "--soft-alignment-mode",
+        default="auto",
+        choices=["auto", "semantic", "anchor-only", "none"],
+        help=(
+            "Soft alignment strategy. auto uses anchor-only residual TPS for "
+            "label-free-group hard seeds and semantic TPS for traditional hard seeds."
+        ),
+    )
+    stack.add_argument("--anchor-only-bbox-padding-fraction", type=float, default=0.10)
+    stack.add_argument("--anchor-only-identity-padding-count", type=int, default=16)
+    stack.add_argument("--anchor-only-rbf-smoothing", type=float, default=1e-4)
+    stack.add_argument("--anchor-only-jacobian-grid-size", type=int, default=50)
+    stack.add_argument("--anchor-only-max-negative-jacobian-ratio", type=float, default=0.001)
     stack.add_argument(
         "--save-slice-preview",
         action="store_true",
@@ -1528,6 +1542,16 @@ def main(argv: Sequence[str] | None = None) -> None:
                 label_free_group_min_component_area_um2=args.label_free_group_min_component_area_um2,
                 global_drift_correction=args.global_drift_correction,
                 run_soft_alignment=not args.no_soft,
+                soft_alignment_mode=(
+                    "none" if args.no_soft else args.soft_alignment_mode
+                ),
+                anchor_only_bbox_padding_fraction=args.anchor_only_bbox_padding_fraction,
+                anchor_only_identity_padding_count=args.anchor_only_identity_padding_count,
+                anchor_only_rbf_smoothing=args.anchor_only_rbf_smoothing,
+                anchor_only_jacobian_grid_size=args.anchor_only_jacobian_grid_size,
+                anchor_only_max_negative_jacobian_ratio=(
+                    args.anchor_only_max_negative_jacobian_ratio
+                ),
                 sampling_distance_um=args.sampling_distance_um,
                 max_landmark_distance_um=args.max_landmark_distance_um,
                 landmarks_per_structure=args.landmarks_per_structure or None,

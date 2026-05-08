@@ -101,6 +101,48 @@ class LabelFreeContourAlignmentResult:
 
 
 @dataclass(frozen=True)
+class AnchorOnlyResidualTPSConfig:
+    """Configuration for anchor-only residual TPS soft alignment.
+
+    The moving GeoJSON is expected to be the hard-aligned output from the
+    label-free group/partial-anchor hard seed. Only the anchor rows marked
+    ``used_for_transform`` fit the residual field; all other geometry follows
+    passively.
+    """
+
+    fixed_geojson: PathLike
+    moving_hard_aligned_geojson: PathLike
+    anchor_landmarks_csv: PathLike
+    out_dir: PathLike
+    group_property: str = "structure"
+    min_anchor_count: int = 8
+    residual_limit_um: float = 900.0
+    bbox_padding_fraction: float = 0.10
+    identity_padding_count: int = 16
+    rbf_kernel: str = "thin_plate_spline"
+    rbf_neighbors: int | None = 96
+    rbf_smoothing: float = 1e-4
+    jacobian_grid_size: int = 50
+    max_negative_jacobian_ratio: float = 0.001
+    save_preview_png: bool = True
+    dpi: int = 180
+    overwrite: bool = False
+
+
+@dataclass
+class AnchorOnlyResidualTPSResult:
+    """Artifacts produced by anchor-only residual TPS soft alignment."""
+
+    out_dir: Path
+    soft_aligned_geojson: Path
+    landmarks_csv: Path
+    summary_json: Path
+    review_html: Path | None = None
+    overlay_before_png: Path | None = None
+    overlay_after_png: Path | None = None
+
+
+@dataclass(frozen=True)
 class _PointTransform:
     kind: str
     similarity: _SimilarityTransform | None = None
@@ -366,6 +408,565 @@ def align_contours_label_free(
         overlay_before_png=overlay_paths["before"],
         overlay_after_png=overlay_paths["after"],
         component_qc_csv=component_qc_path,
+    )
+
+
+def run_anchor_only_residual_tps(
+    cfg: AnchorOnlyResidualTPSConfig,
+) -> AnchorOnlyResidualTPSResult:
+    """Fit a residual TPS from trusted label-free anchors only.
+
+    This is the soft-alignment companion for partial-anchor hard seeds. The
+    input moving GeoJSON is already hard-aligned. The TPS model receives
+    residual landmarks from used anchors plus zero-residual identity padding,
+    so unmatched contours remain passive geometry instead of attracting the
+    moving slice toward unrelated fixed boundaries.
+    """
+
+    _validate_anchor_only_residual_tps_config(cfg)
+    out_dir = Path(cfg.out_dir).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    soft_geojson_path = out_dir / "anchor_only_soft_aligned_contours.geojson"
+    landmarks_path = out_dir / "anchor_only_tps_landmarks.csv"
+    summary_path = out_dir / "anchor_only_tps_summary.json"
+    review_html_path = out_dir / "anchor_only_tps_review.html"
+    before_png = out_dir / "anchor_only_tps_before.png"
+    after_png = out_dir / "anchor_only_tps_after.png"
+
+    if (
+        soft_geojson_path.exists()
+        and landmarks_path.exists()
+        and summary_path.exists()
+        and not cfg.overwrite
+    ):
+        return AnchorOnlyResidualTPSResult(
+            out_dir=out_dir,
+            soft_aligned_geojson=soft_geojson_path,
+            landmarks_csv=landmarks_path,
+            summary_json=summary_path,
+            review_html=review_html_path if review_html_path.exists() else None,
+            overlay_before_png=before_png if before_png.exists() else None,
+            overlay_after_png=after_png if after_png.exists() else None,
+        )
+
+    fixed_payload = _read_geojson(Path(cfg.fixed_geojson).expanduser())
+    hard_payload = _read_geojson(Path(cfg.moving_hard_aligned_geojson).expanduser())
+    record_cfg = LabelFreeContourAlignmentConfig(
+        fixed_geojson=cfg.fixed_geojson,
+        moving_geojson=cfg.moving_hard_aligned_geojson,
+        out_dir=out_dir,
+        min_component_area_um2=0.0,
+    )
+    fixed_records = _records_from_geojson_label_free(fixed_payload, record_cfg, role="fixed")
+    hard_records = _records_from_geojson_label_free(
+        hard_payload, record_cfg, role="hard_aligned"
+    )
+    fixed_union = unary_union([record.geometry for record in fixed_records])
+    hard_union = unary_union([record.geometry for record in hard_records])
+
+    failure_reasons: list[str] = []
+    anchor_rows = pd.DataFrame()
+    try:
+        anchor_rows = pd.read_csv(Path(cfg.anchor_landmarks_csv).expanduser())
+    except FileNotFoundError:
+        failure_reasons.append("missing_anchor_landmarks_csv")
+    except Exception as exc:
+        failure_reasons.append(f"invalid_anchor_landmarks_csv:{type(exc).__name__}")
+
+    model_landmarks = pd.DataFrame()
+    landmarks = pd.DataFrame()
+    used_anchor_count = 0
+    model: _TPSModel | None = None
+    soft_payload = copy.deepcopy(hard_payload)
+    soft_records = hard_records
+    geometry_status: dict[str, int] = {"hard_only": int(len(hard_records))}
+    input_residual_um = np.array([], dtype=float)
+    post_residual_um = np.array([], dtype=float)
+    jacobian = {
+        "enabled": False,
+        "valid": True,
+        "reason": "not_attempted",
+        "negative_jacobian_ratio": 0.0,
+    }
+
+    if not failure_reasons:
+        try:
+            landmarks, model_landmarks, input_residual_um = _anchor_only_tps_landmarks(
+                anchor_rows,
+                fixed_records=fixed_records,
+                hard_records=hard_records,
+                cfg=cfg,
+            )
+            used_anchor_count = int(
+                (landmarks["landmark_kind"] == "matched_anchor")
+                .where(landmarks["used_for_tps"].astype(bool), False)
+                .sum()
+            )
+        except ValueError as exc:
+            failure_reasons.append(str(exc))
+
+    if not failure_reasons:
+        if used_anchor_count < int(cfg.min_anchor_count):
+            failure_reasons.append("too_few_anchor_only_tps_anchors")
+        if len(model_landmarks) < 3:
+            failure_reasons.append("fewer_than_three_tps_landmarks")
+
+    if not failure_reasons:
+        try:
+            model = _fit_tps_model(model_landmarks, cfg)
+            soft_payload, soft_records, geometry_status = _warp_geojson_label_free(
+                hard_payload,
+                hard_records,
+                model,
+            )
+            used = model_landmarks.loc[
+                model_landmarks["landmark_kind"] == "matched_anchor"
+            ].copy()
+            warped_anchor_xy = model.warp(used[["src_x", "src_y"]].to_numpy(dtype=float))
+            target_anchor_xy = used[["dst_x", "dst_y"]].to_numpy(dtype=float)
+            post_residual_um = np.linalg.norm(warped_anchor_xy - target_anchor_xy, axis=1)
+            jacobian = _anchor_only_jacobian_summary(
+                model,
+                fixed_records=fixed_records,
+                hard_records=hard_records,
+                cfg=cfg,
+            )
+        except Exception as exc:
+            failure_reasons.append(f"tps_fit_or_warp_failed:{type(exc).__name__}")
+            soft_payload = copy.deepcopy(hard_payload)
+            soft_records = hard_records
+            geometry_status = {"hard_only": int(len(hard_records))}
+
+    invalid_geometry_count = int(geometry_status.get("invalid", 0))
+    post_p90 = (
+        float(np.percentile(post_residual_um, 90)) if len(post_residual_um) else math.inf
+    )
+    accepted = (
+        not failure_reasons
+        and used_anchor_count >= int(cfg.min_anchor_count)
+        and math.isfinite(post_p90)
+        and post_p90 <= float(cfg.residual_limit_um)
+        and float(jacobian.get("negative_jacobian_ratio", 0.0))
+        <= float(cfg.max_negative_jacobian_ratio)
+        and invalid_geometry_count == 0
+    )
+    if not accepted and not failure_reasons:
+        if not math.isfinite(post_p90) or post_p90 > float(cfg.residual_limit_um):
+            failure_reasons.append("anchor_only_post_residual_p90_above_limit")
+        if (
+            float(jacobian.get("negative_jacobian_ratio", 0.0))
+            > float(cfg.max_negative_jacobian_ratio)
+        ):
+            failure_reasons.append("negative_jacobian_ratio_above_limit")
+        if invalid_geometry_count:
+            failure_reasons.append("invalid_soft_geometry")
+
+    soft_union = unary_union([record.geometry for record in soft_records])
+    soft_geojson_path.write_text(json.dumps(soft_payload, ensure_ascii=False), encoding="utf-8")
+    if landmarks.empty:
+        landmarks = _empty_anchor_only_landmarks()
+    landmarks.to_csv(landmarks_path, index=False)
+
+    overlay_paths = {"before": None, "after": None}
+    if cfg.save_preview_png:
+        overlay_paths = _write_overlays(
+            fixed_records=fixed_records,
+            moving_records=hard_records,
+            final_records=soft_records,
+            before_png=before_png,
+            after_png=after_png,
+            dpi=cfg.dpi,
+        )
+    _write_anchor_only_residual_tps_html(
+        fixed_records=fixed_records,
+        hard_records=hard_records,
+        soft_records=soft_records,
+        landmarks=landmarks,
+        output_html=review_html_path,
+        accepted=accepted,
+        failure_reasons=failure_reasons,
+        jacobian=jacobian,
+    )
+
+    input_summary = _distribution_summary_or_nan(input_residual_um)
+    post_summary = _distribution_summary_or_nan(post_residual_um)
+    summary = {
+        "fixed_geojson": str(Path(cfg.fixed_geojson)),
+        "moving_hard_aligned_geojson": str(Path(cfg.moving_hard_aligned_geojson)),
+        "anchor_landmarks_csv": str(Path(cfg.anchor_landmarks_csv)),
+        "output_geojson": str(soft_geojson_path),
+        "method": "anchor_only_residual_tps",
+        "objective_note": (
+            "The residual TPS is fitted only from label-free anchors already used by "
+            "the hard transform. Non-anchor contours are passive geometry and do not "
+            "pull the soft field toward unrelated boundaries."
+        ),
+        "attempted": bool(len(model_landmarks) >= 3),
+        "accepted": bool(accepted),
+        "reason": (
+            "accepted_anchor_only_residual_tps"
+            if accepted
+            else ";".join(failure_reasons) if failure_reasons else "rejected"
+        ),
+        "config": {
+            "min_anchor_count": int(cfg.min_anchor_count),
+            "residual_limit_um": float(cfg.residual_limit_um),
+            "bbox_padding_fraction": float(cfg.bbox_padding_fraction),
+            "identity_padding_count": int(cfg.identity_padding_count),
+            "rbf_kernel": cfg.rbf_kernel,
+            "rbf_neighbors": cfg.rbf_neighbors,
+            "rbf_smoothing": float(cfg.rbf_smoothing),
+            "jacobian_grid_size": int(cfg.jacobian_grid_size),
+            "max_negative_jacobian_ratio": float(cfg.max_negative_jacobian_ratio),
+        },
+        "landmarks": {
+            "boundary_landmark_count": int(used_anchor_count),
+            "anchor_landmark_count": int(used_anchor_count),
+            "identity_padding_count": int(
+                (landmarks["landmark_kind"] == "identity_padding").sum()
+            ),
+            "zero_anchor_count": int((landmarks["landmark_kind"] == "identity_padding").sum()),
+            "total_landmark_count": int(len(model_landmarks)),
+            "used_for_tps_count": int(landmarks["used_for_tps"].astype(bool).sum()),
+            "source": "label_free_anchor_landmarks_csv",
+            "input_residual_um": input_summary,
+            "post_warp_residual_um": post_summary,
+        },
+        "qc": {
+            "fixed_feature_count": int(len(fixed_records)),
+            "hard_aligned_feature_count": int(len(hard_records)),
+            "soft_aligned_feature_count": int(len(soft_records)),
+            "union_iou_hard_before_soft": _iou(fixed_union, hard_union),
+            "union_iou_soft_after": _iou(fixed_union, soft_union),
+            "delta_union_iou_soft": _iou(fixed_union, soft_union) - _iou(fixed_union, hard_union),
+            "geometry_status_counts": dict(geometry_status),
+            "topology_check": {
+                "enabled": bool(jacobian.get("enabled", False)),
+                "valid": bool(jacobian.get("valid", True)),
+                "grid_size": jacobian.get("grid_size"),
+                "checked_cells": jacobian.get("checked_cells"),
+                "folded_cell_count": jacobian.get("negative_cell_count"),
+                "negative_jacobian_ratio": jacobian.get("negative_jacobian_ratio"),
+                "min_jacobian_ratio": jacobian.get("min_jacobian_ratio"),
+                "median_jacobian_ratio": jacobian.get("median_jacobian_ratio"),
+                "max_jacobian_ratio": jacobian.get("max_jacobian_ratio"),
+            },
+            "jacobian_check": jacobian,
+            "post_warp_residual_um": post_summary,
+        },
+        "outputs": {
+            "out_dir": str(out_dir),
+            "soft_geojson": str(soft_geojson_path),
+            "landmarks_csv": str(landmarks_path),
+            "review_html": str(review_html_path),
+            "overlay_before_png": (
+                str(overlay_paths["before"]) if overlay_paths["before"] else None
+            ),
+            "overlay_after_png": (
+                str(overlay_paths["after"]) if overlay_paths["after"] else None
+            ),
+        },
+    }
+    summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    return AnchorOnlyResidualTPSResult(
+        out_dir=out_dir,
+        soft_aligned_geojson=soft_geojson_path,
+        landmarks_csv=landmarks_path,
+        summary_json=summary_path,
+        review_html=review_html_path,
+        overlay_before_png=overlay_paths["before"],
+        overlay_after_png=overlay_paths["after"],
+    )
+
+
+def _validate_anchor_only_residual_tps_config(cfg: AnchorOnlyResidualTPSConfig) -> None:
+    if cfg.min_anchor_count < 1:
+        raise ValueError("min_anchor_count must be at least 1.")
+    if cfg.residual_limit_um <= 0:
+        raise ValueError("residual_limit_um must be greater than 0.")
+    if cfg.bbox_padding_fraction < 0:
+        raise ValueError("bbox_padding_fraction must be non-negative.")
+    if cfg.identity_padding_count < 4:
+        raise ValueError("identity_padding_count must be at least 4.")
+    if cfg.rbf_neighbors is not None and cfg.rbf_neighbors < 3:
+        raise ValueError("rbf_neighbors must be at least 3 when provided.")
+    if cfg.rbf_smoothing < 0:
+        raise ValueError("rbf_smoothing must be non-negative.")
+    if cfg.jacobian_grid_size < 2:
+        raise ValueError("jacobian_grid_size must be at least 2.")
+    if not (0.0 <= cfg.max_negative_jacobian_ratio <= 1.0):
+        raise ValueError("max_negative_jacobian_ratio must be in [0, 1].")
+
+
+def _anchor_only_tps_landmarks(
+    anchor_rows: pd.DataFrame,
+    *,
+    fixed_records: list[_FeatureRecord],
+    hard_records: list[_FeatureRecord],
+    cfg: AnchorOnlyResidualTPSConfig,
+) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
+    required = {
+        "used_for_transform",
+        "aligned_moving_centroid_x",
+        "aligned_moving_centroid_y",
+        "fixed_centroid_x",
+        "fixed_centroid_y",
+    }
+    missing = sorted(required - set(anchor_rows.columns))
+    if missing:
+        raise ValueError(f"anchor_landmarks_missing_columns:{','.join(missing)}")
+    if anchor_rows.empty:
+        raise ValueError("empty_anchor_landmarks_csv")
+
+    used_mask = _coerce_bool_series(anchor_rows["used_for_transform"])
+    rows: list[dict[str, Any]] = []
+    input_residuals: list[float] = []
+    for index, row in anchor_rows.iterrows():
+        src_x = float(row["aligned_moving_centroid_x"])
+        src_y = float(row["aligned_moving_centroid_y"])
+        dst_x = float(row["fixed_centroid_x"])
+        dst_y = float(row["fixed_centroid_y"])
+        dx = dst_x - src_x
+        dy = dst_y - src_y
+        residual = float(math.hypot(dx, dy))
+        used_for_tps = bool(used_mask.loc[index])
+        if used_for_tps:
+            input_residuals.append(residual)
+        rows.append(
+            {
+                "kind": "matched_anchor",
+                "landmark_kind": "matched_anchor",
+                "used_for_tps": used_for_tps,
+                "accepted_for_tps": used_for_tps,
+                "source": "label_free_anchor_transform",
+                "fixed_node_id": row.get("fixed_node_id"),
+                "moving_node_id": row.get("moving_node_id"),
+                "fixed_feature_index": row.get("fixed_feature_index"),
+                "moving_feature_index": row.get("moving_feature_index"),
+                "fixed_status": row.get("fixed_status"),
+                "moving_status": row.get("moving_status"),
+                "fixed_label": row.get("fixed_label"),
+                "moving_label": row.get("moving_label"),
+                "src_x": src_x,
+                "src_y": src_y,
+                "dst_x": dst_x,
+                "dst_y": dst_y,
+                "dx": dx,
+                "dy": dy,
+                "input_residual_um": residual,
+                "source_distance_um": residual,
+                "match_cost_um": row.get("match_cost_um", residual),
+                "total_score": row.get("total_score"),
+            }
+        )
+    padding = _anchor_only_identity_padding_landmarks(
+        fixed_records=fixed_records,
+        hard_records=hard_records,
+        cfg=cfg,
+    )
+    landmarks = pd.DataFrame([*rows, *padding.to_dict("records")])
+    model_landmarks = landmarks.loc[landmarks["used_for_tps"].astype(bool)].copy()
+    return landmarks, model_landmarks, np.asarray(input_residuals, dtype=float)
+
+
+def _anchor_only_identity_padding_landmarks(
+    *,
+    fixed_records: list[_FeatureRecord],
+    hard_records: list[_FeatureRecord],
+    cfg: AnchorOnlyResidualTPSConfig,
+) -> pd.DataFrame:
+    points = _anchor_only_identity_padding_points(
+        fixed_records=fixed_records,
+        hard_records=hard_records,
+        padding_fraction=cfg.bbox_padding_fraction,
+        count=cfg.identity_padding_count,
+    )
+    return pd.DataFrame(
+        [
+            {
+                "kind": "identity_padding",
+                "landmark_kind": "identity_padding",
+                "used_for_tps": True,
+                "accepted_for_tps": True,
+                "source": "padded_union_bbox",
+                "fixed_node_id": None,
+                "moving_node_id": None,
+                "fixed_feature_index": None,
+                "moving_feature_index": None,
+                "fixed_status": None,
+                "moving_status": None,
+                "fixed_label": None,
+                "moving_label": None,
+                "src_x": float(x),
+                "src_y": float(y),
+                "dst_x": float(x),
+                "dst_y": float(y),
+                "dx": 0.0,
+                "dy": 0.0,
+                "input_residual_um": 0.0,
+                "source_distance_um": 0.0,
+                "match_cost_um": 0.0,
+                "total_score": None,
+            }
+            for x, y in points
+        ]
+    )
+
+
+def _anchor_only_identity_padding_points(
+    *,
+    fixed_records: list[_FeatureRecord],
+    hard_records: list[_FeatureRecord],
+    padding_fraction: float,
+    count: int,
+) -> list[tuple[float, float]]:
+    union = unary_union([record.geometry for record in [*fixed_records, *hard_records]])
+    minx, miny, maxx, maxy = union.bounds
+    span = max(maxx - minx, maxy - miny, 1.0)
+    pad = float(padding_fraction) * span
+    minx -= pad
+    miny -= pad
+    maxx += pad
+    maxy += pad
+    corners = np.array(
+        [
+            [minx, miny],
+            [maxx, miny],
+            [maxx, maxy],
+            [minx, maxy],
+        ],
+        dtype=float,
+    )
+    count = max(int(count), 4)
+    perimeter = 2.0 * ((maxx - minx) + (maxy - miny))
+    distances = np.linspace(0.0, perimeter, count, endpoint=False)
+    points: list[tuple[float, float]] = []
+    width = maxx - minx
+    height = maxy - miny
+    for distance in distances:
+        d = float(distance)
+        if d <= width:
+            points.append((minx + d, miny))
+        elif d <= width + height:
+            points.append((maxx, miny + (d - width)))
+        elif d <= 2.0 * width + height:
+            points.append((maxx - (d - width - height), maxy))
+        else:
+            points.append((minx, maxy - (d - 2.0 * width - height)))
+    if len(points) < 4:
+        points.extend((float(x), float(y)) for x, y in corners)
+    return points
+
+
+def _anchor_only_jacobian_summary(
+    model: _TPSModel,
+    *,
+    fixed_records: list[_FeatureRecord],
+    hard_records: list[_FeatureRecord],
+    cfg: AnchorOnlyResidualTPSConfig,
+) -> dict[str, Any]:
+    grid_size = int(cfg.jacobian_grid_size)
+    union = unary_union([record.geometry for record in [*fixed_records, *hard_records]])
+    minx, miny, maxx, maxy = union.bounds
+    span = max(maxx - minx, maxy - miny, 1.0)
+    pad = float(cfg.bbox_padding_fraction) * span
+    minx -= pad
+    miny -= pad
+    maxx += pad
+    maxy += pad
+    if maxx <= minx or maxy <= miny:
+        return {"enabled": True, "valid": False, "reason": "degenerate_bbox"}
+
+    xs = np.linspace(minx, maxx, grid_size)
+    ys = np.linspace(miny, maxy, grid_size)
+    xx, yy = np.meshgrid(xs, ys)
+    original = np.column_stack([xx.ravel(), yy.ravel()])
+    warped = model.warp(original).reshape((grid_size, grid_size, 2))
+    right = warped[:, 1:, :] - warped[:, :-1, :]
+    down = warped[1:, :, :] - warped[:-1, :, :]
+    right_cells = right[:-1, :, :]
+    down_cells = down[:, :-1, :]
+    det = (
+        right_cells[:, :, 0] * down_cells[:, :, 1]
+        - right_cells[:, :, 1] * down_cells[:, :, 0]
+    )
+    base_area = max((xs[1] - xs[0]) * (ys[1] - ys[0]), 1e-12)
+    ratios = det / base_area
+    checked = int(ratios.size)
+    negative = int(np.sum(ratios <= 0.0))
+    negative_ratio = float(negative / checked) if checked else 0.0
+    valid = negative_ratio <= float(cfg.max_negative_jacobian_ratio)
+    return {
+        "enabled": True,
+        "valid": bool(valid),
+        "grid_size": grid_size,
+        "checked_cells": checked,
+        "negative_cell_count": negative,
+        "negative_jacobian_ratio": negative_ratio,
+        "max_negative_jacobian_ratio": float(cfg.max_negative_jacobian_ratio),
+        "min_jacobian_ratio": float(np.min(ratios)) if checked else math.nan,
+        "median_jacobian_ratio": float(np.median(ratios)) if checked else math.nan,
+        "max_jacobian_ratio": float(np.max(ratios)) if checked else math.nan,
+    }
+
+
+def _coerce_bool_series(series: pd.Series) -> pd.Series:
+    if series.dtype == bool:
+        return series.fillna(False)
+    return series.map(
+        lambda value: str(value).strip().lower() in {"true", "1", "yes", "y"}
+    ).fillna(False)
+
+
+def _distribution_summary_or_nan(values: np.ndarray) -> dict[str, float]:
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return {
+            "min": math.nan,
+            "median": math.nan,
+            "mean": math.nan,
+            "p90": math.nan,
+            "p95": math.nan,
+            "max": math.nan,
+        }
+    return {
+        "min": float(np.min(values)),
+        "median": float(np.median(values)),
+        "mean": float(np.mean(values)),
+        "p90": float(np.percentile(values, 90)),
+        "p95": float(np.percentile(values, 95)),
+        "max": float(np.max(values)),
+    }
+
+
+def _empty_anchor_only_landmarks() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "kind",
+            "landmark_kind",
+            "used_for_tps",
+            "accepted_for_tps",
+            "source",
+            "fixed_node_id",
+            "moving_node_id",
+            "fixed_feature_index",
+            "moving_feature_index",
+            "fixed_status",
+            "moving_status",
+            "fixed_label",
+            "moving_label",
+            "src_x",
+            "src_y",
+            "dst_x",
+            "dst_y",
+            "dx",
+            "dy",
+            "input_residual_um",
+            "source_distance_um",
+            "match_cost_um",
+            "total_score",
+        ]
     )
 
 
@@ -3137,6 +3738,110 @@ def _write_partial_anchor_alignment_html(
     return output_html
 
 
+def _write_anchor_only_residual_tps_html(
+    *,
+    fixed_records: list[_FeatureRecord],
+    hard_records: list[_FeatureRecord],
+    soft_records: list[_FeatureRecord],
+    landmarks: pd.DataFrame,
+    output_html: Path,
+    accepted: bool,
+    failure_reasons: Sequence[str],
+    jacobian: dict[str, Any],
+) -> Path:
+    used = (
+        landmarks.loc[
+            (landmarks.get("landmark_kind") == "matched_anchor")
+            & landmarks.get("used_for_tps", pd.Series(False, index=landmarks.index)).astype(bool)
+        ].copy()
+        if not landmarks.empty
+        else pd.DataFrame()
+    )
+    before_traces = [
+        _records_to_plotly_trace(fixed_records, name="fixed", color="#1f77b4"),
+        _records_to_plotly_trace(hard_records, name="moving hard-aligned", color="#d62728"),
+    ]
+    after_traces = [
+        _records_to_plotly_trace(fixed_records, name="fixed", color="#1f77b4"),
+        _records_to_plotly_trace(soft_records, name="moving residual TPS", color="#2ca02c"),
+    ]
+    if not used.empty:
+        before_traces.append(
+            _anchor_only_residual_link_trace(
+                used,
+                name="TPS source-to-target anchors",
+                color="#7b2cbf",
+                warped=False,
+            )
+        )
+        after_traces.append(
+            _anchor_only_residual_link_trace(
+                used,
+                name="post-TPS residual vectors",
+                color="#f97316",
+                warped=True,
+            )
+        )
+    reason_text = "; ".join(failure_reasons) if failure_reasons else "accepted"
+    jacobian_text = (
+        f"negative Jacobian ratio: "
+        f"{float(jacobian.get('negative_jacobian_ratio', 0.0)):.4f}; "
+        f"checked cells: {jacobian.get('checked_cells', 0)}"
+    )
+    html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Anchor-only residual TPS alignment</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    body {{ margin: 0; font-family: Arial, sans-serif; background: #f7f9fc; color: #172033; }}
+    header {{ padding: 16px 24px 8px 24px; }}
+    h1 {{ margin: 0; font-size: 22px; }}
+    p {{ margin: 6px 0 0 0; color: #536273; }}
+    .note {{ margin: 12px 24px 0 24px; padding: 12px 14px; border: 1px solid #b8d5ff; border-radius: 6px; background: #eef6ff; color: #17324d; }}
+    .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px 16px 16px 16px; }}
+    .panel {{ height: calc(100vh - 132px); min-height: 560px; border: 1px solid #d8e0ea; background: white; }}
+    @media (max-width: 1000px) {{
+      .grid {{ grid-template-columns: 1fr; }}
+      .panel {{ height: 70vh; }}
+    }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Anchor-only residual TPS alignment</h1>
+    <p>Blue is fixed, red is hard-aligned moving before residual TPS, green is moving after residual TPS. Purple links are active evidence anchors; orange links are post-TPS residuals.</p>
+  </header>
+  <div class="note">
+    Anchor-only mode uses only hard-stage matched anchors as TPS control points. Passive/no-counterpart contours follow the field but do not attract boundaries.
+    <br><strong>accepted: {str(bool(accepted)).lower()}; active anchors: {len(used)}; {jacobian_text}; reason: {reason_text}</strong>
+  </div>
+  <div class="grid">
+    <div id="before" class="panel"></div>
+    <div id="after" class="panel"></div>
+  </div>
+  <script>
+    const beforeData = {json.dumps(before_traces)};
+    const afterData = {json.dumps(after_traces)};
+    const baseLayout = {{
+      margin: {{l: 50, r: 20, t: 38, b: 45}},
+      xaxis: {{title: "x", scaleanchor: "y", scaleratio: 1, zeroline: false}},
+      yaxis: {{title: "y", autorange: "reversed", zeroline: false}},
+      legend: {{orientation: "h", y: 1.08}},
+      hovermode: "closest"
+    }};
+    Plotly.newPlot("before", beforeData, {{...baseLayout, title: "Before residual TPS"}}, {{responsive: true, scrollZoom: true}});
+    Plotly.newPlot("after", afterData, {{...baseLayout, title: "After residual TPS"}}, {{responsive: true, scrollZoom: true}});
+  </script>
+</body>
+</html>
+"""
+    output_html.parent.mkdir(parents=True, exist_ok=True)
+    output_html.write_text(html, encoding="utf-8")
+    return output_html
+
+
 def _write_group_correspondence_matrix_html(
     matrix: pd.DataFrame,
     output_html: Path,
@@ -3229,6 +3934,43 @@ def _anchor_alignment_link_trace(
         "hovertemplate": "%{text}<extra></extra>",
         "line": {"color": color, "width": 1.25},
         "opacity": 0.65,
+    }
+
+
+def _anchor_only_residual_link_trace(
+    rows: pd.DataFrame,
+    *,
+    name: str,
+    color: str,
+    warped: bool,
+) -> dict[str, Any]:
+    x_values: list[float | None] = []
+    y_values: list[float | None] = []
+    text_values: list[str | None] = []
+    for _, row in rows.iterrows():
+        src_x = float(row["src_x"])
+        src_y = float(row["src_y"])
+        dst_x = float(row["dst_x"])
+        dst_y = float(row["dst_y"])
+        x_values.extend([src_x, dst_x, None])
+        y_values.extend([src_y, dst_y, None])
+        residual = float(row.get("input_residual_um", math.hypot(dst_x - src_x, dst_y - src_y)))
+        hover = (
+            f"{row.get('fixed_node_id')} <- {row.get('moving_node_id')}<br>"
+            f"residual={residual:.2f}<br>"
+            f"used_for_tps={bool(row.get('used_for_tps', False))}"
+        )
+        text_values.extend([hover, hover, None])
+    return {
+        "type": "scattergl",
+        "mode": "lines",
+        "name": name,
+        "x": x_values,
+        "y": y_values,
+        "text": text_values,
+        "hovertemplate": "%{text}<extra></extra>",
+        "line": {"color": color, "width": 1.25 if not warped else 1.0},
+        "opacity": 0.70 if not warped else 0.55,
     }
 
 
