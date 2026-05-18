@@ -1,0 +1,55 @@
+[
+  {
+    "structure_id": 1,
+    "structure_name": "Structure 1",
+    "cluster_ids": [
+      "1",
+      "16",
+      "19",
+      "22"
+    ],
+    "structure_color": "#6EF0D4"
+  },
+  {
+    "structure_id": 2,
+    "structure_name": "Structure 2",
+    "cluster_ids": [
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "9",
+      "12",
+      "13",
+      "14",
+      "15",
+      "20",
+      "24"
+    ],
+    "structure_color": "#78B9FF"
+  },
+  {
+    "structure_id": 3,
+    "structure_name": "Structure 3",
+    "cluster_ids": [
+      "7",
+      "8",
+      "10",
+      "11",
+      "17",
+      "18"
+    ],
+    "structure_color": "#FFB870"
+  },
+  {
+    "structure_id": 4,
+    "structure_name": "Structure 4",
+    "cluster_ids": [
+      "21",
+      "23",
+      "25"
+    ],
+    "structure_color": "#C5A3FF"
+  }
+]

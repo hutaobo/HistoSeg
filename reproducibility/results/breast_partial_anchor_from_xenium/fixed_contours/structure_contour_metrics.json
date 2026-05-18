@@ -1,0 +1,161 @@
+{
+  "id_col_used": "cell_id",
+  "x_col": "x_centroid",
+  "y_col": "y_centroid",
+  "selected_structures": [
+    {
+      "structure_id": 1,
+      "structure_name": "Structure 1",
+      "structure_color": "#6EF0D4",
+      "cluster_ids": [
+        "1",
+        "7",
+        "17",
+        "18"
+      ]
+    },
+    {
+      "structure_id": 2,
+      "structure_name": "Structure 2",
+      "structure_color": "#78B9FF",
+      "cluster_ids": [
+        "2",
+        "4",
+        "5",
+        "6",
+        "8",
+        "9",
+        "10",
+        "11",
+        "14",
+        "15",
+        "20"
+      ]
+    },
+    {
+      "structure_id": 3,
+      "structure_name": "Structure 3",
+      "structure_color": "#FFB870",
+      "cluster_ids": [
+        "3",
+        "12",
+        "13",
+        "16",
+        "19"
+      ]
+    }
+  ],
+  "config": {
+    "clusters_csv": "\\\\storage3.ad.scilifelab.se\\mn-moldia\\long\\10X_datasets\\Xenium\\Xenium_Breast_Cancer\\Xenium_FFPE_Human_Breast_Cancer_Rep1_outs\\analysis\\clustering\\gene_expression_graphclust\\clusters.csv",
+    "cells_parquet": "\\\\storage3.ad.scilifelab.se\\mn-moldia\\long\\10X_datasets\\Xenium\\Xenium_Breast_Cancer\\Xenium_FFPE_Human_Breast_Cancer_Rep1_outs\\cells.parquet",
+    "out_dir": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_contours",
+    "structures": [
+      {
+        "structure_id": 1,
+        "structure_name": "Structure 1",
+        "cluster_ids": [
+          "1",
+          "7",
+          "17",
+          "18"
+        ],
+        "structure_color": "#6EF0D4"
+      },
+      {
+        "structure_id": 2,
+        "structure_name": "Structure 2",
+        "cluster_ids": [
+          "2",
+          "4",
+          "5",
+          "6",
+          "8",
+          "9",
+          "10",
+          "11",
+          "14",
+          "15",
+          "20"
+        ],
+        "structure_color": "#78B9FF"
+      },
+      {
+        "structure_id": 3,
+        "structure_name": "Structure 3",
+        "cluster_ids": [
+          "3",
+          "12",
+          "13",
+          "16",
+          "19"
+        ],
+        "structure_color": "#FFB870"
+      }
+    ],
+    "barcode_col": "Barcode",
+    "cluster_col": "Cluster",
+    "bins_x": 900,
+    "bins_y": 700,
+    "gaussian_sigma": 2.25,
+    "density_scale_quantile": 0.98,
+    "support_quantile": 0.18,
+    "tissue_quantile": 0.06,
+    "min_dominance": 0.34,
+    "closing_iterations": 2,
+    "opening_iterations": 1,
+    "fill_holes": true,
+    "min_cells": 500,
+    "min_component_pixels": 180,
+    "xenium_pixel_size_um": 0.2125,
+    "save_preview_png": true
+  },
+  "input_cell_counts": {
+    "1": 37067,
+    "2": 94973,
+    "3": 34323
+  },
+  "isoline_metrics": {
+    "valid_structures": [
+      1,
+      2,
+      3
+    ],
+    "skipped_structures": [],
+    "grid_shape": [
+      700,
+      900
+    ],
+    "tissue_threshold": 0.01397493691809049,
+    "overlap_pixels_after": 0,
+    "occupied_pixels": 158915,
+    "partition_pixels_total": 613087,
+    "structure_pixels": {
+      "1": 112605,
+      "2": 416274,
+      "3": 84208
+    },
+    "seed_pixels": {
+      "1": 111274,
+      "2": 400436,
+      "3": 82900
+    }
+  },
+  "cell_assignment_metrics": {
+    "cell_count": 166363,
+    "assigned_cell_count": 166363,
+    "assigned_cell_fraction": 1.0,
+    "structure_cell_counts": {
+      "1": 43847,
+      "2": 83134,
+      "3": 39382
+    }
+  },
+  "output_files": {
+    "geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_contours\\xenium_explorer_annotations.geojson",
+    "csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_contours\\xenium_explorer_annotations.csv",
+    "summary": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_contours\\xenium_explorer_annotations_summary.csv",
+    "preview_png": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_contours\\multi_structure_contour_preview.png",
+    "partition_table": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_contours\\cells_with_structure_partition.parquet",
+    "structure_count_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_contours\\structure_contour_cell_counts.csv"
+  }
+}

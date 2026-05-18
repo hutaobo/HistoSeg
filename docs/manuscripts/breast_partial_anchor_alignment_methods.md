@@ -1,0 +1,219 @@
+# Breast Partial-Anchor Alignment Methods
+
+This note describes the manuscript-ready workflow used for the fully automatic
+breast partial-anchor alignment example. The workflow starts from two raw
+Xenium output folders, discovers spatial structures without manual landmarks,
+generates HistoSeg contour GeoJSON files, aligns the two contour slices, and
+renders a clean before/after figure.
+
+The example is a pairwise 3D alignment quality-control demonstration. It shows
+that two related breast cancer sections can be placed into a shared coordinate
+frame when only part of the tissue overlaps. It should not be interpreted as a
+complete dense 3D biological reconstruction from two sections alone.
+
+## Input Data
+
+Each Xenium output folder contributes two standard files:
+
+- `cells.parquet`, containing cell identifiers and physical x/y centroids.
+- `analysis/clustering/gene_expression_graphclust/clusters.csv`, containing
+  GraphClust cell-to-cluster assignments with `Barcode` and `Cluster` columns.
+
+The reproducibility script accepts either a direct Xenium `outs` folder or a
+parent folder containing one direct child ending in `_outs`. This supports the
+breast Rep2 layout where the user-facing folder contains
+`Xenium_FFPE_Human_Breast_Cancer_Rep2_outs`.
+
+## Plain-Language Method
+
+1. **Load cell coordinates and GraphClust labels.** HistoSeg joins
+   `cells.parquet` with `clusters.csv` using the cell barcode or cell ID. The
+   joined table provides one x/y coordinate and one GraphClust label per cell.
+
+2. **Automatically discover spatial structures.** GraphClust labels are treated
+   as the initial fine labels. HistoSeg computes a cluster-to-cluster spatial
+   distance matrix using the Search-and-Find relationship implemented through
+   `sfplot`. The matrix is converted to a cophenetic relationship matrix and
+   hierarchically cut into a small number of coarse structures. When
+   `cluster_count=auto`, HistoSeg evaluates several candidate cuts and selects
+   the structure count that balances separation, within-structure compactness,
+   and minimum structure cell fraction.
+
+3. **Generate continuous contours from the selected structures.** For each
+   automatically selected `Structure N`, HistoSeg builds a smoothed density
+   field from the cells assigned to the structure. The workflow rasterizes all
+   structures on a shared x/y grid, applies Gaussian smoothing, forms
+   structure-support masks, resolves overlaps into an exclusive partition, and
+   extracts polygon boundaries from the partition masks. The result is a
+   non-overlapping multi-structure contour layer written as
+   `xenium_explorer_annotations.geojson`.
+
+4. **Search for partial-anchor correspondences.** HistoSeg does not assume that
+   all contours in the two sections have counterparts. It evaluates every
+   fixed-structure and moving-structure pair as a candidate local overlap. For
+   each candidate pair, it compares individual contour descriptors, including
+   centroid layout, area, shape, and local neighborhood context.
+
+5. **Estimate the alignment from automatic anchors only.** The accepted
+   transform is fitted from high-confidence RANSAC inlier anchors. The user does
+   not provide landmarks and does not specify which structures should match.
+   Non-overlapping contours are carried as passive geometry: they receive the
+   final transform but do not pull the transform toward themselves.
+
+6. **Write auditable outputs.** The run writes the fixed and moving
+   auto-structure summaries, the two contour GeoJSON files, the selected anchor
+   table, the group-correspondence matrix, the aligned moving GeoJSON, the
+   alignment summary JSON, and a clean before/after manuscript panel.
+
+## Mathematical Description
+
+Let the fixed-slice contour set be
+
+\[
+F = \{F_i\}_{i=1}^{n_f}
+\]
+
+and the moving-slice contour set be
+
+\[
+M = \{M_j\}_{j=1}^{n_m}.
+\]
+
+Each contour carries a within-slice structure label \(g(F_i)\) or \(g(M_j)\),
+but these labels are not assumed to be harmonized across slices. HistoSeg first
+builds contour descriptors
+
+\[
+d(C) = \left[c(C), a(C), s(C), \mathcal{N}(C)\right],
+\]
+
+where \(c(C)\) is the centroid, \(a(C)\) is area, \(s(C)\) is a shape summary,
+and \(\mathcal{N}(C)\) describes the local neighboring-contour layout.
+
+For each fixed group \(G_f\) and moving group \(G_m\), candidate anchor pairs
+are scored from descriptor compatibility. RANSAC then searches for an inlier
+set
+
+\[
+A = \{(i,j): F_i \in G_f,\ M_j \in G_m\}
+\]
+
+that supports a similarity transform
+
+\[
+T(x) = R_{\theta}x + t.
+\]
+
+The residual for an anchor pair is
+
+\[
+r_{ij} = \left\|c(F_i) - T(c(M_j))\right\|_2.
+\]
+
+The selected transform is the candidate that maximizes inlier support and
+descriptor agreement while keeping robust residual summaries low. The transform
+is applied to every moving contour,
+
+\[
+M'_j = T(M_j),
+\]
+
+but only the inlier set \(A\) contributes force to the fit. Contours without a
+counterpart therefore remain visible as transformed passive tissue rather than
+being forced to overlap unrelated fixed contours.
+
+## HistoSeg Code Mapping
+
+| Method step | HistoSeg API or CLI | Main output |
+| --- | --- | --- |
+| Resolve raw Xenium folders | `resolve_xenium_output_folder()` | resolved `outs` path |
+| Auto-discover structures | `discover_auto_structures(AutoStructureDiscoveryConfig(...))` or `histoseg-contour auto-structure` | `structures.json`, cluster assignment CSV, matrix CSVs |
+| Generate contours | `run_multi_structure_contours(MultiStructureContourConfig(...))` | `xenium_explorer_annotations.geojson` |
+| Align contours | `align_contours_label_free(LabelFreeContourAlignmentConfig(..., partial_correspondence=True, group_correspondence=True))` | aligned GeoJSON, anchors CSV, group matrix, summary JSON |
+| Render manuscript panel | `render_label_free_before_after_panel(LabelFreeBeforeAfterFigureConfig(...))` | before/after PNG and SVG |
+| End-to-end reproduction | `python reproducibility/run_breast_partial_anchor_from_xenium.py` | manifest JSON and figure assets |
+
+## Reproducible Command
+
+Run from the HistoSeg repository root:
+
+```bash
+python reproducibility/run_breast_partial_anchor_from_xenium.py \
+  --out-dir reproducibility/results/breast_partial_anchor_from_xenium \
+  --cluster-count auto \
+  --min-structure-count 3 \
+  --max-structure-count 8
+```
+
+The script defaults to the local breast Xenium paths used during method
+development:
+
+```text
+Y:\long\10X_datasets\Xenium\Xenium_Breast_Cancer\Xenium_FFPE_Human_Breast_Cancer_Rep1_outs
+Y:\long\10X_datasets\Xenium\Xenium_Breast_Cancer\Xenium_FFPE_Human_Breast_Cancer_Rep2
+```
+
+Override them with `--fixed-xenium-output` and `--moving-xenium-output` when
+running on another machine.
+
+The main output manifest is:
+
+```text
+reproducibility/results/breast_partial_anchor_from_xenium/breast_partial_anchor_manifest.json
+```
+
+The manuscript figure is:
+
+```text
+reproducibility/results/breast_partial_anchor_from_xenium/figure/breast_partial_anchor_before_after.png
+```
+
+## Frozen Raw-Folder Run
+
+The full raw-folder workflow was executed from the repository root with:
+
+```bash
+python reproducibility/run_breast_partial_anchor_from_xenium.py --overwrite
+```
+
+The run regenerated both contour inputs from the raw Xenium folders and then
+performed label-free group-correspondence alignment. The frozen output lives in:
+
+```text
+reproducibility/results/breast_partial_anchor_from_xenium/
+```
+
+Key results:
+
+| Quantity | Value |
+| --- | --- |
+| Fixed auto-structure count | 3 |
+| Moving auto-structure count | 4 |
+| Alignment method | `label_free_group_correspondence_ransac_alignment` |
+| Selected fixed group | `Structure 3` |
+| Selected moving group | `Structure 3` |
+| Anchor pairs selected | 27 |
+| Anchor pairs used for transform | 20 |
+| Median anchor residual | 43.57 coordinate units |
+| P90 anchor residual | 135.00 coordinate units |
+| Maximum anchor residual | 146.14 coordinate units |
+| Candidate pair count | 760 |
+| RANSAC trial count | 1015 |
+
+These values are from the fully regenerated raw-folder workflow. They differ
+from the earlier RTD showcase numbers because the manuscript workflow now
+reselects coarse structures automatically from the two Xenium output folders
+instead of reusing the previously generated interactive Serve-app GeoJSON
+files.
+
+## Figure Legend Draft
+
+Fully automatic partial-anchor alignment of two breast cancer Xenium sections.
+HistoSeg started from the two raw Xenium output folders, joined cell coordinates
+with GraphClust labels, automatically discovered coarse spatial structures,
+generated multi-structure contour GeoJSON files, and searched all
+fixed/moving-structure combinations for a local anchor constellation. The final
+transform was fitted only from automatically detected high-confidence anchors;
+non-overlapping tissue was propagated as passive geometry and was not forced to
+overlap. Blue, fixed contours; red, moving contours before alignment; green,
+moving contours after alignment; purple, automatically selected anchor links.

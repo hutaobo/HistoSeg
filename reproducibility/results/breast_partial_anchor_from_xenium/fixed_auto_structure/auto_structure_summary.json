@@ -1,0 +1,164 @@
+{
+  "xenium_output": "\\\\storage3.ad.scilifelab.se\\mn-moldia\\long\\10X_datasets\\Xenium\\Xenium_Breast_Cancer\\Xenium_FFPE_Human_Breast_Cancer_Rep1_outs",
+  "cells_parquet": "\\\\storage3.ad.scilifelab.se\\mn-moldia\\long\\10X_datasets\\Xenium\\Xenium_Breast_Cancer\\Xenium_FFPE_Human_Breast_Cancer_Rep1_outs\\cells.parquet",
+  "clusters_csv": "\\\\storage3.ad.scilifelab.se\\mn-moldia\\long\\10X_datasets\\Xenium\\Xenium_Breast_Cancer\\Xenium_FFPE_Human_Breast_Cancer_Rep1_outs\\analysis\\clustering\\gene_expression_graphclust\\clusters.csv",
+  "out_dir": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_auto_structure",
+  "matched_cell_count": 166363,
+  "cluster_count": 20,
+  "selected_structure_count": 3,
+  "cluster_count_mode": "auto",
+  "selection_score": {
+    "structure_count": 3,
+    "score": 0.8782109485675026,
+    "silhouette": 0.6690909348686971,
+    "within_mean": 67.14174593695955,
+    "between_mean": 235.50760827788972,
+    "separation": 3.5076181738780505,
+    "min_structure_cell_fraction_observed": 0.20631390393296586,
+    "entropy_balance": 0.8922104603526426,
+    "passes_min_fraction": true,
+    "candidate_scores": [
+      {
+        "structure_count": 3,
+        "score": 0.8782109485675026,
+        "silhouette": 0.6690909348686971,
+        "within_mean": 67.14174593695955,
+        "between_mean": 235.50760827788972,
+        "separation": 3.5076181738780505,
+        "min_structure_cell_fraction_observed": 0.20631390393296586,
+        "entropy_balance": 0.8922104603526426,
+        "passes_min_fraction": true
+      },
+      {
+        "structure_count": 4,
+        "score": -0.2145894668051096,
+        "silhouette": 0.597839370854669,
+        "within_mean": 57.655453057489034,
+        "between_mean": 226.94175744252854,
+        "separation": 3.9361716091677517,
+        "min_structure_cell_fraction_observed": 0.0024043807817844113,
+        "entropy_balance": 0.7182777313188247,
+        "passes_min_fraction": false
+      },
+      {
+        "structure_count": 5,
+        "score": -0.22323614893876853,
+        "silhouette": 0.5861881509915802,
+        "within_mean": 49.23277897278923,
+        "between_mean": 219.07510753628966,
+        "separation": 4.449781468824295,
+        "min_structure_cell_fraction_observed": 0.0024043807817844113,
+        "entropy_balance": 0.7053128303284097,
+        "passes_min_fraction": false
+      },
+      {
+        "structure_count": 6,
+        "score": -0.228836949558059,
+        "silhouette": 0.5818556800211179,
+        "within_mean": 44.01003282127124,
+        "between_mean": 213.66672108898982,
+        "separation": 4.854954822502745,
+        "min_structure_cell_fraction_observed": 0.0024043807817844113,
+        "entropy_balance": 0.6729530424835786,
+        "passes_min_fraction": false
+      },
+      {
+        "structure_count": 7,
+        "score": -0.34433442358888644,
+        "silhouette": 0.4563104213589675,
+        "within_mean": 40.131018568388825,
+        "between_mean": 199.41947311648462,
+        "separation": 4.9692103571125905,
+        "min_structure_cell_fraction_observed": 0.0024043807817844113,
+        "entropy_balance": 0.733496150292337,
+        "passes_min_fraction": false
+      },
+      {
+        "structure_count": 8,
+        "score": -0.4615922984789431,
+        "silhouette": 0.3417246077313382,
+        "within_mean": 38.898139701774014,
+        "between_mean": 196.67343661640726,
+        "separation": 5.056114202869747,
+        "min_structure_cell_fraction_observed": 0.0024043807817844113,
+        "entropy_balance": 0.7108645006771973,
+        "passes_min_fraction": false
+      }
+    ]
+  },
+  "candidate_scores": [
+    {
+      "structure_count": 3,
+      "score": 0.8782109485675026,
+      "silhouette": 0.6690909348686971,
+      "within_mean": 67.14174593695955,
+      "between_mean": 235.50760827788972,
+      "separation": 3.5076181738780505,
+      "min_structure_cell_fraction_observed": 0.20631390393296586,
+      "entropy_balance": 0.8922104603526426,
+      "passes_min_fraction": true
+    },
+    {
+      "structure_count": 4,
+      "score": -0.2145894668051096,
+      "silhouette": 0.597839370854669,
+      "within_mean": 57.655453057489034,
+      "between_mean": 226.94175744252854,
+      "separation": 3.9361716091677517,
+      "min_structure_cell_fraction_observed": 0.0024043807817844113,
+      "entropy_balance": 0.7182777313188247,
+      "passes_min_fraction": false
+    },
+    {
+      "structure_count": 5,
+      "score": -0.22323614893876853,
+      "silhouette": 0.5861881509915802,
+      "within_mean": 49.23277897278923,
+      "between_mean": 219.07510753628966,
+      "separation": 4.449781468824295,
+      "min_structure_cell_fraction_observed": 0.0024043807817844113,
+      "entropy_balance": 0.7053128303284097,
+      "passes_min_fraction": false
+    },
+    {
+      "structure_count": 6,
+      "score": -0.228836949558059,
+      "silhouette": 0.5818556800211179,
+      "within_mean": 44.01003282127124,
+      "between_mean": 213.66672108898982,
+      "separation": 4.854954822502745,
+      "min_structure_cell_fraction_observed": 0.0024043807817844113,
+      "entropy_balance": 0.6729530424835786,
+      "passes_min_fraction": false
+    },
+    {
+      "structure_count": 7,
+      "score": -0.34433442358888644,
+      "silhouette": 0.4563104213589675,
+      "within_mean": 40.131018568388825,
+      "between_mean": 199.41947311648462,
+      "separation": 4.9692103571125905,
+      "min_structure_cell_fraction_observed": 0.0024043807817844113,
+      "entropy_balance": 0.733496150292337,
+      "passes_min_fraction": false
+    },
+    {
+      "structure_count": 8,
+      "score": -0.4615922984789431,
+      "silhouette": 0.3417246077313382,
+      "within_mean": 38.898139701774014,
+      "between_mean": 196.67343661640726,
+      "separation": 5.056114202869747,
+      "min_structure_cell_fraction_observed": 0.0024043807817844113,
+      "entropy_balance": 0.7108645006771973,
+      "passes_min_fraction": false
+    }
+  ],
+  "id_col_used": "cell_id",
+  "x_col": "x_centroid",
+  "y_col": "y_centroid",
+  "linkage_method": "average",
+  "use_cophenetic": true,
+  "min_structure_cell_fraction": 0.01,
+  "dry_run": false
+}

@@ -13,6 +13,7 @@ he_analysis
 workflows/index
 tutorials/index
 api/index
+manuscripts/breast_partial_anchor_alignment_methods
 history
 ```
 

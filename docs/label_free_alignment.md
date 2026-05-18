@@ -115,6 +115,32 @@ for dense 3D biology from two slices alone.
 
 ## Reproduce The Run
 
+### From Raw Xenium Output Folders
+
+For the manuscript workflow, HistoSeg can regenerate the contour inputs instead
+of starting from pre-existing GeoJSON files. The end-to-end script starts from
+two Xenium output folders, automatically discovers coarse `Structure N` groups,
+generates multi-structure contour GeoJSON files, runs the same label-free
+partial-anchor alignment, and writes a clean before/after figure plus a
+provenance manifest.
+
+```bash
+python reproducibility/run_breast_partial_anchor_from_xenium.py \
+  --out-dir reproducibility/results/breast_partial_anchor_from_xenium \
+  --cluster-count auto \
+  --min-structure-count 3 \
+  --max-structure-count 8
+```
+
+The script defaults to the local breast Rep1/Rep2 Xenium folders used for this
+example and resolves nested `_outs` folders automatically. Use
+`--fixed-xenium-output` and `--moving-xenium-output` to point at another copy of
+the data. The detailed method description, contour-generation formulae, API
+mapping, and figure-legend draft are in
+{doc}`manuscripts/breast_partial_anchor_alignment_methods`.
+
+### From Existing GeoJSON Files
+
 ```bash
 histoseg-3d align-contours-label-free \
   --fixed-geojson breastrep1S2.geojson \

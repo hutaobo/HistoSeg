@@ -1,0 +1,4 @@
+structure_id,structure_name,selected_cluster_ids,input_cell_count,assigned_cell_count,contour_count
+1,Structure 1,"1, 7, 17, 18",37067,43847,53
+2,Structure 2,"2, 4, 5, 6, 8, 9, 10, 11, 14, 15, 20",94973,83134,145
+3,Structure 3,"3, 12, 13, 16, 19",34323,39382,100

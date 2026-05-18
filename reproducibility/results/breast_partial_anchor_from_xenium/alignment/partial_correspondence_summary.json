@@ -1,0 +1,50 @@
+{
+  "fixed_node_count": 566,
+  "moving_node_count": 532,
+  "match_candidate_count": 6780,
+  "anchor_count": 138,
+  "review_match_count": 580,
+  "status_counts": {
+    "fixed": {
+      "envelope_only": 1,
+      "matched_anchor": 107,
+      "matched_review": 125,
+      "no_counterpart": 333
+    },
+    "moving": {
+      "envelope_only": 1,
+      "matched_anchor": 110,
+      "matched_review": 127,
+      "no_counterpart": 294
+    }
+  },
+  "anchor_spatial_entropy": {
+    "entropy": 1.053917113104716,
+    "entropy_normalized": 0.7602404962920933,
+    "occupied_quadrants": 4,
+    "quadrant_counts": [
+      87,
+      22,
+      12,
+      17
+    ]
+  },
+  "anchor_convex_hull_coverage_ratio": 0.9237515985123625,
+  "warnings": [],
+  "parameters": {
+    "search_window": 800.0,
+    "knn_neighbors": 6,
+    "min_anchor_score": 0.72,
+    "min_review_score": 0.55,
+    "area_ratio_min": 0.25,
+    "area_ratio_max": 4.0
+  },
+  "fixed_geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_contours\\xenium_explorer_annotations.geojson",
+  "moving_geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\moving_contours\\xenium_explorer_annotations.geojson",
+  "method": "label_free_partial_correspondence_diagnostic",
+  "diagnostic_only": true,
+  "coordinate_warp_performed": false,
+  "partial_correspondence_nodes_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\partial_correspondence_nodes.csv",
+  "partial_correspondence_matches_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\partial_correspondence_matches.csv",
+  "partial_correspondence_matrix_html": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\partial_correspondence_matrix.html"
+}

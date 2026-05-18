@@ -7,6 +7,12 @@ from sfplot import (
     plot_cophenetic_heatmap,
 )
 
+from .auto_structure import (
+    AutoStructureDiscoveryConfig,
+    AutoStructureDiscoveryResult,
+    discover_auto_structures,
+    resolve_xenium_output_folder,
+)
 from .boundary_network import (
     BoundaryNetworkConfig,
     BoundaryNetworkResult,
@@ -55,6 +61,8 @@ from .topology import (
 __all__ = [
     "BoundaryNetworkConfig",
     "BoundaryNetworkResult",
+    "AutoStructureDiscoveryConfig",
+    "AutoStructureDiscoveryResult",
     "ContourAdjacencyConfig",
     "ContourAdjacencyResult",
     "ContourTopologyConfig",
@@ -71,6 +79,7 @@ __all__ = [
     "build_contour_adjacency_graph",
     "build_contour_adjacency_matrix",
     "build_group_boundary_graph",
+    "discover_auto_structures",
     "compute_cophenetic_distances_from_df",
     "compute_cophenetic_from_distance_matrix",
     "compute_searcher_findee_distance_matrix_from_df",
@@ -82,6 +91,7 @@ __all__ = [
     "load_contours_csv",
     "normalize_group_boundary_overlap",
     "plot_cophenetic_heatmap",
+    "resolve_xenium_output_folder",
     "run_contour_adjacency",
     "run_gene_transcript_isoline",
     "run_group_boundary_network",

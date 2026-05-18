@@ -1,0 +1,43 @@
+[
+  {
+    "structure_id": 1,
+    "structure_name": "Structure 1",
+    "cluster_ids": [
+      "1",
+      "7",
+      "17",
+      "18"
+    ],
+    "structure_color": "#6EF0D4"
+  },
+  {
+    "structure_id": 2,
+    "structure_name": "Structure 2",
+    "cluster_ids": [
+      "2",
+      "4",
+      "5",
+      "6",
+      "8",
+      "9",
+      "10",
+      "11",
+      "14",
+      "15",
+      "20"
+    ],
+    "structure_color": "#78B9FF"
+  },
+  {
+    "structure_id": 3,
+    "structure_name": "Structure 3",
+    "cluster_ids": [
+      "3",
+      "12",
+      "13",
+      "16",
+      "19"
+    ],
+    "structure_color": "#FFB870"
+  }
+]

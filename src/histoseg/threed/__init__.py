@@ -45,6 +45,11 @@ from .label_free_alignment import (
     align_contours_label_free,
     run_anchor_only_residual_tps,
 )
+from .label_free_figure import (
+    LabelFreeBeforeAfterFigureConfig,
+    LabelFreeBeforeAfterFigureResult,
+    render_label_free_before_after_panel,
+)
 from .cell_cloud import (
     CELL_CLOUD_ALIGNED_XY_OBSM_KEY,
     CELL_CLOUD_OBS_SLICE_KEY,
@@ -163,6 +168,8 @@ __all__ = [
     "AnchorOnlyResidualTPSResult",
     "LabelFreeContourAlignmentConfig",
     "LabelFreeContourAlignmentResult",
+    "LabelFreeBeforeAfterFigureConfig",
+    "LabelFreeBeforeAfterFigureResult",
     "LOCAL_Z_ORIENTATION_SCHEMA_VERSION",
     "LOCAL_Z_ORIENTATION_STATES",
     "LocalZOrientationConfig",
@@ -198,6 +205,7 @@ __all__ = [
     "quantify_gene_structure_relationships",
     "reconstruct_3d_contour_meshes",
     "render_cell_cloud_html",
+    "render_label_free_before_after_panel",
     "render_gland_instance_atlas",
     "render_gland_position_atlas",
     "render_gland_qc_atlas",

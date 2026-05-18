@@ -6,6 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
+from .auto_structure import AutoStructureDiscoveryConfig, discover_auto_structures
 from .boundary_network import BoundaryNetworkConfig, run_group_boundary_network
 from .contour_adjacency import ContourAdjacencyConfig, run_contour_adjacency
 from .gene_isoline import GeneTranscriptIsolineConfig, run_gene_transcript_isoline
@@ -65,6 +66,34 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="Disable synthetic background points in the underlying Pattern1 run.",
     )
     gene.add_argument("--fail-fast", action="store_true", help="Stop on the first sample/gene error.")
+
+    auto = subparsers.add_parser(
+        "auto-structure",
+        help="Automatically discover coarse structure groups from a Xenium output folder.",
+    )
+    auto.add_argument("--xenium-output", default=None, help="Xenium outs folder, or parent containing one *_outs folder.")
+    auto.add_argument("--clusters-csv", default=None, help="GraphClust clusters.csv path.")
+    auto.add_argument("--cells-parquet", default=None, help="Cell table parquet path.")
+    auto.add_argument("--out-dir", required=True, help="Output directory.")
+    auto.add_argument(
+        "--cluster-count",
+        default="auto",
+        help="Number of structures to discover, or 'auto' to select between min/max counts.",
+    )
+    auto.add_argument("--min-structure-count", type=int, default=3, help="Minimum auto-selected structure count.")
+    auto.add_argument("--max-structure-count", type=int, default=8, help="Maximum auto-selected structure count.")
+    auto.add_argument(
+        "--min-structure-cell-fraction",
+        type=float,
+        default=0.01,
+        help="Minimum case-cell fraction preferred for each auto-selected structure.",
+    )
+    auto.add_argument("--barcode-col", default="Barcode", help="Barcode column in clusters.csv.")
+    auto.add_argument("--cluster-col", default="Cluster", help="Cluster-label column in clusters.csv.")
+    auto.add_argument("--linkage-method", default="average", help="Agglomerative linkage method.")
+    auto.add_argument("--no-cophenetic", action="store_true", help="Cluster directly on spatial distance matrix.")
+    auto.add_argument("--dry-run", action="store_true", help="Resolve inputs and compute the plan without writing files.")
+    auto.add_argument("--overwrite", action="store_true", help="Overwrite existing auto-structure outputs.")
 
     multi = subparsers.add_parser("multi-structure", help="Generate multi-structure contours.")
     multi.add_argument("--clusters-csv", required=True, help="GraphClust clusters.csv path.")
@@ -195,6 +224,25 @@ def main(argv: Sequence[str] | None = None) -> None:
                 fail_fast=args.fail_fast,
             )
         )
+    elif args.command == "auto-structure":
+        result = discover_auto_structures(
+            AutoStructureDiscoveryConfig(
+                xenium_output=args.xenium_output,
+                clusters_csv=args.clusters_csv,
+                cells_parquet=args.cells_parquet,
+                out_dir=args.out_dir,
+                barcode_col=args.barcode_col,
+                cluster_col=args.cluster_col,
+                cluster_count=_parse_auto_cluster_count(args.cluster_count),
+                min_structure_count=args.min_structure_count,
+                max_structure_count=args.max_structure_count,
+                min_structure_cell_fraction=args.min_structure_cell_fraction,
+                linkage_method=args.linkage_method,
+                use_cophenetic=not args.no_cophenetic,
+                dry_run=args.dry_run,
+                overwrite=args.overwrite,
+            )
+        )
     elif args.command == "multi-structure":
         structures = json.loads(Path(args.structures_json).read_text(encoding="utf-8"))
         result = run_multi_structure_contours(
@@ -250,6 +298,16 @@ def _parse_cluster_list(value: str) -> list[str]:
 
 def _parse_csv_list(value: str) -> list[str]:
     return [part.strip() for part in str(value).split(",") if part.strip()]
+
+
+def _parse_auto_cluster_count(value: str) -> int | str:
+    text = str(value).strip().lower()
+    if text == "auto":
+        return "auto"
+    try:
+        return int(text)
+    except ValueError as exc:
+        raise SystemExit("--cluster-count must be an integer or 'auto'.") from exc
 
 
 if __name__ == "__main__":

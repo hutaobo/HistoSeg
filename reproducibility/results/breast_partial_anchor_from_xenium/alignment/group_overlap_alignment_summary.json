@@ -1,0 +1,100 @@
+{
+  "fixed_geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_contours\\xenium_explorer_annotations.geojson",
+  "moving_geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\moving_contours\\xenium_explorer_annotations.geojson",
+  "output_geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\moving_group_overlap_aligned.geojson",
+  "method": "label_free_group_correspondence_ransac_alignment",
+  "objective_note": "Contours are first grouped by their within-slice assigned_structure labels. All fixed-group/moving-group combinations are evaluated, allowing a fixed group such as Structure 2 to match a differently named moving group such as Structure 3. Only RANSAC inliers from the best cross-group constellation estimate the rigid transform; labels are preserved and not harmonized.",
+  "diagnostic_only": false,
+  "coordinate_warp_performed": true,
+  "labels_used_for_matching": false,
+  "semantic_harmonization_performed": false,
+  "transform_type": "similarity",
+  "transform": {
+    "kind": "similarity",
+    "origin_x": 19703.100138656057,
+    "origin_y": 6907.132025734537,
+    "rotation_degrees": 1.8863990521149752,
+    "scale": 1.0,
+    "translate_x": -1404.5279761682941,
+    "translate_y": 8962.691106816004
+  },
+  "anchor_transform": {
+    "accepted": true,
+    "reason": "fit_from_group_correspondence_ransac_pairs",
+    "anchor_pair_count": 27,
+    "used_anchor_pair_count": 20,
+    "discarded_anchor_pair_count": 7,
+    "residual_median": 43.56962403422133,
+    "residual_p90": 135.00301652672027,
+    "residual_max": 146.143215333875,
+    "warnings": [],
+    "fixed_group": "Structure 3",
+    "moving_group": "Structure 3",
+    "group_pair_score": 25.677706616496764,
+    "candidate_pair_count": 760,
+    "ransac_trial_count": 1015
+  },
+  "global_context_scores_not_used_for_fitting": {
+    "union_iou_before": 0.9352281416308273,
+    "union_iou_after": 0.467721625674631
+  },
+  "partial_correspondence_summary": {
+    "fixed_node_count": 566,
+    "moving_node_count": 532,
+    "match_candidate_count": 6780,
+    "anchor_count": 138,
+    "review_match_count": 580,
+    "status_counts": {
+      "fixed": {
+        "envelope_only": 1,
+        "matched_anchor": 107,
+        "matched_review": 125,
+        "no_counterpart": 333
+      },
+      "moving": {
+        "envelope_only": 1,
+        "matched_anchor": 110,
+        "matched_review": 127,
+        "no_counterpart": 294
+      }
+    },
+    "anchor_spatial_entropy": {
+      "entropy": 1.053917113104716,
+      "entropy_normalized": 0.7602404962920933,
+      "occupied_quadrants": 4,
+      "quadrant_counts": [
+        87,
+        22,
+        12,
+        17
+      ]
+    },
+    "anchor_convex_hull_coverage_ratio": 0.9237515985123625,
+    "warnings": [],
+    "parameters": {
+      "search_window": 800.0,
+      "knn_neighbors": 6,
+      "min_anchor_score": 0.72,
+      "min_review_score": 0.55,
+      "area_ratio_min": 0.25,
+      "area_ratio_max": 4.0
+    },
+    "fixed_geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_contours\\xenium_explorer_annotations.geojson",
+    "moving_geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\moving_contours\\xenium_explorer_annotations.geojson",
+    "method": "label_free_partial_correspondence_diagnostic",
+    "diagnostic_only": true,
+    "coordinate_warp_performed": false,
+    "partial_correspondence_nodes_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\partial_correspondence_nodes.csv",
+    "partial_correspondence_matches_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\partial_correspondence_matches.csv",
+    "partial_correspondence_matrix_html": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\partial_correspondence_matrix.html"
+  },
+  "partial_correspondence_nodes_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\partial_correspondence_nodes.csv",
+  "partial_correspondence_matches_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\partial_correspondence_matches.csv",
+  "partial_correspondence_matrix_html": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\partial_correspondence_matrix.html",
+  "group_correspondence_matrix_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\group_correspondence_matrix.csv",
+  "group_correspondence_matrix_html": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\group_correspondence_matrix.html",
+  "anchor_landmarks_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\group_ransac_anchors.csv",
+  "overlay_html": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\group_overlap_alignment_overlay.html",
+  "overlay_before_png": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\group_overlap_overlay_before.png",
+  "overlay_after_png": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\group_overlap_overlay_after.png"
+}
