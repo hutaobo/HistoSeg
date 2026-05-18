@@ -13,15 +13,36 @@ anchor constellation from the contour geometry itself.
 
 ## Result
 
-```{figure} _static/threed/breast/label_free_group_correspondence_20260507/group_overlap_overlay_after.png
-:alt: Fully automatic partial-anchor breast contour alignment after transform
-:width: 100%
+The before/after panels below use clean documentation renders with no internal
+legend or axis text. Blue is the fixed breast slice, red is the moving slice
+before alignment, green is the moving slice after alignment, and purple marks
+the automatically detected anchor links used by the accepted transform.
 
-After automatic alignment. Blue is the fixed breast slice, green is the moving
-slice after the automatically estimated transform, and purple links are the
-automatically detected anchor pairs used to fit the transform. Regions outside
-the local overlap are preserved as passive geometry rather than forced to
-overlap.
+```{raw} html
+<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:18px; align-items:start; margin:1.2rem 0;">
+  <figure style="margin:0;">
+    <img
+      src="_static/threed/breast/label_free_group_correspondence_20260507/breast_partial_anchor_before_clean.png"
+      alt="Breast contour slices before fully automatic partial-anchor alignment"
+      style="width:100%; border:1px solid #d9dde3; border-radius:6px; background:white;"
+    />
+    <figcaption style="font-size:0.92rem; color:#536273; margin-top:0.45rem;">
+      <strong>Before.</strong> The moving slice is still in its original local
+      position. The large non-overlapping context is not treated as a failure.
+    </figcaption>
+  </figure>
+  <figure style="margin:0;">
+    <img
+      src="_static/threed/breast/label_free_group_correspondence_20260507/breast_partial_anchor_after_clean.png"
+      alt="Breast contour slices after fully automatic partial-anchor alignment"
+      style="width:100%; border:1px solid #d9dde3; border-radius:6px; background:white;"
+    />
+    <figcaption style="font-size:0.92rem; color:#536273; margin-top:0.45rem;">
+      <strong>After.</strong> The local overlap is aligned by automatically
+      discovered anchors; non-overlapping tissue remains passive geometry.
+    </figcaption>
+  </figure>
+</div>
 ```
 
 The accepted alignment is between `breastrep1S2.geojson` and
@@ -76,15 +97,6 @@ geometry, so tissue outside the overlapping region can remain non-overlapping.
 This is the behavior needed when two slices share a local 3D neighborhood but
 also contain tissue that is absent, shifted, torn, or outside the counterpart
 field of view.
-
-```{figure} _static/threed/breast/label_free_group_correspondence_20260507/group_overlap_overlay_before.png
-:alt: Breast contour slices before automatic partial-anchor alignment
-:width: 100%
-
-Before alignment. Red is the moving slice before the automatic transform. The
-large non-overlapping context is not used as a failure signal; HistoSeg searches
-for a local, geometry-supported anchor constellation instead.
-```
 
 ## What Was Automated
 
