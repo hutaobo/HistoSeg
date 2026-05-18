@@ -1,0 +1,81 @@
+{
+  "pptx": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\output\\output.pptx",
+  "slide_count": 15,
+  "previews": [
+    {
+      "slide": 1,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_01.png",
+      "bytes": 86850
+    },
+    {
+      "slide": 2,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_02.png",
+      "bytes": 122318
+    },
+    {
+      "slide": 3,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_03.png",
+      "bytes": 122264
+    },
+    {
+      "slide": 4,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_04.png",
+      "bytes": 96600
+    },
+    {
+      "slide": 5,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_05.png",
+      "bytes": 107567
+    },
+    {
+      "slide": 6,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_06.png",
+      "bytes": 118963
+    },
+    {
+      "slide": 7,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_07.png",
+      "bytes": 96365
+    },
+    {
+      "slide": 8,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_08.png",
+      "bytes": 105335
+    },
+    {
+      "slide": 9,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_09.png",
+      "bytes": 140181
+    },
+    {
+      "slide": 10,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_10.png",
+      "bytes": 115606
+    },
+    {
+      "slide": 11,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_11.png",
+      "bytes": 99767
+    },
+    {
+      "slide": 12,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_12.png",
+      "bytes": 94249
+    },
+    {
+      "slide": 13,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_13.png",
+      "bytes": 109681
+    },
+    {
+      "slide": 14,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_14.png",
+      "bytes": 106229
+    },
+    {
+      "slide": 15,
+      "path": "D:\\GitHub\\HistoSeg\\artifacts\\histoseg_anchor_only_residual_tps\\scratch\\previews\\slide_15.png",
+      "bytes": 122075
+    }
+  ]
+}

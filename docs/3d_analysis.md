@@ -83,9 +83,11 @@ groups, evaluates cross-group contour constellations, and estimates the moving
 slice transform from the best local overlap anchor. The workflow preserves all
 original labels and does not perform semantic harmonization.
 
-See the {doc}`validated breast label-free group alignment example
+See the {doc}`fully automatic breast partial-anchor alignment example
 <label_free_alignment>` for the interactive RTD overlay and command used to
-align `breastrep1S2.geojson` with `breastrep2S3.geojson`.
+align `breastrep1S2.geojson` with `breastrep2S3.geojson`. In that example,
+HistoSeg discovers the local landmark anchors automatically and keeps
+non-overlapping tissue as passive geometry.
 
 The same group-correspondence seed is available inside stack reconstruction.
 With the default `--registration-backend auto`, HistoSeg evaluates both the

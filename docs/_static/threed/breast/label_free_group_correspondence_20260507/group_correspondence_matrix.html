@@ -1,0 +1,209 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Group correspondence matrix</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #172033; }
+    h1 { margin-bottom: 4px; }
+    p { color: #536273; }
+    table.matrix { border-collapse: collapse; font-size: 13px; width: 100%; }
+    .matrix th, .matrix td { border: 1px solid #d8e0ea; padding: 6px 8px; text-align: right; }
+    .matrix th { background: #eef3f8; position: sticky; top: 0; }
+    .matrix td:nth-child(2), .matrix td:nth-child(3),
+    .matrix th:nth-child(2), .matrix th:nth-child(3) { text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>Label-free group correspondence matrix</h1>
+  <p>Each row is a fixed assigned_structure group matched against a moving assigned_structure group. The top row is used for group-overlap alignment.</p>
+  <table border="1" class="dataframe matrix">
+  <thead>
+    <tr style="text-align: right;">
+      <th>rank</th>
+      <th>fixed_group</th>
+      <th>moving_group</th>
+      <th>candidate_count</th>
+      <th>trial_count</th>
+      <th>inlier_count</th>
+      <th>score</th>
+      <th>median_residual</th>
+      <th>rotation_degrees</th>
+      <th>scale</th>
+      <th>translate_x</th>
+      <th>translate_y</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>Structure 2</td>
+      <td>Structure 3</td>
+      <td>761</td>
+      <td>678</td>
+      <td>26</td>
+      <td>24.864</td>
+      <td>60.437</td>
+      <td>1.873</td>
+      <td>1.000</td>
+      <td>-1177.859</td>
+      <td>8326.565</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>Structure 2</td>
+      <td>Structure 2</td>
+      <td>785</td>
+      <td>4697</td>
+      <td>6</td>
+      <td>4.351</td>
+      <td>119.668</td>
+      <td>68.338</td>
+      <td>1.000</td>
+      <td>31707.712</td>
+      <td>-7565.901</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>Structure 1</td>
+      <td>Structure 2</td>
+      <td>361</td>
+      <td>3289</td>
+      <td>6</td>
+      <td>4.230</td>
+      <td>123.342</td>
+      <td>-83.136</td>
+      <td>1.000</td>
+      <td>-5056.319</td>
+      <td>24046.267</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>Structure 3</td>
+      <td>Structure 2</td>
+      <td>444</td>
+      <td>14222</td>
+      <td>5</td>
+      <td>3.792</td>
+      <td>119.739</td>
+      <td>-138.696</td>
+      <td>1.000</td>
+      <td>18674.137</td>
+      <td>35467.528</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>Structure 1</td>
+      <td>Structure 4</td>
+      <td>361</td>
+      <td>8134</td>
+      <td>5</td>
+      <td>3.666</td>
+      <td>87.078</td>
+      <td>175.186</td>
+      <td>1.000</td>
+      <td>37234.915</td>
+      <td>19780.286</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>Structure 2</td>
+      <td>Structure 4</td>
+      <td>764</td>
+      <td>11563</td>
+      <td>5</td>
+      <td>3.576</td>
+      <td>84.585</td>
+      <td>-222.824</td>
+      <td>1.000</td>
+      <td>60339.438</td>
+      <td>9958.051</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>Structure 2</td>
+      <td>Structure 1</td>
+      <td>734</td>
+      <td>14381</td>
+      <td>5</td>
+      <td>3.516</td>
+      <td>78.495</td>
+      <td>212.667</td>
+      <td>1.000</td>
+      <td>38874.386</td>
+      <td>38820.502</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td>Structure 1</td>
+      <td>Structure 1</td>
+      <td>349</td>
+      <td>12202</td>
+      <td>4</td>
+      <td>3.504</td>
+      <td>8.380</td>
+      <td>49.158</td>
+      <td>1.000</td>
+      <td>28852.493</td>
+      <td>-18313.955</td>
+    </tr>
+    <tr>
+      <td>9</td>
+      <td>Structure 3</td>
+      <td>Structure 1</td>
+      <td>441</td>
+      <td>4356</td>
+      <td>4</td>
+      <td>3.327</td>
+      <td>86.868</td>
+      <td>-13.125</td>
+      <td>1.000</td>
+      <td>-2752.534</td>
+      <td>-4231.271</td>
+    </tr>
+    <tr>
+      <td>10</td>
+      <td>Structure 1</td>
+      <td>Structure 3</td>
+      <td>332</td>
+      <td>6773</td>
+      <td>3</td>
+      <td>3.267</td>
+      <td>0.233</td>
+      <td>-97.247</td>
+      <td>1.000</td>
+      <td>-86.261</td>
+      <td>30086.125</td>
+    </tr>
+    <tr>
+      <td>11</td>
+      <td>Structure 3</td>
+      <td>Structure 4</td>
+      <td>444</td>
+      <td>9062</td>
+      <td>6</td>
+      <td>3.246</td>
+      <td>314.575</td>
+      <td>181.848</td>
+      <td>1.000</td>
+      <td>18416.081</td>
+      <td>25418.301</td>
+    </tr>
+    <tr>
+      <td>12</td>
+      <td>Structure 3</td>
+      <td>Structure 3</td>
+      <td>414</td>
+      <td>8638</td>
+      <td>4</td>
+      <td>2.880</td>
+      <td>136.520</td>
+      <td>-21.348</td>
+      <td>1.000</td>
+      <td>-9397.976</td>
+      <td>2249.604</td>
+    </tr>
+  </tbody>
+</table>
+</body>
+</html>

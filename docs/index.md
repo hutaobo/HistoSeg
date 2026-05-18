@@ -7,6 +7,7 @@
 installation
 usage
 3d_analysis
+label_free_alignment
 contour_analysis
 he_analysis
 workflows/index
@@ -123,6 +124,14 @@ Configs, result types, and runners
 
 Soft-align neighboring Xenium contour slices and build multi-slice 3D contour
 meshes.
+:::
+
+:::{grid-item-card} Automatic Partial-Overlap Breast Alignment
+:link: label_free_alignment
+:link-type: doc
+
+Inspect a fully automatic two-slice breast contour alignment where local
+landmarks are found without manual annotation.
 :::
 
 :::{grid-item-card} Contour Analysis

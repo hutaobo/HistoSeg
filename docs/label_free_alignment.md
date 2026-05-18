@@ -1,90 +1,137 @@
-:orphan:
+# Fully Automatic Partial-Anchor Breast Alignment
 
-# Label-Free Contour Group Alignment
+This page showcases a two-slice breast cancer contour alignment where the
+overlapping tissue is only a local part of the two slices. It is a pairwise 3D
+alignment QC example: HistoSeg estimates how the moving contour slice should be
+placed relative to the fixed slice before downstream stack reconstruction, while
+also making non-overlapping tissue explicit instead of forcing it to match.
 
-This page documents a validated label-free contour alignment example for two
-independently clustered Xenium contour slices. The example is intentionally
-kept separate from the same-sample stack reconstruction workflow because the
-slice-level `assigned_structure` names are not assumed to match across files.
+The important point is that this run is fully automatic. HistoSeg did not use
+manual landmarks, did not require the user to specify which structures should
+match, and did not harmonize labels between slices. The method found the local
+anchor constellation from the contour geometry itself.
 
-## Validated Breast Example
+## Result
 
-The interactive overlay below shows the accepted cross-group alignment result
-for `breastrep1S2.geojson` and `breastrep2S3.geojson`. The command preserved
-all original contour labels and used them only as within-slice groups. It
-automatically selected a local cross-group correspondence:
+```{figure} _static/threed/breast/label_free_group_correspondence_20260507/group_overlap_overlay_after.png
+:alt: Fully automatic partial-anchor breast contour alignment after transform
+:width: 100%
 
-- fixed group: `Structure 2`
-- moving group: `Structure 3`
-- accepted inlier pairs: 26
-- refined anchor pairs: 22
-- median anchor residual: 51.7 coordinate units
-- rotation: 1.94 degrees
-- translation: `dx=-1410.1`, `dy=8958.6`
+After automatic alignment. Blue is the fixed breast slice, green is the moving
+slice after the automatically estimated transform, and purple links are the
+automatically detected anchor pairs used to fit the transform. Regions outside
+the local overlap are preserved as passive geometry rather than forced to
+overlap.
+```
 
-[Open the standalone interactive overlay](_static/threed/breast/label_free_group_correspondence_20260507/group_overlap_alignment_overlay.html)
+The accepted alignment is between `breastrep1S2.geojson` and
+`breastrep2S3.geojson`. HistoSeg selected a cross-group local anchor match from
+independently clustered contour labels:
+
+| Metric | Value |
+| --- | --- |
+| Selected fixed group | `Structure 2` |
+| Selected moving group | `Structure 3` |
+| Anchor pairs selected | `26` |
+| Anchor pairs used for transform | `22` |
+| Median anchor residual | `51.74` coordinate units |
+| P90 anchor residual | `148.83` coordinate units |
+| Rotation | `1.94` degrees |
+| Translation | `dx=-1410.1`, `dy=8958.6` |
+
+## Interactive Review
+
+Open the standalone overlay when you want to zoom, pan, and inspect the anchor
+links:
+
+```{raw} html
+<p>
+  <a href="_static/threed/breast/label_free_group_correspondence_20260507/group_overlap_alignment_overlay.html"
+     target="_blank" rel="noopener">
+    Open the standalone interactive overlay
+  </a>
+</p>
+```
 
 ```{raw} html
 <iframe
   src="_static/threed/breast/label_free_group_correspondence_20260507/group_overlap_alignment_overlay.html"
-  title="Label-free breast contour group alignment overlay"
+  title="Fully automatic partial-anchor breast contour alignment overlay"
   style="width:100%; height:760px; border:1px solid #d9dde3; border-radius:6px;"
   loading="lazy">
 </iframe>
 ```
 
-## Command
+## Why This Is A Partial-Anchor Alignment
+
+The two slices are not treated as if every contour in one file must have a
+counterpart in the other file. HistoSeg first treats `assigned_structure` as a
+within-slice grouping variable, evaluates all fixed-group and moving-group
+constellations, and then estimates the transform from the best local RANSAC
+inlier set.
+
+Only the high-confidence `matched_anchor` pairs fit the transform. The
+`matched_review` and `no_counterpart` contours are transformed as passive
+geometry, so tissue outside the overlapping region can remain non-overlapping.
+This is the behavior needed when two slices share a local 3D neighborhood but
+also contain tissue that is absent, shifted, torn, or outside the counterpart
+field of view.
+
+```{figure} _static/threed/breast/label_free_group_correspondence_20260507/group_overlap_overlay_before.png
+:alt: Breast contour slices before automatic partial-anchor alignment
+:width: 100%
+
+Before alignment. Red is the moving slice before the automatic transform. The
+large non-overlapping context is not used as a failure signal; HistoSeg searches
+for a local, geometry-supported anchor constellation instead.
+```
+
+## What Was Automated
+
+- Landmark discovery was automatic: the transform used `22` accepted anchor
+  pairs selected from `26` candidate inliers.
+- Group selection was automatic: the best supported local correspondence was
+  `Structure 2` in the fixed slice to `Structure 3` in the moving slice.
+- Label handling was conservative: original contour labels were preserved, and
+  no semantic harmonization was claimed.
+- The full moving slice was transformed, but only anchor contours generated
+  alignment force; non-counterpart regions were carried as passive geometry.
+
+This makes the example useful as a 3D alignment QC demonstration for sparse or
+partial serial-section overlap. It should not be read as standalone evidence
+for dense 3D biology from two slices alone.
+
+## Reproduce The Run
 
 ```bash
 histoseg-3d align-contours-label-free \
   --fixed-geojson breastrep1S2.geojson \
   --moving-geojson breastrep2S3.geojson \
-  --out-dir histoseg_label_free_breast_group_correspondence_cli_20260507 \
+  --out-dir histoseg_label_free_breast_partial_anchor_20260507 \
   --partial-correspondence \
   --group-correspondence \
   --overwrite
 ```
 
-## Stack Reconstruction Integration
+The same label-free group-correspondence seed is also available in
+`histoseg-3d reconstruct-stack`. With `--registration-backend auto`, HistoSeg
+compares the standard semantic contour seed with the label-free group seed and
+selects the label-free candidate only when the automatically discovered anchor
+transform passes the configured count and residual thresholds. When the selected
+hard seed is `label-free-group`, the stack soft-alignment stage uses
+anchor-only residual TPS instead of semantic boundary attraction.
 
-The same group-correspondence logic is also available in
-`histoseg-3d reconstruct-stack`. The default stack backend is now
-`--registration-backend auto`, which evaluates the semantic contour seed and the
-label-free group seed for each adjacent pair. The label-free candidate is used
-only when the anchor transform is accepted, the number of used anchor pairs is
-sufficient, and the median residual is below the configured threshold.
+## Source Artifacts
 
-```bash
-histoseg-3d reconstruct-stack \
-  --xenium-root stack_root \
-  --segmentation-strategy segmentationstrategy.txt \
-  --out-dir outputs/stack_3d \
-  --registration-backend auto
+- {download}`Alignment summary JSON <_static/threed/breast/label_free_group_correspondence_20260507/group_overlap_alignment_summary.json>`
+- {download}`Automatically selected anchor table <_static/threed/breast/label_free_group_correspondence_20260507/group_ransac_anchors.csv>`
+- {download}`Group correspondence matrix CSV <_static/threed/breast/label_free_group_correspondence_20260507/group_correspondence_matrix.csv>`
+
+```{raw} html
+<p>
+  <a href="_static/threed/breast/label_free_group_correspondence_20260507/group_correspondence_matrix.html"
+     target="_blank" rel="noopener">
+    Open the group correspondence matrix HTML
+  </a>
+</p>
 ```
-
-For independent contour files, force the label-free seed with
-`--registration-backend label-free-group`. The stack wrapper calls the
-label-free hard seed without internal TPS refinement, then applies the
-stack-level semantic TPS policy. If the selected fixed and moving groups have
-different names, HistoSeg skips semantic TPS for that pair and records
-`semantic_soft_skipped_reason="cross_named_label_free_group_match"`.
-
-## Interpretation
-
-This mode is for cases where two contour slices have a real spatial overlap but
-cannot be aligned by forcing every contour in one file to correspond to a
-contour in the other file. HistoSeg first treats `assigned_structure` as a
-within-slice grouping variable, evaluates all fixed-group and moving-group
-combinations, and estimates the final rigid transform from the best local
-RANSAC inlier set. Labels are preserved and no semantic harmonization is
-claimed.
-
-The output should be read as a geometric preflight and QC result. It identifies
-which local contour constellation can act as the alignment anchor, then moves
-the full moving slice according to that local transform. Regions outside the
-overlapping tissue area are allowed to remain non-overlapping.
-
-Label-free group alignment does not solve semantic harmonization. The aligned
-GeoJSON preserves the original labels from the moving file, and any downstream
-3D analysis that requires cross-slice biological identity should add a separate
-label review or harmonization step.
