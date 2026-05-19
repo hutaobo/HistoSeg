@@ -22,7 +22,7 @@ dependencies = [
     "matplotlib",
     "networkx",
     "openai>=1.0.0",
-    "sfplot @ git+https://github.com/hutaobo/sfplot.git@master",
+    "cell-gps @ git+https://github.com/hutaobo/sfplot.git@master",
 ]
 
 [project.optional-dependencies]
@@ -57,7 +57,7 @@ docs = [
     "sphinx-rtd-theme",
 ]
 xenium-gui = [
-    "sfplot[xenium,gui] @ git+https://github.com/hutaobo/sfplot.git@master",
+    "cell-gps[xenium,gui] @ git+https://github.com/hutaobo/sfplot.git@master",
 ]
 
 [project.scripts]
