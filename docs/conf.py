@@ -104,3 +104,12 @@ html_theme_options = {
     ],
     "announcement": "HistoSeg's flagship workflow reconstructs 3D Xenium contour stacks with H&E and 2D contour support.",
 }
+
+# The breast partial-anchor pages are long, figure-heavy method pages. The
+# default primary sidebar is a section-navigation placeholder for top-level
+# pages, which leaves an empty left column. Use the page table of contents there
+# as well so the visible "Section Navigation" column lists the method sections.
+html_sidebars = {
+    "label_free_alignment": ["page-toc.html"],
+    "manuscripts/breast_partial_anchor_alignment_methods": ["page-toc.html"],
+}
