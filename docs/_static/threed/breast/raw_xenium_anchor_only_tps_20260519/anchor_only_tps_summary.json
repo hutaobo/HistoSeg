@@ -1,0 +1,97 @@
+{
+  "fixed_geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\fixed_contours\\xenium_explorer_annotations.geojson",
+  "moving_hard_aligned_geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\moving_group_overlap_aligned.geojson",
+  "anchor_landmarks_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\alignment\\group_ransac_anchors.csv",
+  "output_geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\anchor_only_soft_tps\\anchor_only_soft_aligned_contours.geojson",
+  "method": "anchor_only_residual_tps",
+  "objective_note": "The residual TPS is fitted only from label-free anchors already used by the hard transform. Non-anchor contours are passive geometry and do not pull the soft field toward unrelated boundaries.",
+  "attempted": true,
+  "accepted": true,
+  "reason": "accepted_anchor_only_residual_tps",
+  "config": {
+    "min_anchor_count": 8,
+    "residual_limit_um": 900.0,
+    "bbox_padding_fraction": 0.1,
+    "identity_padding_count": 16,
+    "rbf_kernel": "thin_plate_spline",
+    "rbf_neighbors": 96,
+    "rbf_smoothing": 0.0001,
+    "jacobian_grid_size": 50,
+    "max_negative_jacobian_ratio": 0.001
+  },
+  "landmarks": {
+    "boundary_landmark_count": 20,
+    "anchor_landmark_count": 20,
+    "identity_padding_count": 16,
+    "zero_anchor_count": 16,
+    "total_landmark_count": 36,
+    "used_for_tps_count": 36,
+    "source": "label_free_anchor_landmarks_csv",
+    "input_residual_um": {
+      "min": 9.619588232757252,
+      "median": 43.56962403422203,
+      "mean": 59.504555453938394,
+      "p90": 135.00301652672027,
+      "p95": 138.31528570370753,
+      "max": 146.143215333875
+    },
+    "post_warp_residual_um": {
+      "min": 0.06687349691269208,
+      "median": 0.8719521944451238,
+      "mean": 0.9847249042183858,
+      "p90": 1.9624540459796864,
+      "p95": 2.42142119518051,
+      "max": 2.557972096975486
+    }
+  },
+  "qc": {
+    "fixed_feature_count": 566,
+    "hard_aligned_feature_count": 532,
+    "soft_aligned_feature_count": 532,
+    "union_iou_hard_before_soft": 0.467721625674631,
+    "union_iou_soft_after": 0.46780225200948844,
+    "delta_union_iou_soft": 8.062633485744763e-05,
+    "geometry_status_counts": {
+      "valid": 532
+    },
+    "topology_check": {
+      "enabled": true,
+      "valid": true,
+      "grid_size": 50,
+      "checked_cells": 2401,
+      "folded_cell_count": 0,
+      "negative_jacobian_ratio": 0.0,
+      "min_jacobian_ratio": 0.9661799078564177,
+      "median_jacobian_ratio": 0.9998624966690943,
+      "max_jacobian_ratio": 1.0598551499202324
+    },
+    "jacobian_check": {
+      "enabled": true,
+      "valid": true,
+      "grid_size": 50,
+      "checked_cells": 2401,
+      "negative_cell_count": 0,
+      "negative_jacobian_ratio": 0.0,
+      "max_negative_jacobian_ratio": 0.001,
+      "min_jacobian_ratio": 0.9661799078564177,
+      "median_jacobian_ratio": 0.9998624966690943,
+      "max_jacobian_ratio": 1.0598551499202324
+    },
+    "post_warp_residual_um": {
+      "min": 0.06687349691269208,
+      "median": 0.8719521944451238,
+      "mean": 0.9847249042183858,
+      "p90": 1.9624540459796864,
+      "p95": 2.42142119518051,
+      "max": 2.557972096975486
+    }
+  },
+  "outputs": {
+    "out_dir": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\anchor_only_soft_tps",
+    "soft_geojson": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\anchor_only_soft_tps\\anchor_only_soft_aligned_contours.geojson",
+    "landmarks_csv": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\anchor_only_soft_tps\\anchor_only_tps_landmarks.csv",
+    "review_html": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\anchor_only_soft_tps\\anchor_only_tps_review.html",
+    "overlay_before_png": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\anchor_only_soft_tps\\anchor_only_tps_before.png",
+    "overlay_after_png": "D:\\GitHub\\HistoSeg\\reproducibility\\results\\breast_partial_anchor_from_xenium\\anchor_only_soft_tps\\anchor_only_tps_after.png"
+  }
+}

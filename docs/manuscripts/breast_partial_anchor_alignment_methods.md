@@ -74,6 +74,26 @@ breast Rep2 layout where the user-facing folder contains
    soft-aligned moving GeoJSON, the hard and soft alignment summaries, and a
    clean before/after manuscript panel.
 
+## Hard Seed Versus Soft Deformation
+
+The breast workflow deliberately separates the alignment into two layers:
+
+| Layer | What it estimates | Evidence used | What moves |
+| --- | --- | --- | --- |
+| Hard seed | One global similarity transform \(T\) with rotation, translation, and scale | final RANSAC inlier anchors from label-free group correspondence | every moving contour |
+| Anchor-only residual TPS | A local residual displacement field \(u(x)\) after the hard seed | the same accepted hard-aligned anchors, plus zero-displacement identity padding anchors | every moving contour, but non-anchor contours remain passive |
+
+This distinction is important for partial-overlap tissue. The hard seed solves
+the global placement problem. The soft step only relaxes the remaining local
+residuals supported by accepted anchors. It does not introduce a new semantic
+boundary matching objective, and it does not let unmatched tissue pull the warp.
+
+In implementation terms, the manuscript run first writes
+`alignment/moving_group_overlap_aligned.geojson`. That file is the hard
+similarity result. If anchor-only residual TPS passes QC, the final manuscript
+figure uses
+`anchor_only_soft_tps/anchor_only_soft_aligned_contours.geojson` instead.
+
 ## Mathematical Description
 
 Let the fixed-slice contour set be
@@ -181,6 +201,26 @@ the 20 accepted anchors and keeps all other contours passive.
 | Render manuscript panel | `render_label_free_before_after_panel(LabelFreeBeforeAfterFigureConfig(...))` | soft before/after PNG and SVG |
 | End-to-end reproduction | `python reproducibility/run_breast_partial_anchor_from_xenium.py` | manifest JSON and figure assets |
 
+## Soft Alignment Output Files
+
+The script writes the soft deformation artifacts under
+`anchor_only_soft_tps/`:
+
+| File | Purpose |
+| --- | --- |
+| `anchor_only_soft_aligned_contours.geojson` | final moving-slice contours after hard seed plus residual TPS |
+| `anchor_only_tps_landmarks.csv` | accepted anchor rows and identity padding anchors used to fit \(u(x)\) |
+| `anchor_only_tps_summary.json` | acceptance status, residual summaries, identity padding count, invalid geometry count, and Jacobian QC |
+| `anchor_only_tps_before.png` | hard-aligned moving contours before residual TPS |
+| `anchor_only_tps_after.png` | moving contours after residual TPS |
+| `anchor_only_tps_review.html` | interactive before/after review with residual links |
+
+The manuscript panel is written to
+`figure/breast_partial_anchor_before_after.png`. When soft TPS is accepted, this
+panel uses the soft-aligned GeoJSON. The script also writes
+`figure/breast_partial_anchor_before_after_hard.png` so the hard-only result can
+be compared directly.
+
 ## Reproducible Command
 
 Run from the HistoSeg repository root:
@@ -256,6 +296,12 @@ Key results:
 | Soft post-warp median anchor residual | 0.87 coordinate units |
 | Soft post-warp P90 anchor residual | 1.96 coordinate units |
 | Soft negative-Jacobian ratio | 0.0 |
+
+The soft residuals are much smaller than the hard residuals because the TPS is
+fitted directly to the residual field left after the similarity transform. This
+does not mean all tissue is forced to overlap. It means the accepted local
+anchor constellation is made internally consistent while unmatched tissue is
+carried through the same field as passive geometry.
 
 These values are from the fully regenerated raw-folder workflow. They differ
 from the earlier RTD showcase numbers because the manuscript workflow now

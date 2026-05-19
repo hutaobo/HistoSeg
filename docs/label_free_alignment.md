@@ -113,6 +113,62 @@ This makes the example useful as a 3D alignment QC demonstration for sparse or
 partial serial-section overlap. It should not be read as standalone evidence
 for dense 3D biology from two slices alone.
 
+## Raw-Folder Soft TPS Result
+
+The static showcase above uses the original GeoJSON overlay produced for the
+partial-anchor demonstration. The manuscript reproduction run starts one step
+earlier, from the two raw Xenium output folders, and the final figure uses an
+additional soft alignment stage:
+
+1. HistoSeg first finds a label-free group-correspondence seed and estimates a
+   hard similarity transform from the final RANSAC inlier anchors.
+2. It then keeps exactly those accepted anchors as evidence points and fits an
+   anchor-only residual TPS displacement field. The soft field corrects local
+   deformation after the hard transform.
+3. Contours that were not accepted as anchors remain passive geometry. They are
+   warped by the fitted field but do not pull the fit toward themselves.
+4. Zero-displacement identity anchors are added around the tissue bounding box
+   to limit extrapolation away from the overlap evidence.
+
+```{raw} html
+<figure style="margin:1.2rem 0;">
+  <img
+    src="_static/threed/breast/raw_xenium_anchor_only_tps_20260519/breast_partial_anchor_soft_before_after.png"
+    alt="Raw Xenium breast partial-anchor alignment with anchor-only residual TPS soft deformation"
+    style="width:100%; border:1px solid #d9dde3; border-radius:6px; background:white;"
+  />
+  <figcaption style="font-size:0.92rem; color:#536273; margin-top:0.45rem;">
+    Frozen raw-folder manuscript run. The moving slice is first placed by a
+    hard similarity transform and then locally deformed by anchor-only residual
+    TPS. Only automatically selected anchors drive the deformation.
+  </figcaption>
+</figure>
+```
+
+For the frozen raw-folder run, HistoSeg regenerated both contour inputs from the
+two Xenium folders and selected a different automatically discovered structure
+constellation from the older Serve-app GeoJSON showcase. These are the soft-TPS
+metrics for the frozen manuscript workflow:
+
+| Metric | Value |
+| --- | --- |
+| Selected fixed group | `Structure 3` |
+| Selected moving group | `Structure 3` |
+| Anchor pairs selected | `27` |
+| Anchor pairs used by hard transform | `20` |
+| Hard median anchor residual | `43.57` coordinate units |
+| Hard P90 anchor residual | `135.00` coordinate units |
+| Soft method | `anchor_only_residual_tps` |
+| Soft TPS identity padding anchors | `16` |
+| Soft post-warp median anchor residual | `0.87` coordinate units |
+| Soft post-warp P90 anchor residual | `1.96` coordinate units |
+| Negative-Jacobian ratio | `0.0` |
+
+The important distinction is that this is not semantic boundary attraction.
+Global contour overlap is not the acceptance target. The soft stage is accepted
+when the anchor residuals improve, output geometries stay valid, and the sampled
+Jacobian grid does not show fold-over.
+
 ## Reproduce The Run
 
 ### From Raw Xenium Output Folders
@@ -142,6 +198,18 @@ description, contour-generation and residual-TPS formulae, API mapping, and
 figure-legend draft are in
 {doc}`manuscripts/breast_partial_anchor_alignment_methods`.
 
+The default command writes both hard and soft outputs:
+
+| Output | Meaning |
+| --- | --- |
+| `alignment/moving_group_overlap_aligned.geojson` | hard similarity result from label-free anchors |
+| `anchor_only_soft_tps/anchor_only_soft_aligned_contours.geojson` | final soft-aligned moving contours |
+| `anchor_only_soft_tps/anchor_only_tps_landmarks.csv` | accepted anchors plus identity padding anchors used for residual TPS |
+| `anchor_only_soft_tps/anchor_only_tps_summary.json` | residual, Jacobian, validity, and acceptance metrics |
+| `anchor_only_soft_tps/anchor_only_tps_review.html` | interactive review of hard-before-soft and soft-after alignment |
+| `figure/breast_partial_anchor_before_after.png` | manuscript panel using the accepted soft output |
+| `figure/breast_partial_anchor_before_after_hard.png` | hard-only comparison panel |
+
 ### From Existing GeoJSON Files
 
 ```bash
@@ -167,12 +235,21 @@ anchor-only residual TPS instead of semantic boundary attraction.
 - {download}`Alignment summary JSON <_static/threed/breast/label_free_group_correspondence_20260507/group_overlap_alignment_summary.json>`
 - {download}`Automatically selected anchor table <_static/threed/breast/label_free_group_correspondence_20260507/group_ransac_anchors.csv>`
 - {download}`Group correspondence matrix CSV <_static/threed/breast/label_free_group_correspondence_20260507/group_correspondence_matrix.csv>`
+- {download}`Raw-folder soft TPS summary JSON <_static/threed/breast/raw_xenium_anchor_only_tps_20260519/anchor_only_tps_summary.json>`
+- {download}`Raw-folder soft TPS landmarks CSV <_static/threed/breast/raw_xenium_anchor_only_tps_20260519/anchor_only_tps_landmarks.csv>`
+- {download}`Raw-folder hard-only comparison PNG <_static/threed/breast/raw_xenium_anchor_only_tps_20260519/breast_partial_anchor_hard_before_after.png>`
 
 ```{raw} html
 <p>
   <a href="_static/threed/breast/label_free_group_correspondence_20260507/group_correspondence_matrix.html"
      target="_blank" rel="noopener">
     Open the group correspondence matrix HTML
+  </a>
+</p>
+<p>
+  <a href="https://github.com/hutaobo/HistoSeg/blob/main/reproducibility/results/breast_partial_anchor_from_xenium/anchor_only_soft_tps/anchor_only_tps_review.html"
+     target="_blank" rel="noopener">
+    Open the raw-folder anchor-only TPS review HTML on GitHub
   </a>
 </p>
 ```
