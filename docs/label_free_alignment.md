@@ -121,8 +121,9 @@ For the manuscript workflow, HistoSeg can regenerate the contour inputs instead
 of starting from pre-existing GeoJSON files. The end-to-end script starts from
 two Xenium output folders, automatically discovers coarse `Structure N` groups,
 generates multi-structure contour GeoJSON files, runs the same label-free
-partial-anchor alignment, and writes a clean before/after figure plus a
-provenance manifest.
+partial-anchor hard alignment, fits anchor-only residual TPS from the accepted
+anchors, and writes a clean soft-aligned before/after figure plus a provenance
+manifest.
 
 ```bash
 python reproducibility/run_breast_partial_anchor_from_xenium.py \
@@ -135,8 +136,10 @@ python reproducibility/run_breast_partial_anchor_from_xenium.py \
 The script defaults to the local breast Rep1/Rep2 Xenium folders used for this
 example and resolves nested `_outs` folders automatically. Use
 `--fixed-xenium-output` and `--moving-xenium-output` to point at another copy of
-the data. The detailed method description, contour-generation formulae, API
-mapping, and figure-legend draft are in
+the data. Pass `--no-anchor-only-soft-tps` to disable the soft deformation and
+keep the hard similarity output as the manuscript figure. The detailed method
+description, contour-generation and residual-TPS formulae, API mapping, and
+figure-legend draft are in
 {doc}`manuscripts/breast_partial_anchor_alignment_methods`.
 
 ### From Existing GeoJSON Files

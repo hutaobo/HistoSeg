@@ -16,10 +16,12 @@ from histoseg.contour import (
 )
 from histoseg.contour.auto_structure import XENIUM_CELLS_RELPATH, XENIUM_CLUSTERS_RELPATH
 from histoseg.threed import (
+    AnchorOnlyResidualTPSConfig,
     LabelFreeBeforeAfterFigureConfig,
     LabelFreeContourAlignmentConfig,
     align_contours_label_free,
     render_label_free_before_after_panel,
+    run_anchor_only_residual_tps,
 )
 
 DEFAULT_FIXED_XENIUM_OUTPUT = (
@@ -49,7 +51,8 @@ def main() -> None:
                 "discover moving auto structures",
                 "generate fixed/moving multi-structure GeoJSON contours",
                 "run label-free group-correspondence partial-anchor alignment",
-                "render manuscript before/after panel",
+                "fit anchor-only residual TPS soft alignment from accepted anchors",
+                "render hard and soft manuscript before/after panels",
                 "write provenance manifest",
             ],
         }
@@ -118,12 +121,52 @@ def main() -> None:
     )
     if alignment.aligned_geojson is None:
         raise RuntimeError(f"Label-free alignment did not produce an aligned GeoJSON: {alignment.summary_json}")
+    if alignment.landmarks_csv is None:
+        raise RuntimeError(f"Label-free alignment did not produce an anchor landmark CSV: {alignment.summary_json}")
+
+    hard_figure = render_label_free_before_after_panel(
+        LabelFreeBeforeAfterFigureConfig(
+            fixed_geojson=fixed_contours.geojson,
+            moving_geojson=moving_contours.geojson,
+            aligned_geojson=alignment.aligned_geojson,
+            anchors_csv=alignment.landmarks_csv,
+            out_png=out_dir / "figure" / "breast_partial_anchor_before_after_hard.png",
+            out_svg=out_dir / "figure" / "breast_partial_anchor_before_after_hard.svg",
+            dpi=args.figure_dpi,
+        )
+    )
+
+    soft_alignment = None
+    figure_source_geojson = alignment.aligned_geojson
+    figure_mode = "hard_similarity"
+    if args.anchor_only_soft_tps:
+        soft_alignment = run_anchor_only_residual_tps(
+            AnchorOnlyResidualTPSConfig(
+                fixed_geojson=fixed_contours.geojson,
+                moving_hard_aligned_geojson=alignment.aligned_geojson,
+                anchor_landmarks_csv=alignment.landmarks_csv,
+                out_dir=out_dir / "anchor_only_soft_tps",
+                min_anchor_count=args.soft_min_anchor_count,
+                residual_limit_um=args.soft_residual_limit_um,
+                bbox_padding_fraction=args.soft_bbox_padding_fraction,
+                identity_padding_count=args.soft_identity_padding_count,
+                rbf_smoothing=args.soft_rbf_smoothing,
+                jacobian_grid_size=args.soft_jacobian_grid_size,
+                max_negative_jacobian_ratio=args.soft_max_negative_jacobian_ratio,
+                dpi=args.dpi,
+                overwrite=args.overwrite,
+            )
+        )
+        soft_summary = json.loads(Path(soft_alignment.summary_json).read_text(encoding="utf-8"))
+        if soft_summary.get("accepted"):
+            figure_source_geojson = soft_alignment.soft_aligned_geojson
+            figure_mode = "anchor_only_residual_tps"
 
     figure = render_label_free_before_after_panel(
         LabelFreeBeforeAfterFigureConfig(
             fixed_geojson=fixed_contours.geojson,
             moving_geojson=moving_contours.geojson,
-            aligned_geojson=alignment.aligned_geojson,
+            aligned_geojson=figure_source_geojson,
             anchors_csv=alignment.landmarks_csv,
             out_png=out_dir / "figure" / "breast_partial_anchor_before_after.png",
             out_svg=out_dir / "figure" / "breast_partial_anchor_before_after.svg",
@@ -141,7 +184,10 @@ def main() -> None:
         fixed_contours=fixed_contours,
         moving_contours=moving_contours,
         alignment=alignment,
+        soft_alignment=soft_alignment,
+        hard_figure=hard_figure,
         figure=figure,
+        figure_mode=figure_mode,
     )
     manifest_path = out_dir / "breast_partial_anchor_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
@@ -177,7 +223,10 @@ def _build_manifest(**kwargs: Any) -> dict[str, Any]:
     fixed_contours = kwargs["fixed_contours"]
     moving_contours = kwargs["moving_contours"]
     alignment = kwargs["alignment"]
+    soft_alignment = kwargs.get("soft_alignment")
+    hard_figure = kwargs.get("hard_figure")
     figure = kwargs["figure"]
+    figure_mode = kwargs["figure_mode"]
     try:
         histoseg_version = metadata.version("histoseg")
     except Exception:
@@ -216,13 +265,35 @@ def _build_manifest(**kwargs: Any) -> dict[str, Any]:
             "anchor_transform": alignment_summary.get("anchor_transform"),
             "transform": alignment_summary.get("transform"),
         },
-        "figure": _paths_from_dataclass(figure),
+        "soft_alignment": _soft_alignment_manifest(soft_alignment),
+        "figure": {
+            "mode": figure_mode,
+            "manuscript": _paths_from_dataclass(figure),
+            "hard_similarity": _paths_from_dataclass(hard_figure) if hard_figure is not None else None,
+        },
     }
 
 
 def _paths_from_dataclass(obj: Any) -> dict[str, Any]:
     payload = asdict(obj)
     return {key: str(value) if isinstance(value, Path) else value for key, value in payload.items()}
+
+
+def _soft_alignment_manifest(obj: Any) -> dict[str, Any] | None:
+    if obj is None:
+        return None
+    summary = json.loads(Path(obj.summary_json).read_text(encoding="utf-8"))
+    return {
+        "summary_json": str(obj.summary_json),
+        "soft_aligned_geojson": str(obj.soft_aligned_geojson),
+        "landmarks_csv": str(obj.landmarks_csv),
+        "review_html": str(obj.review_html) if obj.review_html else None,
+        "accepted": summary.get("accepted"),
+        "reason": summary.get("reason"),
+        "method": summary.get("method"),
+        "landmarks": summary.get("landmarks"),
+        "qc": summary.get("qc"),
+    }
 
 
 def _parse_cluster_count(value: str | int) -> str | int:
@@ -266,6 +337,20 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--group-min-component-area-um2", type=float, default=5000.0)
     parser.add_argument("--dpi", type=int, default=180)
     parser.add_argument("--figure-dpi", type=int, default=300)
+    parser.add_argument(
+        "--no-anchor-only-soft-tps",
+        dest="anchor_only_soft_tps",
+        action="store_false",
+        help="Skip anchor-only residual TPS soft alignment and use the hard similarity output as the manuscript figure.",
+    )
+    parser.set_defaults(anchor_only_soft_tps=True)
+    parser.add_argument("--soft-min-anchor-count", type=int, default=8)
+    parser.add_argument("--soft-residual-limit-um", type=float, default=900.0)
+    parser.add_argument("--soft-bbox-padding-fraction", type=float, default=0.10)
+    parser.add_argument("--soft-identity-padding-count", type=int, default=16)
+    parser.add_argument("--soft-rbf-smoothing", type=float, default=1e-4)
+    parser.add_argument("--soft-jacobian-grid-size", type=int, default=50)
+    parser.add_argument("--soft-max-negative-jacobian-ratio", type=float, default=0.001)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()

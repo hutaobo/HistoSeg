@@ -3,8 +3,9 @@
 This note describes the manuscript-ready workflow used for the fully automatic
 breast partial-anchor alignment example. The workflow starts from two raw
 Xenium output folders, discovers spatial structures without manual landmarks,
-generates HistoSeg contour GeoJSON files, aligns the two contour slices, and
-renders a clean before/after figure.
+generates HistoSeg contour GeoJSON files, aligns the two contour slices, fits an
+anchor-only residual TPS soft deformation from the accepted anchors, and renders
+a clean before/after figure.
 
 The example is a pairwise 3D alignment quality-control demonstration. It shows
 that two related breast cancer sections can be placed into a shared coordinate
@@ -54,16 +55,24 @@ breast Rep2 layout where the user-facing folder contains
    each candidate pair, it compares individual contour descriptors, including
    centroid layout, area, shape, and local neighborhood context.
 
-5. **Estimate the alignment from automatic anchors only.** The accepted
+5. **Estimate the hard alignment from automatic anchors only.** The accepted
    transform is fitted from high-confidence RANSAC inlier anchors. The user does
    not provide landmarks and does not specify which structures should match.
    Non-overlapping contours are carried as passive geometry: they receive the
    final transform but do not pull the transform toward themselves.
 
-6. **Write auditable outputs.** The run writes the fixed and moving
+6. **Fit anchor-only residual TPS soft alignment.** After the hard transform,
+   HistoSeg uses only the final accepted anchor points to fit a thin-plate
+   residual field. The TPS corrects local residual deformation in the
+   overlapping region while adding zero-residual identity padding anchors around
+   the tissue bounding box. This constrains deformation away from the evidence
+   region and keeps passive or no-counterpart tissue from attracting the warp.
+
+7. **Write auditable outputs.** The run writes the fixed and moving
    auto-structure summaries, the two contour GeoJSON files, the selected anchor
-   table, the group-correspondence matrix, the aligned moving GeoJSON, the
-   alignment summary JSON, and a clean before/after manuscript panel.
+   table, the group-correspondence matrix, the hard-aligned moving GeoJSON, the
+   soft-aligned moving GeoJSON, the hard and soft alignment summaries, and a
+   clean before/after manuscript panel.
 
 ## Mathematical Description
 
@@ -112,15 +121,53 @@ r_{ij} = \left\|c(F_i) - T(c(M_j))\right\|_2.
 
 The selected transform is the candidate that maximizes inlier support and
 descriptor agreement while keeping robust residual summaries low. The transform
-is applied to every moving contour,
+is first applied to every moving contour,
 
 \[
-M'_j = T(M_j),
+M^{(0)}_j = T(M_j),
 \]
 
 but only the inlier set \(A\) contributes force to the fit. Contours without a
 counterpart therefore remain visible as transformed passive tissue rather than
 being forced to overlap unrelated fixed contours.
+
+The soft step then fits a residual displacement field from the same accepted
+anchors. Let
+
+\[
+a_k = T(c(M_{j_k}))
+\]
+
+be the hard-aligned moving anchor centroid and
+
+\[
+b_k = c(F_{i_k})
+\]
+
+be its fixed target. HistoSeg fits a thin-plate radial basis interpolator
+\(u(x)\) such that
+
+\[
+u(a_k) \approx b_k - a_k.
+\]
+
+To limit extrapolation, identity padding anchors \(p_l\) are placed around an
+expanded fixed/moving bounding box with zero displacement,
+
+\[
+u(p_l) = 0.
+\]
+
+The final soft transform is therefore
+
+\[
+T_{\mathrm{soft}}(x) = T(x) + u(T(x)).
+\]
+
+The soft result is accepted only if the post-warp anchor residuals are low, no
+invalid geometries are produced, and the sampled Jacobian grid has an acceptable
+negative-Jacobian fraction. In this example the residual TPS uses evidence from
+the 20 accepted anchors and keeps all other contours passive.
 
 ## HistoSeg Code Mapping
 
@@ -130,7 +177,8 @@ being forced to overlap unrelated fixed contours.
 | Auto-discover structures | `discover_auto_structures(AutoStructureDiscoveryConfig(...))` or `histoseg-contour auto-structure` | `structures.json`, cluster assignment CSV, matrix CSVs |
 | Generate contours | `run_multi_structure_contours(MultiStructureContourConfig(...))` | `xenium_explorer_annotations.geojson` |
 | Align contours | `align_contours_label_free(LabelFreeContourAlignmentConfig(..., partial_correspondence=True, group_correspondence=True))` | aligned GeoJSON, anchors CSV, group matrix, summary JSON |
-| Render manuscript panel | `render_label_free_before_after_panel(LabelFreeBeforeAfterFigureConfig(...))` | before/after PNG and SVG |
+| Fit soft deformation | `run_anchor_only_residual_tps(AnchorOnlyResidualTPSConfig(...))` | soft-aligned GeoJSON, TPS landmarks CSV, TPS summary JSON |
+| Render manuscript panel | `render_label_free_before_after_panel(LabelFreeBeforeAfterFigureConfig(...))` | soft before/after PNG and SVG |
 | End-to-end reproduction | `python reproducibility/run_breast_partial_anchor_from_xenium.py` | manifest JSON and figure assets |
 
 ## Reproducible Command
@@ -154,7 +202,9 @@ Y:\long\10X_datasets\Xenium\Xenium_Breast_Cancer\Xenium_FFPE_Human_Breast_Cancer
 ```
 
 Override them with `--fixed-xenium-output` and `--moving-xenium-output` when
-running on another machine.
+running on another machine. The script applies anchor-only residual TPS by
+default; pass `--no-anchor-only-soft-tps` to keep the hard similarity output as
+the manuscript figure.
 
 The main output manifest is:
 
@@ -199,6 +249,13 @@ Key results:
 | Maximum anchor residual | 146.14 coordinate units |
 | Candidate pair count | 760 |
 | RANSAC trial count | 1015 |
+| Soft method | `anchor_only_residual_tps` |
+| Soft TPS accepted | true |
+| Soft TPS anchor count | 20 |
+| Soft TPS identity padding anchors | 16 |
+| Soft post-warp median anchor residual | 0.87 coordinate units |
+| Soft post-warp P90 anchor residual | 1.96 coordinate units |
+| Soft negative-Jacobian ratio | 0.0 |
 
 These values are from the fully regenerated raw-folder workflow. They differ
 from the earlier RTD showcase numbers because the manuscript workflow now
@@ -208,12 +265,15 @@ files.
 
 ## Figure Legend Draft
 
-Fully automatic partial-anchor alignment of two breast cancer Xenium sections.
-HistoSeg started from the two raw Xenium output folders, joined cell coordinates
-with GraphClust labels, automatically discovered coarse spatial structures,
-generated multi-structure contour GeoJSON files, and searched all
-fixed/moving-structure combinations for a local anchor constellation. The final
-transform was fitted only from automatically detected high-confidence anchors;
-non-overlapping tissue was propagated as passive geometry and was not forced to
-overlap. Blue, fixed contours; red, moving contours before alignment; green,
-moving contours after alignment; purple, automatically selected anchor links.
+Fully automatic partial-anchor soft alignment of two breast cancer Xenium
+sections. HistoSeg started from the two raw Xenium output folders, joined cell
+coordinates with GraphClust labels, automatically discovered coarse spatial
+structures, generated multi-structure contour GeoJSON files, and searched all
+fixed/moving-structure combinations for a local anchor constellation. A hard
+similarity transform was first fitted from automatically detected
+high-confidence anchors. HistoSeg then used the same accepted anchors to fit an
+anchor-only residual TPS field, allowing local slice deformation while keeping
+non-overlapping tissue passive through identity padding and Jacobian QC. Blue,
+fixed contours; red, moving contours before alignment; green, moving contours
+after anchor-only residual TPS soft alignment; purple, automatically selected
+anchor links.
