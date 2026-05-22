@@ -353,9 +353,11 @@ def build_alignment_manifest(
                     soft_summary.get("outputs", {}).get("landmarks_csv"),
                     base=soft_summary_path.parent,
                 )
-                method = soft_summary.get("method", {})
+                method_raw = soft_summary.get("method", {})
+                method = method_raw if isinstance(method_raw, Mapping) else {}
                 soft_payload = {
                     "landmarks_sha256": _sha256_path(landmarks_path) if landmarks_path else None,
+                    "method": method_raw if isinstance(method_raw, str) else method.get("name"),
                     "rbf_kernel": method.get("rbf_kernel"),
                     "rbf_neighbors": method.get("rbf_neighbors"),
                     "rbf_smoothing": method.get("rbf_smoothing"),
