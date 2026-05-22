@@ -21,8 +21,10 @@ from . import (
     LocalZOrientationConfig,
     SpatialModuleDiscoveryConfig,
     SpatialModulePlotConfig,
+    SpatialData3DExportConfig,
     ThreeDContourReconstructionConfig,
     ThreeDStackReconstructionConfig,
+    export_stack_to_spatialdata_3d,
     plot_spatial_module_clustermap,
     quantify_gene_structure_relationships,
     render_cell_cloud_html,
@@ -698,6 +700,31 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     stack.add_argument("--ovrlpy-min-transcripts", type=float, default=10.0)
 
+    spatialdata_export = subparsers.add_parser(
+        "export-spatialdata-3d",
+        help="Export an aligned HistoSeg stack as SpatialData for napari-spatialdata 3D viewing.",
+    )
+    spatialdata_export.add_argument("--stack-root", required=True)
+    spatialdata_export.add_argument("--out-zarr", default=None)
+    spatialdata_export.add_argument("--aligned-cells-parquet", default=None)
+    spatialdata_export.add_argument("--group-property", default="structure")
+    spatialdata_export.add_argument("--xenium-pixel-size-um", type=float, default=0.2125)
+    spatialdata_export.add_argument(
+        "--no-contour-points",
+        action="store_true",
+        help="Only export 2.5D contour shapes, not sampled contour points.",
+    )
+    spatialdata_export.add_argument(
+        "--include-cells",
+        action="store_true",
+        help="Also export aligned cell points from --aligned-cells-parquet.",
+    )
+    spatialdata_export.add_argument("--max-cells", type=int, default=300000)
+    spatialdata_export.add_argument("--cell-x-column", default="x_aligned_um")
+    spatialdata_export.add_argument("--cell-y-column", default="y_aligned_um")
+    spatialdata_export.add_argument("--cell-z-column", default="z_um")
+    spatialdata_export.add_argument("--overwrite", action="store_true")
+
     local_z = subparsers.add_parser(
         "infer-local-z-orientation",
         help="Infer and apply transcript-level local-z orientation for an existing stack.",
@@ -1187,6 +1214,24 @@ def main(argv: Sequence[str] | None = None) -> None:
                 save_preview_png=not args.no_preview,
                 overwrite=args.overwrite,
                 dpi=args.dpi,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "export-spatialdata-3d":
+        result = export_stack_to_spatialdata_3d(
+            SpatialData3DExportConfig(
+                stack_root=args.stack_root,
+                out_zarr=args.out_zarr,
+                aligned_cells_parquet=args.aligned_cells_parquet,
+                group_property=args.group_property,
+                xenium_pixel_size_um=args.xenium_pixel_size_um,
+                include_contour_points=not args.no_contour_points,
+                include_cells=args.include_cells,
+                max_cells=args.max_cells,
+                cell_x_column=args.cell_x_column,
+                cell_y_column=args.cell_y_column,
+                cell_z_column=args.cell_z_column,
+                overwrite=args.overwrite,
             )
         )
         print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))

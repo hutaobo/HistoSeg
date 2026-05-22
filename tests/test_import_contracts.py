@@ -31,6 +31,7 @@ def test_feature_group_import_contracts():
     assert callable(threed.plot_spatial_module_clustermap)
     assert callable(threed.discover_xenium_slices)
     assert callable(threed.run_local_z_orientation_correction)
+    assert callable(threed.export_stack_to_spatialdata_3d)
 
 
 def test_top_level_exports_feature_group_namespaces():

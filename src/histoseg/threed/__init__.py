@@ -129,6 +129,11 @@ from .spatial_modules import (
     quantify_gene_structure_relationships,
     run_spatial_module_discovery,
 )
+from .spatialdata_export import (
+    SpatialData3DExportConfig,
+    SpatialData3DExportResult,
+    export_stack_to_spatialdata_3d,
+)
 
 __all__ = [
     "CELL_CLOUD_ALIGNED_XY_OBSM_KEY",
@@ -180,6 +185,8 @@ __all__ = [
     "SpatialModuleDiscoveryResult",
     "SpatialModulePlotConfig",
     "SpatialModulePlotResult",
+    "SpatialData3DExportConfig",
+    "SpatialData3DExportResult",
     "ThreeDContourReconstructionConfig",
     "ThreeDContourReconstructionResult",
     "ThreeDFeatureUnavailableError",
@@ -197,6 +204,7 @@ __all__ = [
     "estimate_coda_image_registration",
     "estimate_radon_rotation",
     "estimate_translation",
+    "export_stack_to_spatialdata_3d",
     "hard_align_geojson",
     "hash_alignment_manifest",
     "load_cell_alignment_transforms",
