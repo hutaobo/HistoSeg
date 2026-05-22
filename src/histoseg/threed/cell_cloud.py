@@ -496,7 +496,7 @@ def load_cell_alignment_transforms(
 
         pairwise_row = pairwise_by_sample.get(sample_id)
         hard_summary = _load_json(_find_hard_summary(root, sample_id, pairwise_row))
-        hard = SimilarityTransform(**hard_summary["transform"])
+        hard = _similarity_transform_from_payload(hard_summary["transform"])
 
         tps = None
         if pairwise_row is not None and _truthy(pairwise_row.get("soft_accepted")):
@@ -910,7 +910,8 @@ def _load_tps_model(summary_path: Path) -> TpsModel:
     if scale <= 0:
         raise ValueError(f"TPS landmarks in {landmarks_path} do not span a coordinate range.")
 
-    method = summary.get("method", {})
+    method_raw = summary.get("method", {})
+    method = method_raw if isinstance(method_raw, Mapping) else {}
     neighbors_value = method.get("rbf_neighbors", 96)
     neighbors = int(neighbors_value) if neighbors_value is not None else None
     if neighbors is not None and len(src) <= neighbors:
@@ -924,6 +925,24 @@ def _load_tps_model(summary_path: Path) -> TpsModel:
         neighbors=neighbors,
     )
     return TpsModel(interpolator=interpolator, center_xy=center, scale=scale)
+
+
+def _similarity_transform_from_payload(payload: Mapping[str, Any]) -> SimilarityTransform:
+    keys = (
+        "origin_x",
+        "origin_y",
+        "rotation_degrees",
+        "scale",
+        "translate_x",
+        "translate_y",
+    )
+    missing = sorted(key for key in keys if key not in payload)
+    if missing:
+        raise ValueError(
+            "Hard alignment transform is missing required fields: "
+            + ", ".join(missing)
+        )
+    return SimilarityTransform(**{key: float(payload[key]) for key in keys})
 
 
 def _find_hard_summary(
