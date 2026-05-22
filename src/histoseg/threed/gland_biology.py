@@ -413,8 +413,14 @@ def _load_transcript_counts(
     gene_set: set[str],
 ) -> pd.DataFrame:
     path = xenium_dir / "transcripts.parquet"
-    if not path.exists() or not cell_ids:
+    if not cell_ids:
         return pd.DataFrame(columns=["cell_id", "feature_name", "count"])
+    if not path.exists():
+        return _load_zarr_transcript_counts(
+            xenium_dir=xenium_dir,
+            cell_ids=cell_ids,
+            gene_set=gene_set,
+        )
     transcripts = pd.read_parquet(path, columns=["cell_id", "feature_name"])
     transcripts["cell_id"] = transcripts["cell_id"].astype(str)
     transcripts["feature_name"] = transcripts["feature_name"].astype(str)
@@ -425,6 +431,53 @@ def _load_transcript_counts(
     ]
     if transcripts.empty:
         return pd.DataFrame(columns=["cell_id", "feature_name", "count"])
+    return (
+        transcripts.groupby(["cell_id", "feature_name"], as_index=False)
+        .size()
+        .rename(columns={"size": "count"})
+    )
+
+
+def _load_zarr_transcript_counts(
+    *,
+    xenium_dir: Path,
+    cell_ids: set[str],
+    gene_set: set[str],
+    chunk_size: int = 1_000_000,
+) -> pd.DataFrame:
+    cell_path = xenium_dir / "points" / "transcripts" / "cell_id"
+    gene_path = xenium_dir / "points" / "transcripts" / "gene_name"
+    if not cell_path.exists() or not gene_path.exists():
+        return pd.DataFrame(columns=["cell_id", "feature_name", "count"])
+    try:
+        import zarr
+    except Exception:
+        return pd.DataFrame(columns=["cell_id", "feature_name", "count"])
+
+    cell_array = zarr.open(str(cell_path), mode="r")
+    gene_array = zarr.open(str(gene_path), mode="r")
+    n = int(cell_array.shape[0])
+    if int(gene_array.shape[0]) != n:
+        raise ValueError(f"Transcript cell/gene arrays have different lengths in {xenium_dir}")
+
+    cell_values = np.asarray(list(cell_ids), dtype=str)
+    gene_values = np.asarray(list(gene_set), dtype=str)
+    frames: list[pd.DataFrame] = []
+    for start in range(0, n, int(chunk_size)):
+        stop = min(start + int(chunk_size), n)
+        cells = np.asarray(cell_array[start:stop]).astype(str, copy=False)
+        genes = np.asarray(gene_array[start:stop]).astype(str, copy=False)
+        mask = (
+            np.isin(cells, cell_values)
+            & np.isin(genes, gene_values)
+            & (cells != "UNASSIGNED")
+        )
+        if not bool(mask.any()):
+            continue
+        frames.append(pd.DataFrame({"cell_id": cells[mask], "feature_name": genes[mask]}))
+    if not frames:
+        return pd.DataFrame(columns=["cell_id", "feature_name", "count"])
+    transcripts = pd.concat(frames, ignore_index=True)
     return (
         transcripts.groupby(["cell_id", "feature_name"], as_index=False)
         .size()
@@ -815,9 +868,21 @@ def _load_gene_names(contexts: Mapping[str, Path]) -> list[str]:
         )
         if names:
             return sorted(names)
+    for xenium_dir in contexts.values():
+        zarr_names = xenium_dir / "tables" / "cells" / "var" / "name"
+        if not zarr_names.exists():
+            continue
+        try:
+            import zarr
+        except Exception:
+            continue
+        values = zarr.open(str(zarr_names), mode="r")[:]
+        names = sorted({str(value) for value in values if str(value)})
+        if names:
+            return names
     raise FileNotFoundError(
         "Could not find gene names in cell_feature_matrix/features.tsv.gz "
-        "or transcripts.parquet in any Xenium directory."
+        "or pyXeniumSlide zarr arrays in any Xenium directory."
     )
 
 
