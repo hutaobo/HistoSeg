@@ -800,7 +800,25 @@ def _load_gene_names(contexts: Mapping[str, Path]) -> list[str]:
             if "type" in df:
                 df = df.loc[df["type"].astype(str).eq("Gene Expression")]
             return df["name"].astype(str).tolist()
-    raise FileNotFoundError("Could not find cell_feature_matrix/features.tsv.gz in any Xenium directory.")
+    for xenium_dir in contexts.values():
+        transcripts = xenium_dir / "transcripts.parquet"
+        if not transcripts.exists():
+            continue
+        df = pd.read_parquet(transcripts, columns=["feature_name"])
+        names = (
+            df["feature_name"]
+            .dropna()
+            .astype(str)
+            .loc[lambda values: values.ne("")]
+            .drop_duplicates()
+            .tolist()
+        )
+        if names:
+            return sorted(names)
+    raise FileNotFoundError(
+        "Could not find gene names in cell_feature_matrix/features.tsv.gz "
+        "or transcripts.parquet in any Xenium directory."
+    )
 
 
 def _validate_config(cfg: GlandBiologyMiningConfig) -> None:
