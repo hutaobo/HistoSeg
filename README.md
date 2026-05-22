@@ -138,6 +138,26 @@ the standard semantic contour seed with a label-free cross-group seed and keeps
 labels unchanged when cross-named contour groups provide the best geometric
 anchor.
 
+When each slice has already been converted into slice-local semantic contours,
+use a contour manifest instead of a global segmentation strategy. This mode is
+intended for independently clustered slices whose structure names are not
+globally comparable:
+
+```bash
+histoseg-3d reconstruct-stack \
+  --contour-manifest slice_local_contour_manifest.csv \
+  --out-dir outputs/polyp_slice_local_3d \
+  --registration-backend auto \
+  --z-spacing-um 5
+```
+
+The manifest must contain `order`, `sample_id`, `z_um`, and `geojson`. HistoSeg
+copies each GeoJSON into the stack output, preserves its labels, and aligns
+adjacent slices with the same label-free group machinery used by the automatic
+backend. A merged Leiden/AnnData object can still be used later for cell-cloud
+coloring or downstream biology, but it is not required to define contours in
+this mode.
+
 Render an aligned 3D cell cloud as a browser-shareable Plotly HTML:
 
 ```bash

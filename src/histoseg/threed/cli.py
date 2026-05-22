@@ -418,8 +418,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     stack.add_argument(
         "--xenium-root",
-        required=True,
-        help="Folder containing ordered Xenium slice folders.",
+        default=None,
+        help=(
+            "Folder containing ordered Xenium slice folders. Required unless "
+            "--contour-manifest supplies precomputed per-slice GeoJSON contours."
+        ),
     )
     stack.add_argument(
         "--out-dir",
@@ -430,6 +433,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--segmentation-strategy",
         default=None,
         help="Text file with one comma-separated cluster list per Structure N.",
+    )
+    stack.add_argument(
+        "--contour-manifest",
+        default=None,
+        help=(
+            "CSV manifest of precomputed slice-local contour GeoJSONs with columns "
+            "order,sample_id,z_um,geojson. When provided, reconstruct-stack skips "
+            "Xenium contour generation and preserves each GeoJSON's existing labels."
+        ),
     )
     stack.add_argument(
         "--sample-glob",
@@ -1507,6 +1519,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             ThreeDStackReconstructionConfig(
                 xenium_root=args.xenium_root,
                 out_dir=args.out_dir,
+                contour_manifest=args.contour_manifest,
                 segmentation_strategy=args.segmentation_strategy,
                 sample_glob=args.sample_glob,
                 z_spacing_um=args.z_spacing_um,

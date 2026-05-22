@@ -63,8 +63,9 @@ class ThreeDStackReconstructionConfig:
     slices in a fixed order, and exports a 3D contour stack plus surface meshes.
     """
 
-    xenium_root: PathLike
+    xenium_root: PathLike | None = None
     out_dir: PathLike = "outputs/3d_stack_reconstruction"
+    contour_manifest: PathLike | None = None
     segmentation_strategy: PathLike | None = None
     structures: Sequence[MultiStructureSpec | Mapping[str, Any]] | None = None
     slice_dirs: Sequence[PathLike] | None = None
@@ -191,6 +192,8 @@ class _SliceInput:
     sample_id: str
     sample_dir: Path
     xenium_dir: Path
+    z_um: float | None = None
+    precomputed_geojson: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -212,12 +215,16 @@ def run_3d_stack_reconstruction(
     out_dir = Path(cfg.out_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    structures = list(cfg.structures) if cfg.structures is not None else _read_strategy_specs(cfg)
-    slices = discover_xenium_slices(
-        cfg.xenium_root,
-        slice_dirs=cfg.slice_dirs,
-        sample_glob=cfg.sample_glob,
-    )
+    if cfg.contour_manifest is not None:
+        structures: list[MultiStructureSpec | Mapping[str, Any]] = []
+        slices = _read_precomputed_contour_manifest(cfg.contour_manifest)
+    else:
+        structures = list(cfg.structures) if cfg.structures is not None else _read_strategy_specs(cfg)
+        slices = discover_xenium_slices(
+            cfg.xenium_root,
+            slice_dirs=cfg.slice_dirs,
+            sample_glob=cfg.sample_glob,
+        )
     if not slices:
         raise ValueError(f"No Xenium output folders were found under {cfg.xenium_root!s}.")
     if cfg.reference_slice_index != 0:
@@ -231,11 +238,15 @@ def run_3d_stack_reconstruction(
                 "sample_id": item.sample_id,
                 "sample_dir": str(item.sample_dir),
                 "xenium_dir": str(item.xenium_dir),
+                "z_um": _slice_z_um(item, cfg),
+                "precomputed_geojson": (
+                    str(item.precomputed_geojson) if item.precomputed_geojson is not None else None
+                ),
             }
             for item in slices
         ]
     ).to_csv(slice_manifest_path, index=False)
-    merged_cluster_tables = _load_merged_cluster_tables(cfg, slices)
+    merged_cluster_tables = {} if cfg.contour_manifest is not None else _load_merged_cluster_tables(cfg, slices)
 
     contour_dir = out_dir / "slice_contours"
     aligned_dir = out_dir / "aligned_contours"
@@ -249,7 +260,7 @@ def run_3d_stack_reconstruction(
     aligned_paths: list[Path] = []
 
     for slice_input in slices:
-        raw_geojson = _build_slice_contours(
+        raw_geojson = _prepare_slice_contours(
             slice_input,
             structures,
             contour_dir,
@@ -266,7 +277,7 @@ def run_3d_stack_reconstruction(
                 {
                     "order": slice_input.order,
                     "sample_id": slice_input.sample_id,
-                    "z_um": 0.0,
+                    "z_um": _slice_z_um(slice_input, cfg),
                     "raw_geojson": str(raw_geojson),
                     "aligned_geojson": str(aligned_path),
                     "alignment_role": "reference",
@@ -478,7 +489,7 @@ def run_3d_stack_reconstruction(
             {
                 "order": slice_input.order,
                 "sample_id": slice_input.sample_id,
-                "z_um": (slice_input.order - 1) * cfg.z_spacing_um,
+                "z_um": _slice_z_um(slice_input, cfg),
                 "raw_geojson": str(raw_geojson),
                 "aligned_geojson": str(aligned_path),
                 "alignment_role": "moving",
@@ -577,7 +588,10 @@ def run_3d_stack_reconstruction(
     summary = {
         "config": _jsonable_config(cfg),
         "slice_count": len(slices),
-        "structure_count": len(structures),
+        "structure_count": _count_structures_from_aligned_rows(
+            aligned_rows,
+            group_property=cfg.group_property,
+        ),
         "outputs": {
             "slice_manifest_csv": str(slice_manifest_path),
             "aligned_manifest_csv": str(aligned_manifest_path),
@@ -656,6 +670,115 @@ def discover_xenium_slices(
         )
         for index, item in enumerate(ordered, start=1)
     ]
+
+
+def _read_precomputed_contour_manifest(manifest: PathLike) -> list[_SliceInput]:
+    """Read precomputed per-slice contour GeoJSONs for manifest-driven stack runs."""
+
+    manifest_path = Path(manifest).expanduser().resolve()
+    if not manifest_path.exists():
+        raise FileNotFoundError(manifest_path)
+    table = pd.read_csv(manifest_path)
+    required = {"order", "sample_id", "z_um", "geojson"}
+    missing = required.difference(table.columns)
+    if missing:
+        raise ValueError(
+            "contour_manifest is missing required columns: "
+            + ", ".join(sorted(missing))
+        )
+    if table.empty:
+        raise ValueError("contour_manifest must contain at least one slice row.")
+
+    rows: list[_SliceInput] = []
+    seen_orders: set[int] = set()
+    seen_sample_ids: set[str] = set()
+    for _, row in table.sort_values("order").iterrows():
+        try:
+            order = int(row["order"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid contour_manifest order: {row['order']!r}.") from exc
+        sample_id = str(row["sample_id"]).strip()
+        if not sample_id:
+            raise ValueError("contour_manifest sample_id values must be non-empty.")
+        if order in seen_orders:
+            raise ValueError(f"Duplicate contour_manifest order: {order}.")
+        if sample_id in seen_sample_ids:
+            raise ValueError(f"Duplicate contour_manifest sample_id: {sample_id!r}.")
+        seen_orders.add(order)
+        seen_sample_ids.add(sample_id)
+
+        try:
+            z_um = float(row["z_um"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid contour_manifest z_um for sample {sample_id!r}: {row['z_um']!r}."
+            ) from exc
+        if not math.isfinite(z_um):
+            raise ValueError(f"z_um must be finite for sample {sample_id!r}.")
+
+        geojson_path = _resolve_manifest_path(row["geojson"], manifest_path.parent)
+        if not geojson_path.exists():
+            raise FileNotFoundError(geojson_path)
+
+        xenium_value = _first_present_manifest_value(
+            row,
+            ("xenium_dir", "source_xenium_dir", "source_dir"),
+        )
+        sample_value = _first_present_manifest_value(row, ("sample_dir",))
+        xenium_dir = (
+            _resolve_manifest_path(xenium_value, manifest_path.parent)
+            if xenium_value is not None
+            else geojson_path.parent
+        )
+        sample_dir = (
+            _resolve_manifest_path(sample_value, manifest_path.parent)
+            if sample_value is not None
+            else xenium_dir.parent
+        )
+        rows.append(
+            _SliceInput(
+                order=order,
+                sample_id=sample_id,
+                sample_dir=sample_dir,
+                xenium_dir=xenium_dir,
+                z_um=z_um,
+                precomputed_geojson=geojson_path,
+            )
+        )
+    expected_orders = list(range(1, len(rows) + 1))
+    observed_orders = [item.order for item in rows]
+    if observed_orders != expected_orders:
+        raise ValueError(
+            "contour_manifest order values must be consecutive and start at 1; "
+            f"observed {observed_orders!r}."
+        )
+    return rows
+
+
+def _first_present_manifest_value(row: pd.Series, columns: Sequence[str]) -> str | None:
+    for column in columns:
+        if column not in row.index:
+            continue
+        value = row[column]
+        if pd.isna(value):
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def _resolve_manifest_path(value: Any, base_dir: Path) -> Path:
+    path = Path(str(value)).expanduser()
+    if not path.is_absolute():
+        path = base_dir / path
+    return path.resolve()
+
+
+def _slice_z_um(slice_input: _SliceInput, cfg: ThreeDStackReconstructionConfig) -> float:
+    if slice_input.z_um is not None:
+        return float(slice_input.z_um)
+    return float(slice_input.order - 1) * float(cfg.z_spacing_um)
 
 
 def _run_hard_alignment_backend(
@@ -1666,6 +1789,13 @@ def write_3d_visualization_html(
 
 
 def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
+    if cfg.contour_manifest is None and cfg.xenium_root is None:
+        raise ValueError("Provide xenium_root or contour_manifest for stack reconstruction.")
+    if cfg.contour_manifest is not None and cfg.local_z_orientation == "auto" and cfg.xenium_root is None:
+        raise ValueError(
+            "local_z_orientation='auto' with contour_manifest requires xenium_root so "
+            "transcript tables can be discovered."
+        )
     if cfg.registration_backend not in {"auto", "contour-tps", "label-free-group", "coda-image"}:
         raise ValueError(
             "registration_backend must be 'auto', 'contour-tps', 'label-free-group', or 'coda-image'."
@@ -1807,6 +1937,32 @@ def _read_strategy_specs(cfg: ThreeDStackReconstructionConfig) -> list[MultiStru
     if not specs:
         raise ValueError(f"No structures were parsed from {strategy_path}.")
     return specs
+
+
+def _prepare_slice_contours(
+    slice_input: _SliceInput,
+    structures: Sequence[MultiStructureSpec | Mapping[str, Any]],
+    contour_root: Path,
+    cfg: ThreeDStackReconstructionConfig,
+    *,
+    merged_clusters: pd.DataFrame | None = None,
+) -> Path:
+    if slice_input.precomputed_geojson is None:
+        return _build_slice_contours(
+            slice_input,
+            structures,
+            contour_root,
+            cfg,
+            merged_clusters=merged_clusters,
+        )
+
+    slice_out = contour_root / f"{slice_input.order:03d}_{slice_input.sample_id}"
+    contour_geojson = slice_out / "xenium_explorer_annotations.geojson"
+    if contour_geojson.exists() and not cfg.overwrite:
+        return contour_geojson
+    slice_out.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(slice_input.precomputed_geojson, contour_geojson)
+    return contour_geojson
 
 
 def _build_slice_contours(
@@ -2994,9 +3150,31 @@ def _safe_name(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", text).strip("_") or "structure"
 
 
+def _count_structures_from_aligned_rows(
+    aligned_rows: Sequence[Mapping[str, Any]],
+    *,
+    group_property: str,
+) -> int:
+    structures: set[str] = set()
+    for row in aligned_rows:
+        path = row.get("aligned_geojson") or row.get("raw_geojson")
+        if not path:
+            continue
+        try:
+            payload = _read_geojson(Path(str(path)))
+        except Exception:
+            continue
+        for feature in payload.get("features", []):
+            props = feature.get("properties") or {}
+            group = _feature_group(props, group_property)
+            if group is not None:
+                structures.add(str(group))
+    return len(structures)
+
+
 def _jsonable_config(cfg: ThreeDStackReconstructionConfig) -> dict[str, Any]:
     payload = asdict(cfg)
-    for key in ("xenium_root", "out_dir", "segmentation_strategy", "merged_h5ad"):
+    for key in ("xenium_root", "out_dir", "contour_manifest", "segmentation_strategy", "merged_h5ad"):
         if payload.get(key) is not None:
             payload[key] = str(payload[key])
     if payload.get("slice_dirs") is not None:

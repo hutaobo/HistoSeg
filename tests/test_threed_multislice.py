@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
@@ -14,9 +15,11 @@ from histoseg.threed import (
     discover_xenium_slices,
     hard_align_geojson,
     reconstruct_3d_contour_meshes,
+    run_3d_stack_reconstruction,
     write_3d_contour_points,
     write_3d_visualization_html,
 )
+import histoseg.threed.multislice as multislice
 from histoseg.threed.multislice import (
     _SliceInput,
     _build_per_structure_soft_geojson,
@@ -66,6 +69,108 @@ def test_discover_xenium_slices_accepts_pyxenium_slide_zarr(tmp_path):
         "A079-C-008_10.pyxenium.slide.zarr",
     ]
     assert [item.order for item in slices] == [1, 2, 3]
+
+
+def test_reconstruct_stack_uses_precomputed_contour_manifest(monkeypatch, tmp_path):
+    fixed_geojson = tmp_path / "slice1.geojson"
+    moving_geojson = tmp_path / "slice2.geojson"
+    _write_geojson(
+        fixed_geojson,
+        [_feature(box(0, 0, 10, 10), "Local group A")],
+    )
+    _write_geojson(
+        moving_geojson,
+        [_feature(box(2, 0, 12, 10), "Different local group")],
+    )
+    manifest = tmp_path / "slice_local_contours.csv"
+    pd.DataFrame(
+        [
+            {
+                "order": 1,
+                "sample_id": "slice_1",
+                "z_um": 0.0,
+                "geojson": str(fixed_geojson),
+            },
+            {
+                "order": 2,
+                "sample_id": "slice_2",
+                "z_um": 7.5,
+                "geojson": str(moving_geojson),
+            },
+        ]
+    ).to_csv(manifest, index=False)
+
+    def fail_build_slice_contours(*args, **kwargs):
+        raise AssertionError("manifest mode must not build contours from Xenium data")
+
+    def fake_hard_alignment(cfg, *, fixed_geojson, moving_geojson, output_geojson, summary_json):
+        import shutil
+
+        shutil.copy2(moving_geojson, output_geojson)
+        summary = {
+            "registration_backend": "contour-tps",
+            "selected_hard_seed_backend": "contour-tps",
+            "union_iou_before_hard": 0.5,
+            "union_iou_after_hard": 0.6,
+            "hard_alignment_accepted": True,
+            "transform": {
+                "rotation_degrees": 0.0,
+                "scale": 1.0,
+                "translate_x": 0.0,
+                "translate_y": 0.0,
+            },
+        }
+        Path(summary_json).write_text(json.dumps(summary), encoding="utf-8")
+        return summary
+
+    def fake_mesh(aligned_rows, mesh_dir, **kwargs):
+        mesh_dir = Path(mesh_dir)
+        mesh_dir.mkdir(parents=True, exist_ok=True)
+        (mesh_dir / "mesh_manifest.csv").write_text("structure\n", encoding="utf-8")
+        (mesh_dir / "mesh_qc_summary.json").write_text("{}", encoding="utf-8")
+        return []
+
+    monkeypatch.setattr(multislice, "_build_slice_contours", fail_build_slice_contours)
+    monkeypatch.setattr(multislice, "_run_hard_alignment_backend", fake_hard_alignment)
+    monkeypatch.setattr(multislice, "reconstruct_3d_contour_meshes", fake_mesh)
+
+    result = run_3d_stack_reconstruction(
+        ThreeDStackReconstructionConfig(
+            contour_manifest=manifest,
+            out_dir=tmp_path / "out",
+            registration_backend="contour-tps",
+            run_soft_alignment=False,
+        )
+    )
+
+    slice_manifest = pd.read_csv(result.slice_manifest_csv)
+    assert slice_manifest["sample_id"].tolist() == ["slice_1", "slice_2"]
+    assert slice_manifest["z_um"].tolist() == [0.0, 7.5]
+    assert slice_manifest["precomputed_geojson"].notna().all()
+
+    aligned_manifest = pd.read_csv(result.aligned_manifest_csv)
+    assert aligned_manifest["z_um"].tolist() == [0.0, 7.5]
+    raw_copy = result.out_dir / "slice_contours" / "002_slice_2" / "xenium_explorer_annotations.geojson"
+    payload = json.loads(raw_copy.read_text(encoding="utf-8"))
+    assert payload["features"][0]["properties"]["structure"] == "Different local group"
+
+    summary = json.loads(result.summary_json.read_text(encoding="utf-8"))
+    assert summary["slice_count"] == 2
+    assert summary["structure_count"] == 2
+    assert summary["config"]["contour_manifest"] == str(manifest)
+
+
+def test_reconstruct_stack_contour_manifest_requires_core_columns(tmp_path):
+    manifest = tmp_path / "bad_manifest.csv"
+    pd.DataFrame([{"order": 1, "sample_id": "slice_1"}]).to_csv(manifest, index=False)
+
+    with pytest.raises(ValueError, match="contour_manifest is missing required columns"):
+        run_3d_stack_reconstruction(
+            ThreeDStackReconstructionConfig(
+                contour_manifest=manifest,
+                out_dir=tmp_path / "out",
+            )
+        )
 
 
 def test_segmentation_strategy_parses_one_structure_per_line(tmp_path):
@@ -491,6 +596,15 @@ def test_reconstruct_stack_cli_parses_registration_backend(monkeypatch, tmp_path
             "--no-soft",
         ]
     )
+    cli.main(
+        [
+            "reconstruct-stack",
+            "--contour-manifest",
+            str(tmp_path / "slice_local_contours.csv"),
+            "--out-dir",
+            str(tmp_path / "out"),
+        ]
+    )
 
     capsys.readouterr()
     assert calls[0].registration_backend == "auto"
@@ -507,6 +621,8 @@ def test_reconstruct_stack_cli_parses_registration_backend(monkeypatch, tmp_path
     assert calls[2].anchor_only_max_negative_jacobian_ratio == 0.01
     assert calls[3].soft_alignment_mode == "none"
     assert calls[3].run_soft_alignment is False
+    assert calls[4].xenium_root is None
+    assert calls[4].contour_manifest == str(tmp_path / "slice_local_contours.csv")
 
 
 def test_hard_align_affine_fallback_accepted_when_triggered(tmp_path):

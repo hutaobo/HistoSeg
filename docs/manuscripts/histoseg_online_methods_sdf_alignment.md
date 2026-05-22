@@ -48,6 +48,16 @@ non-overlapping partition masks are converted to continuous contour paths at
 level $0.5$, exported as Xenium Explorer-compatible GeoJSON/CSV annotations,
 and carried forward with their semantic structure labels.
 
+For stacks in which each section is clustered independently, HistoSeg can also
+start from a contour manifest of precomputed slice-local GeoJSON files. In that
+mode, contour generation is performed before 3D reconstruction, the local
+structure labels in each GeoJSON are preserved, and no global Leiden or
+cross-slice cluster identity is required to define the contours. The downstream
+alignment stage can then use label-free group correspondence to estimate
+geometry from overlapping contour constellations even when the selected fixed
+and moving groups have different names. This step aligns coordinates only and
+does not harmonize biological labels.
+
 This produces the end-to-end semantic geometry chain used by HistoSeg:
 
 $$

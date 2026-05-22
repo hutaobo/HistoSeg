@@ -230,6 +230,21 @@ transform passes the configured count and residual thresholds. When the selected
 hard seed is `label-free-group`, the stack soft-alignment stage uses
 anchor-only residual TPS instead of semantic boundary attraction.
 
+For slice-local semantic contour workflows, `reconstruct-stack` can also start
+from a precomputed contour manifest:
+
+```bash
+histoseg-3d reconstruct-stack \
+  --contour-manifest slice_local_contour_manifest.csv \
+  --out-dir outputs/slice_local_3d \
+  --registration-backend auto
+```
+
+This is the preferred path when each slice was clustered independently and
+`Structure 1`, `Structure 2`, etc. are local names rather than global identities.
+The manifest mode preserves those names and uses label-free group alignment for
+geometry; biological label harmonization remains a separate downstream analysis.
+
 ## Source Artifacts
 
 - {download}`Alignment summary JSON <_static/threed/breast/label_free_group_correspondence_20260507/group_overlap_alignment_summary.json>`

@@ -285,6 +285,31 @@ histoseg-3d reconstruct-stack \
 Set `--mesh-smoothing-sigma-um 0` to disable the 3D Gaussian smoothing step.
 `--mesh-level` must stay between `0` and `1` for the Marching Cubes surface.
 
+### Precomputed Slice-Local Contour Manifests
+
+For independently clustered slices, the structure names in one slice may not
+refer to the same biological group in the next slice. In that case, generate or
+curate semantic contours per slice first, then pass them to the stack
+reconstruction as a manifest:
+
+```bash
+histoseg-3d reconstruct-stack \
+  --contour-manifest slice_local_contour_manifest.csv \
+  --out-dir outputs/polyp_slice_local_3d \
+  --registration-backend auto \
+  --z-spacing-um 5
+```
+
+The manifest columns are `order`, `sample_id`, `z_um`, and `geojson`; optional
+`sample_dir`, `xenium_dir`, or `source_xenium_dir` columns are copied into
+`xenium_slice_manifest.csv` for provenance. In this mode HistoSeg skips
+Xenium/AnnData contour generation, copies each input GeoJSON into
+`slice_contours/`, preserves all feature properties, and aligns adjacent slices
+with the same label-free group backend used by `--registration-backend auto`.
+The method is geometric only: it does not harmonize or rename local slice labels.
+A global Leiden AnnData can still be used later for cell-cloud coloring or
+cell-level biology, but it is not required for contour reconstruction.
+
 ## Registration Backends
 
 `histoseg-3d reconstruct-stack` defaults to `--registration-backend auto`.
