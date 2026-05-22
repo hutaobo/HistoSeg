@@ -52,6 +52,11 @@ def export_stack_to_spatialdata_3d(
     """
 
     try:
+        import dask
+
+        # spatialdata currently rejects the dask-expr dataframe backend. Set the
+        # legacy dataframe backend before importing spatialdata or dask.dataframe.
+        dask.config.set({"dataframe.query-planning": False})
         import dask.dataframe as dd
         import geopandas as gpd
         from spatialdata import SpatialData
