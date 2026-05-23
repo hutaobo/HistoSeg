@@ -17,7 +17,7 @@ def _write_graphclust_case(root: Path, *, cluster_count: int = 4, cells_per_clus
     root.mkdir(parents=True, exist_ok=True)
     rows = []
     clusters = []
-    centers = [(0, 0), (120, 0), (0, 120), (120, 120), (260, 0), (260, 120)]
+    centers = [(120 * (idx % 6), 120 * (idx // 6)) for idx in range(max(cluster_count, 6))]
     cell_id = 1
     for cluster_id in range(1, cluster_count + 1):
         cx, cy = centers[cluster_id - 1]
@@ -63,6 +63,35 @@ def test_auto_structure_discovers_valid_structures_json(tmp_path):
     assert result.cluster_structure_csv.exists()
     table = pd.read_csv(result.cluster_structure_csv)
     assert set(table["cluster"].astype(str)) == {"1", "2", "3", "4"}
+
+
+def test_auto_structure_leaf_balanced_prevents_giant_root_groups(tmp_path):
+    clusters_path, cells_path = _write_graphclust_case(
+        tmp_path / "outs",
+        cluster_count=12,
+        cells_per_cluster=8,
+    )
+
+    result = discover_auto_structures(
+        AutoStructureDiscoveryConfig(
+            clusters_csv=clusters_path,
+            cells_parquet=cells_path,
+            out_dir=tmp_path / "leaf_balanced",
+            cluster_count="leaf-balanced",
+            max_leaf_clusters_per_structure=5,
+            min_leaf_clusters_per_structure=2,
+            min_structure_cell_fraction=0.0,
+            use_cophenetic=False,
+        )
+    )
+
+    table = pd.read_csv(result.cluster_structure_csv)
+    leaves_per_structure = table.groupby("structure_name")["cluster"].nunique()
+    assert leaves_per_structure.max() <= 5
+    assert leaves_per_structure.min() >= 2
+    assert len(leaves_per_structure) >= 3
+    summary = json.loads(result.summary_json.read_text(encoding="utf-8"))
+    assert summary["cluster_count_mode"] == "leaf_balanced"
 
 
 def test_resolve_xenium_output_folder_supports_parent_with_nested_outs(tmp_path):

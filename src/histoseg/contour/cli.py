@@ -78,10 +78,25 @@ def main(argv: Sequence[str] | None = None) -> None:
     auto.add_argument(
         "--cluster-count",
         default="auto",
-        help="Number of structures to discover, or 'auto' to select between min/max counts.",
+        help=(
+            "Number of structures to discover, 'auto' to select between min/max counts, "
+            "or 'leaf-balanced' to merge StructureMap leaves bottom-up."
+        ),
     )
     auto.add_argument("--min-structure-count", type=int, default=3, help="Minimum auto-selected structure count.")
     auto.add_argument("--max-structure-count", type=int, default=8, help="Maximum auto-selected structure count.")
+    auto.add_argument(
+        "--max-leaf-clusters-per-structure",
+        type=int,
+        default=5,
+        help="For --cluster-count leaf-balanced, maximum original cluster leaves per structure.",
+    )
+    auto.add_argument(
+        "--min-leaf-clusters-per-structure",
+        type=int,
+        default=2,
+        help="For --cluster-count leaf-balanced, merge tiny leaf groups when possible.",
+    )
     auto.add_argument(
         "--min-structure-cell-fraction",
         type=float,
@@ -236,6 +251,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 cluster_count=_parse_auto_cluster_count(args.cluster_count),
                 min_structure_count=args.min_structure_count,
                 max_structure_count=args.max_structure_count,
+                max_leaf_clusters_per_structure=args.max_leaf_clusters_per_structure,
+                min_leaf_clusters_per_structure=args.min_leaf_clusters_per_structure,
                 min_structure_cell_fraction=args.min_structure_cell_fraction,
                 linkage_method=args.linkage_method,
                 use_cophenetic=not args.no_cophenetic,
@@ -302,12 +319,12 @@ def _parse_csv_list(value: str) -> list[str]:
 
 def _parse_auto_cluster_count(value: str) -> int | str:
     text = str(value).strip().lower()
-    if text == "auto":
-        return "auto"
+    if text in {"auto", "leaf", "leaf-balanced", "leaf_balanced", "bottom-up", "bottom_up"}:
+        return text
     try:
         return int(text)
     except ValueError as exc:
-        raise SystemExit("--cluster-count must be an integer or 'auto'.") from exc
+        raise SystemExit("--cluster-count must be an integer, 'auto', or 'leaf-balanced'.") from exc
 
 
 if __name__ == "__main__":

@@ -52,6 +52,8 @@ class AutoStructureDiscoveryConfig:
     cluster_count: int | str = "auto"
     min_structure_count: int = 3
     max_structure_count: int = 8
+    max_leaf_clusters_per_structure: int = 5
+    min_leaf_clusters_per_structure: int = 2
     min_structure_cell_fraction: float = 0.01
     linkage_method: str = "average"
     use_cophenetic: bool = True
@@ -158,7 +160,10 @@ def discover_auto_structures(cfg: AutoStructureDiscoveryConfig) -> AutoStructure
         cluster_counts=cluster_counts,
         cfg=cfg,
     )
-    raw_labels = _cluster_labels(clustering_matrix, selected["structure_count"], linkage_method=cfg.linkage_method)
+    if selected.get("cluster_count_mode") == "leaf_balanced":
+        raw_labels = np.asarray(selected["labels"], dtype=int)
+    else:
+        raw_labels = _cluster_labels(clustering_matrix, selected["structure_count"], linkage_method=cfg.linkage_method)
     structure_specs, assignment_table = _build_structure_specs(
         labels=raw_labels,
         cluster_ids=list(clustering_matrix.index),
@@ -175,7 +180,9 @@ def discover_auto_structures(cfg: AutoStructureDiscoveryConfig) -> AutoStructure
         "matched_cell_count": int(len(merged)),
         "cluster_count": int(merged["cluster"].nunique()),
         "selected_structure_count": int(selected["structure_count"]),
-        "cluster_count_mode": cfg.cluster_count,
+        "cluster_count_mode": selected.get("cluster_count_mode", cfg.cluster_count),
+        "max_leaf_clusters_per_structure": int(cfg.max_leaf_clusters_per_structure),
+        "min_leaf_clusters_per_structure": int(cfg.min_leaf_clusters_per_structure),
         "selection_score": selected,
         "candidate_scores": selected.get("candidate_scores", []),
         "id_col_used": id_col_used,
@@ -273,7 +280,33 @@ def _select_structure_count(
     cfg: AutoStructureDiscoveryConfig,
 ) -> dict[str, Any]:
     n_clusters = len(distance_matrix)
-    if isinstance(cfg.cluster_count, int) or str(cfg.cluster_count).strip().lower() != "auto":
+    cluster_count_mode = str(cfg.cluster_count).strip().lower()
+    if cluster_count_mode in {"leaf", "leaf-balanced", "leaf_balanced", "bottom-up", "bottom_up"}:
+        labels = _leaf_balanced_labels(
+            distance_matrix,
+            linkage_method=cfg.linkage_method,
+            max_leaf_count=cfg.max_leaf_clusters_per_structure,
+            min_leaf_count=cfg.min_leaf_clusters_per_structure,
+        )
+        score = _score_labels(distance_matrix, labels, cluster_counts, cfg.min_structure_cell_fraction)
+        structure_count = int(len(set(labels.tolist())))
+        return {
+            "structure_count": structure_count,
+            "cluster_count_mode": "leaf_balanced",
+            "labels": labels.tolist(),
+            **score,
+            "candidate_scores": [
+                {
+                    "structure_count": structure_count,
+                    "cluster_count_mode": "leaf_balanced",
+                    "max_leaf_clusters_per_structure": int(cfg.max_leaf_clusters_per_structure),
+                    "min_leaf_clusters_per_structure": int(cfg.min_leaf_clusters_per_structure),
+                    **score,
+                }
+            ],
+        }
+
+    if isinstance(cfg.cluster_count, int) or cluster_count_mode != "auto":
         k = int(cfg.cluster_count)
         if k < 2 or k > n_clusters:
             raise ValueError(f"cluster_count must be between 2 and {n_clusters}, got {k}.")
@@ -294,6 +327,125 @@ def _select_structure_count(
 
     best = max(candidates, key=lambda item: float(item["score"]))
     return {**best, "candidate_scores": candidates}
+
+
+def _leaf_balanced_labels(
+    distance_matrix: pd.DataFrame,
+    *,
+    linkage_method: str,
+    max_leaf_count: int,
+    min_leaf_count: int,
+) -> np.ndarray:
+    """Group nearby leaf clusters without allowing root-level giant structures.
+
+    This mode follows the StructureMap tree from leaves upward.  A merge is kept
+    only when the resulting structure would contain no more than
+    ``max_leaf_count`` original graph clusters.  The final structure groups are
+    therefore local tree branches instead of a coarse global tree cut.
+    """
+
+    n_clusters = len(distance_matrix)
+    if n_clusters == 0:
+        return np.asarray([], dtype=int)
+    if n_clusters == 1:
+        return np.zeros(1, dtype=int)
+
+    max_leaf_count = max(1, int(max_leaf_count))
+    min_leaf_count = max(1, int(min_leaf_count))
+    if n_clusters <= max_leaf_count:
+        # Keep very small clusterings split enough to preserve contour contrast.
+        if n_clusters <= 2:
+            return np.arange(n_clusters, dtype=int)
+        return np.zeros(n_clusters, dtype=int)
+
+    values = distance_matrix.to_numpy(dtype=float)
+    condensed = squareform(values, checks=False)
+    method = "average" if linkage_method == "ward" else linkage_method
+    tree = linkage(condensed, method=method)
+
+    next_group_id = n_clusters
+    active_groups: dict[int, set[int]] = {idx: {idx} for idx in range(n_clusters)}
+    node_to_groups: dict[int, list[int]] = {idx: [idx] for idx in range(n_clusters)}
+
+    for row_idx, (left_raw, right_raw, _dist, _count) in enumerate(tree):
+        left = int(left_raw)
+        right = int(right_raw)
+        node_id = n_clusters + row_idx
+        child_group_ids = list(node_to_groups.get(left, [])) + list(node_to_groups.get(right, []))
+        child_group_ids = [gid for gid in child_group_ids if gid in active_groups]
+        if not child_group_ids:
+            node_to_groups[node_id] = []
+            continue
+        combined: set[int] = set()
+        for gid in child_group_ids:
+            combined.update(active_groups[gid])
+        if len(combined) <= max_leaf_count:
+            for gid in child_group_ids:
+                active_groups.pop(gid, None)
+            active_groups[next_group_id] = combined
+            node_to_groups[node_id] = [next_group_id]
+            next_group_id += 1
+        else:
+            node_to_groups[node_id] = child_group_ids
+
+    groups = list(active_groups.values())
+    groups = _merge_small_leaf_groups(
+        groups,
+        distance_matrix=distance_matrix,
+        min_leaf_count=min_leaf_count,
+        max_leaf_count=max_leaf_count,
+    )
+    groups = _sort_leaf_groups(groups, distance_matrix.index)
+    labels = np.empty(n_clusters, dtype=int)
+    for label, group in enumerate(groups):
+        for idx in group:
+            labels[int(idx)] = label
+    return labels
+
+
+def _merge_small_leaf_groups(
+    groups: list[set[int]],
+    *,
+    distance_matrix: pd.DataFrame,
+    min_leaf_count: int,
+    max_leaf_count: int,
+) -> list[set[int]]:
+    groups = [set(group) for group in groups if group]
+    values = distance_matrix.to_numpy(dtype=float)
+    changed = True
+    while changed:
+        changed = False
+        small_indices = [idx for idx, group in enumerate(groups) if len(group) < min_leaf_count]
+        if not small_indices:
+            break
+        for idx in small_indices:
+            if idx >= len(groups) or len(groups[idx]) >= min_leaf_count:
+                continue
+            best_j = None
+            best_dist = math.inf
+            for j, other in enumerate(groups):
+                if j == idx or len(groups[idx]) + len(other) > max_leaf_count:
+                    continue
+                sub = values[np.ix_(sorted(groups[idx]), sorted(other))]
+                dist = float(np.nanmean(sub)) if sub.size else math.inf
+                if dist < best_dist:
+                    best_dist = dist
+                    best_j = j
+            if best_j is None:
+                continue
+            groups[best_j].update(groups[idx])
+            groups.pop(idx)
+            changed = True
+            break
+    return groups
+
+
+def _sort_leaf_groups(groups: list[set[int]], cluster_ids: Sequence[str]) -> list[set[int]]:
+    def key(group: set[int]) -> tuple[int, Any]:
+        first = min((cluster_ids[idx] for idx in group), key=_cluster_sort_key)
+        return _cluster_sort_key(first)
+
+    return sorted(groups, key=key)
 
 
 def _cluster_labels(distance_matrix: pd.DataFrame, n_clusters: int, *, linkage_method: str) -> np.ndarray:
