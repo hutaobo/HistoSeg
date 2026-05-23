@@ -884,6 +884,8 @@ def _run_auto_hard_alignment(
     contour_output_path = candidate_dir / "contour_tps_moving_hard_aligned.geojson"
     label_free_summary_path = candidate_dir / "label_free_group_summary.json"
     label_free_output_path = candidate_dir / "label_free_group_moving_hard_aligned.geojson"
+    translation_summary_path = candidate_dir / "translation_only_summary.json"
+    translation_output_path = candidate_dir / "translation_only_moving_hard_aligned.geojson"
 
     contour_summary = hard_align_geojson(
         fixed_geojson=fixed_geojson,
@@ -925,10 +927,22 @@ def _run_auto_hard_alignment(
         selected_backend = "label-free-group"
         selected_summary = label_free_summary
         selected_output_path = label_free_output_path
-    else:
+    elif _contour_tps_candidate_ok(contour_summary, cfg):
         selected_backend = "contour-tps"
         selected_summary = contour_summary
         selected_output_path = contour_output_path
+    else:
+        translation_summary = _run_translation_only_hard_alignment(
+            fixed_geojson=fixed_geojson,
+            moving_geojson=moving_geojson,
+            output_geojson=translation_output_path,
+            summary_json=translation_summary_path,
+            group_property=cfg.group_property,
+            registration_backend="translation-only",
+        )
+        selected_backend = "translation-only"
+        selected_summary = translation_summary
+        selected_output_path = translation_output_path
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(selected_output_path, output_path)
@@ -945,6 +959,9 @@ def _run_auto_hard_alignment(
                 "label_free_guarded_rejection_reason": label_free_guard["reason"],
             }
         )
+    contour_rotation_abs = _absolute_rotation_degrees(
+        (contour_summary.get("transform") or {}).get("rotation_degrees")
+    )
     summary.update(
         {
             "fixed_geojson": str(Path(fixed_geojson)),
@@ -968,6 +985,16 @@ def _run_auto_hard_alignment(
                 "selected_backend": selected_backend,
                 "label_free_candidate_accepted": bool(label_free_ok),
                 "label_free_guard": label_free_guard,
+                "contour_tps_candidate_accepted": _contour_tps_candidate_ok(
+                    contour_summary,
+                    cfg,
+                ),
+                "contour_tps_rotation_abs_degrees": contour_rotation_abs,
+                "contour_tps_rejection_reason": (
+                    None
+                    if _contour_tps_candidate_ok(contour_summary, cfg)
+                    else "contour_tps_rotation_exceeds_serial_slice_prior"
+                ),
                 "label_free_min_anchor_count": int(cfg.label_free_min_anchor_count),
                 "label_free_group_residual_limit_um": float(
                     cfg.label_free_group_residual_limit_um
@@ -982,6 +1009,16 @@ def _run_auto_hard_alignment(
                 _hard_alignment_candidate_payload(
                     label_free_summary,
                     summary_json=label_free_summary_path,
+                ),
+                *(
+                    [
+                        _hard_alignment_candidate_payload(
+                            selected_summary,
+                            summary_json=translation_summary_path,
+                        )
+                    ]
+                    if selected_backend == "translation-only"
+                    else []
                 ),
             ],
         }
@@ -1140,6 +1177,77 @@ def _label_free_transform_for_hard_schema(transform: Mapping[str, Any]) -> dict[
         "translate_x": transform.get("translate_x", 0.0),
         "translate_y": transform.get("translate_y", 0.0),
     }
+
+
+def _run_translation_only_hard_alignment(
+    *,
+    fixed_geojson: PathLike,
+    moving_geojson: PathLike,
+    output_geojson: PathLike,
+    summary_json: PathLike | None = None,
+    group_property: str = "structure",
+    registration_backend: str = "translation-only",
+) -> dict[str, Any]:
+    """Translate moving contours by union-centroid offset without rotation or scaling."""
+
+    output_path = Path(output_geojson)
+    summary_path = Path(summary_json) if summary_json is not None else None
+    fixed_payload = _read_geojson(Path(fixed_geojson))
+    moving_payload = _read_geojson(Path(moving_geojson))
+    fixed_records = _records_from_geojson(fixed_payload, group_property, "fixed")
+    moving_records = _records_from_geojson(moving_payload, group_property, "moving")
+    fixed_union = unary_union([record.geometry for record in fixed_records])
+    moving_union = unary_union([record.geometry for record in moving_records])
+    transform = _SimilarityTransform(
+        origin_x=float(moving_union.centroid.x),
+        origin_y=float(moving_union.centroid.y),
+        rotation_degrees=0.0,
+        scale=1.0,
+        translate_x=float(fixed_union.centroid.x - moving_union.centroid.x),
+        translate_y=float(fixed_union.centroid.y - moving_union.centroid.y),
+    )
+    before_iou = _iou(fixed_union, moving_union)
+    aligned_union = _apply_similarity_to_geometry(moving_union, transform)
+    after_iou = _iou(fixed_union, aligned_union)
+    aligned_payload = _apply_similarity_to_geojson(moving_payload, transform)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(aligned_payload, ensure_ascii=False), encoding="utf-8")
+    per_structure = _per_structure_iou(
+        fixed_records,
+        _records_from_geojson(aligned_payload, group_property, "aligned"),
+    )
+    summary = {
+        "fixed_geojson": str(Path(fixed_geojson)),
+        "moving_geojson": str(Path(moving_geojson)),
+        "output_geojson": str(output_path),
+        "registration_backend": registration_backend,
+        "selected_hard_seed_backend": registration_backend,
+        "transform": asdict(transform),
+        "affine_params": None,
+        "optimization": {
+            "method": "union_centroid_translation_only",
+            "success": True,
+            "accepted": True,
+            "accepted_reason": "safe_fallback_after_rotation_guard_rejected_candidates",
+            "union_iou_before": before_iou,
+            "union_iou_final": after_iou,
+        },
+        "union_iou_before_hard": before_iou,
+        "union_iou_after_hard": after_iou,
+        "hard_alignment_accepted": True,
+        "per_structure_iou_after_hard": per_structure,
+        "method_note": (
+            "Translation-only hard seed. Used when label-free group evidence is "
+            "insufficient and contour-TPS violates the serial-slice rotation prior."
+        ),
+    }
+    if summary_path is not None:
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    return summary
 
 
 def _run_tournament_hard_alignment(
@@ -2836,6 +2944,22 @@ def _label_free_group_candidate_ok(
     return ok
 
 
+def _contour_tps_candidate_ok(
+    summary: Mapping[str, Any],
+    cfg: ThreeDStackReconstructionConfig,
+) -> bool:
+    if summary.get("registration_backend") != "contour-tps":
+        return False
+    if not bool(summary.get("hard_alignment_accepted")):
+        return False
+    if not bool(cfg.label_free_guarded_alignment):
+        return True
+    rotation_abs = _absolute_rotation_degrees(
+        (summary.get("transform") or {}).get("rotation_degrees")
+    )
+    return rotation_abs <= float(cfg.label_free_max_rotation_degrees)
+
+
 def _resolve_soft_alignment_mode(
     cfg: ThreeDStackReconstructionConfig,
     summary: Mapping[str, Any],
@@ -2850,6 +2974,8 @@ def _resolve_soft_alignment_mode(
     if requested == "auto":
         if selected == "label-free-group":
             return "anchor-only", None
+        if selected == "translation-only":
+            return "none", "translation_only_seed_no_semantic_soft"
         if semantic_soft_allowed:
             return "semantic", None
         return "none", semantic_soft_skipped_reason or "semantic_soft_not_allowed"
