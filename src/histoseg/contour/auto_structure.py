@@ -31,6 +31,8 @@ DEFAULT_STRUCTURE_COLORS = (
     "#67E8F9",
 )
 
+IGNORED_STRUCTURE_CLUSTER_LABELS = {"unassigned", "nan", "none", "null"}
+
 
 @dataclass(frozen=True)
 class AutoStructureDiscoveryConfig:
@@ -136,7 +138,7 @@ def discover_auto_structures(cfg: AutoStructureDiscoveryConfig) -> AutoStructure
         barcode_col=cfg.barcode_col,
         cluster_col=cfg.cluster_col,
     )
-    merged = merged.loc[merged["cluster"].map(str).str.len() > 0].copy()
+    merged = merged.loc[merged["cluster"].map(_is_structure_cluster_label).to_numpy()].copy()
     if merged["cluster"].nunique() < 2:
         raise ValueError("Auto-structure discovery requires at least two matched GraphClust clusters.")
 
@@ -592,3 +594,8 @@ def _sort_series(series: pd.Series) -> pd.Series:
         return f"1:{payload}"
 
     return series.map(encode)
+
+
+def _is_structure_cluster_label(value: object) -> bool:
+    normalized = _normalize_cluster_label(value)
+    return normalized != "" and normalized.lower() not in IGNORED_STRUCTURE_CLUSTER_LABELS

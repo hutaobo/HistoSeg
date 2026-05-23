@@ -94,6 +94,49 @@ def test_auto_structure_leaf_balanced_prevents_giant_root_groups(tmp_path):
     assert summary["cluster_count_mode"] == "leaf_balanced"
 
 
+def test_auto_structure_ignores_unassigned_cluster_labels(tmp_path):
+    clusters_path, cells_path = _write_graphclust_case(
+        tmp_path / "outs",
+        cluster_count=6,
+        cells_per_cluster=8,
+    )
+    cells = pd.read_parquet(cells_path)
+    clusters = pd.read_csv(clusters_path)
+    extra_cells = pd.DataFrame(
+        [
+            {
+                "cell_id": f"u{idx}",
+                "x_centroid": 1000.0 + idx,
+                "y_centroid": 1000.0 + idx,
+            }
+            for idx in range(6)
+        ]
+    )
+    extra_clusters = pd.DataFrame(
+        {"Barcode": extra_cells["cell_id"], "Cluster": ["Unassigned", "nan", "None", "null", "", np.nan]}
+    )
+    pd.concat([cells, extra_cells], ignore_index=True).to_parquet(cells_path, index=False)
+    pd.concat([clusters, extra_clusters], ignore_index=True).to_csv(clusters_path, index=False)
+
+    result = discover_auto_structures(
+        AutoStructureDiscoveryConfig(
+            clusters_csv=clusters_path,
+            cells_parquet=cells_path,
+            out_dir=tmp_path / "auto_no_unassigned",
+            cluster_count="leaf-balanced",
+            max_leaf_clusters_per_structure=3,
+            min_leaf_clusters_per_structure=1,
+            min_structure_cell_fraction=0.0,
+            use_cophenetic=False,
+        )
+    )
+
+    table = pd.read_csv(result.cluster_structure_csv)
+    assert set(table["cluster"].astype(str)) == {"1", "2", "3", "4", "5", "6"}
+    structures = json.loads(result.structures_json.read_text(encoding="utf-8"))
+    assert all("Unassigned" not in item["cluster_ids"] for item in structures)
+
+
 def test_resolve_xenium_output_folder_supports_parent_with_nested_outs(tmp_path):
     parent = tmp_path / "case"
     nested = parent / "case_outs"
