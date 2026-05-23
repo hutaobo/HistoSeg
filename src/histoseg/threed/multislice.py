@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import html
 import json
 import math
 import re
@@ -109,6 +110,14 @@ class ThreeDStackReconstructionConfig:
     label_free_group_min_descriptor_score: float = 0.35
     label_free_group_residual_limit_um: float = 900.0
     label_free_group_min_component_area_um2: float = 5000.0
+    label_free_guarded_alignment: bool = True
+    label_free_min_similarity_anchor_count: int = 6
+    label_free_max_rotation_degrees: float = 15.0
+    label_free_high_rotation_min_anchor_count: int = 8
+    label_free_high_rotation_residual_limit_um: float = 120.0
+    label_free_min_anchor_coverage: float = 0.05
+    label_free_min_anchor_quadrants: int = 2
+    label_free_near_180_rotation_degrees: float = 150.0
     # Apply a linear drift correction after the full pairwise alignment chain to reduce
     # cumulative translation drift across the stack.
     global_drift_correction: bool = False
@@ -181,6 +190,8 @@ class ThreeDStackReconstructionResult:
     summary_json: Path
     visualization_html: Path
     mesh_dir: Path
+    guarded_alignment_audit_csv: Path | None = None
+    guarded_alignment_audit_html: Path | None = None
     local_z_orientation_manifest_csv: Path | None = None
     aligned_transcripts_parquet: Path | None = None
     biological_z_report_html: Path | None = None
@@ -501,6 +512,10 @@ def run_3d_stack_reconstruction(
 
     pairwise_metrics_path = out_dir / "pairwise_alignment_metrics.csv"
     pd.DataFrame(pairwise_rows).to_csv(pairwise_metrics_path, index=False)
+    guarded_audit_csv, guarded_audit_html = _write_guarded_alignment_audit(
+        pairwise_rows,
+        out_dir,
+    )
 
     # Global drift correction: remove linear centroid drift accumulated along the chain.
     if cfg.global_drift_correction and len(aligned_paths) > 2:
@@ -596,6 +611,8 @@ def run_3d_stack_reconstruction(
             "slice_manifest_csv": str(slice_manifest_path),
             "aligned_manifest_csv": str(aligned_manifest_path),
             "pairwise_metrics_csv": str(pairwise_metrics_path),
+            "guarded_alignment_audit_csv": str(guarded_audit_csv),
+            "guarded_alignment_audit_html": str(guarded_audit_html),
             "contour_points_csv": str(contour_points_path),
             "visualization_html": str(visualization_path),
             "mesh_dir": str(mesh_dir),
@@ -614,6 +631,8 @@ def run_3d_stack_reconstruction(
         summary_json=summary_path,
         visualization_html=visualization_path,
         mesh_dir=mesh_dir,
+        guarded_alignment_audit_csv=guarded_audit_csv,
+        guarded_alignment_audit_html=guarded_audit_html,
         local_z_orientation_manifest_csv=(
             local_z_result.manifest_csv if local_z_result is not None else None
         ),
@@ -889,7 +908,19 @@ def _run_auto_hard_alignment(
         selected_hard_seed_backend="label-free-group",
     )
 
-    label_free_ok = _label_free_group_candidate_ok(label_free_summary, cfg)
+    label_free_ok, label_free_guard = _label_free_group_candidate_guard(
+        label_free_summary,
+        cfg,
+    )
+    label_free_summary = {
+        **label_free_summary,
+        "label_free_guarded_candidate_accepted": bool(label_free_ok),
+        "label_free_guarded_rejection_reason": label_free_guard["reason"],
+        "label_free_guarded_rotation_abs_degrees": label_free_guard[
+            "rotation_abs_degrees"
+        ],
+        "label_free_guarded_details": label_free_guard,
+    }
     if label_free_ok:
         selected_backend = "label-free-group"
         selected_summary = label_free_summary
@@ -910,6 +941,8 @@ def _run_auto_hard_alignment(
                 "label_free_moving_group": None,
                 "label_free_used_anchor_pair_count": None,
                 "label_free_residual_median": None,
+                "label_free_guarded_candidate_accepted": bool(label_free_ok),
+                "label_free_guarded_rejection_reason": label_free_guard["reason"],
             }
         )
     summary.update(
@@ -919,19 +952,27 @@ def _run_auto_hard_alignment(
             "output_geojson": str(output_path),
             "registration_backend": "auto",
             "selected_hard_seed_backend": selected_backend,
+            "label_free_guarded_candidate_accepted": bool(label_free_ok),
+            "label_free_guarded_rejection_reason": label_free_guard["reason"],
+            "label_free_guarded_rotation_abs_degrees": label_free_guard[
+                "rotation_abs_degrees"
+            ],
             "method_note": (
                 "Auto hard alignment compares the same-label contour seed with "
                 "label-free group correspondence. The label-free seed is promoted only "
-                "when its group-RANSAC anchor count and residual pass configured thresholds."
+                "when its group-RANSAC anchors, residual, rotation, and spatial-coverage "
+                "guards pass configured thresholds."
             ),
             "hard_alignment_tournament": {
                 "strategy": "prefer_valid_label_free_group_else_contour_tps",
                 "selected_backend": selected_backend,
                 "label_free_candidate_accepted": bool(label_free_ok),
+                "label_free_guard": label_free_guard,
                 "label_free_min_anchor_count": int(cfg.label_free_min_anchor_count),
                 "label_free_group_residual_limit_um": float(
                     cfg.label_free_group_residual_limit_um
                 ),
+                "label_free_guarded_alignment": bool(cfg.label_free_guarded_alignment),
             },
             "hard_alignment_candidates": [
                 _hard_alignment_candidate_payload(
@@ -1019,6 +1060,8 @@ def _run_label_free_group_hard_alignment(
 
     label_free_summary = json.loads(result.summary_json.read_text(encoding="utf-8"))
     anchor_transform = label_free_summary.get("anchor_transform") or {}
+    partial_summary = label_free_summary.get("partial_correspondence_summary") or {}
+    entropy_summary = partial_summary.get("anchor_spatial_entropy") or {}
     global_scores = label_free_summary.get("global_context_scores_not_used_for_fitting") or {}
     transform = _label_free_transform_for_hard_schema(label_free_summary.get("transform") or {})
     summary = {
@@ -1063,6 +1106,14 @@ def _run_label_free_group_hard_alignment(
         "label_free_used_anchor_pair_count": anchor_transform.get("used_anchor_pair_count"),
         "label_free_residual_median": anchor_transform.get("residual_median"),
         "label_free_residual_p90": anchor_transform.get("residual_p90"),
+        "label_free_partial_anchor_count": partial_summary.get("anchor_count"),
+        "label_free_anchor_coverage_ratio": partial_summary.get(
+            "anchor_convex_hull_coverage_ratio"
+        ),
+        "label_free_anchor_occupied_quadrants": entropy_summary.get(
+            "occupied_quadrants"
+        ),
+        "label_free_partial_warnings": partial_summary.get("warnings"),
         "label_free_anchor_transform": anchor_transform,
         "method_note": (
             "Label-free group correspondence hard seed. Contour labels are preserved; "
@@ -1830,6 +1881,20 @@ def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
         raise ValueError("label_free_group_residual_limit_um must be greater than 0.")
     if cfg.label_free_group_min_component_area_um2 < 0:
         raise ValueError("label_free_group_min_component_area_um2 must be non-negative.")
+    if cfg.label_free_min_similarity_anchor_count < 1:
+        raise ValueError("label_free_min_similarity_anchor_count must be at least 1.")
+    if cfg.label_free_max_rotation_degrees < 0:
+        raise ValueError("label_free_max_rotation_degrees must be non-negative.")
+    if cfg.label_free_high_rotation_min_anchor_count < 1:
+        raise ValueError("label_free_high_rotation_min_anchor_count must be at least 1.")
+    if cfg.label_free_high_rotation_residual_limit_um <= 0:
+        raise ValueError("label_free_high_rotation_residual_limit_um must be greater than 0.")
+    if not (0.0 <= cfg.label_free_min_anchor_coverage <= 1.0):
+        raise ValueError("label_free_min_anchor_coverage must be in [0, 1].")
+    if cfg.label_free_min_anchor_quadrants < 0 or cfg.label_free_min_anchor_quadrants > 4:
+        raise ValueError("label_free_min_anchor_quadrants must be between 0 and 4.")
+    if not (0.0 <= cfg.label_free_near_180_rotation_degrees <= 180.0):
+        raise ValueError("label_free_near_180_rotation_degrees must be in [0, 180].")
     if cfg.local_z_orientation not in {"off", "auto"}:
         raise ValueError("local_z_orientation must be 'off' or 'auto'.")
     if cfg.orientation_spatial_unit not in {"auto", "global", "contour"}:
@@ -2627,6 +2692,21 @@ def _hard_alignment_candidate_payload(
                 ),
                 "label_free_residual_median": summary.get("label_free_residual_median"),
                 "label_free_residual_p90": summary.get("label_free_residual_p90"),
+                "label_free_partial_anchor_count": summary.get(
+                    "label_free_partial_anchor_count"
+                ),
+                "label_free_anchor_coverage_ratio": summary.get(
+                    "label_free_anchor_coverage_ratio"
+                ),
+                "label_free_anchor_occupied_quadrants": summary.get(
+                    "label_free_anchor_occupied_quadrants"
+                ),
+                "label_free_guarded_candidate_accepted": summary.get(
+                    "label_free_guarded_candidate_accepted"
+                ),
+                "label_free_guarded_rejection_reason": summary.get(
+                    "label_free_guarded_rejection_reason"
+                ),
                 "label_free_group_matrix_csv": summary.get("label_free_group_matrix_csv"),
                 "label_free_group_matrix_html": summary.get("label_free_group_matrix_html"),
             }
@@ -2651,27 +2731,109 @@ def _hard_alignment_iou(summary: Mapping[str, Any]) -> float:
     return value if math.isfinite(value) else float("-inf")
 
 
+def _finite_float(value: Any, default: float = math.inf) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if math.isfinite(parsed) else default
+
+
+def _int_value(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _absolute_rotation_degrees(value: Any) -> float:
+    rotation = _finite_float(value, default=0.0)
+    return abs((rotation + 180.0) % 360.0 - 180.0)
+
+
+def _label_free_group_candidate_guard(
+    summary: Mapping[str, Any],
+    cfg: ThreeDStackReconstructionConfig,
+) -> tuple[bool, dict[str, Any]]:
+    transform = summary.get("transform") or {}
+    used = _int_value(summary.get("label_free_used_anchor_pair_count"), default=0)
+    residual = _finite_float(summary.get("label_free_residual_median"))
+    rotation_abs = _absolute_rotation_degrees(transform.get("rotation_degrees"))
+    coverage = _finite_float(
+        summary.get("label_free_anchor_coverage_ratio"),
+        default=float("nan"),
+    )
+    quadrants = _int_value(summary.get("label_free_anchor_occupied_quadrants"), default=0)
+    transform_kind = str(transform.get("kind") or "similarity")
+    guard: dict[str, Any] = {
+        "accepted": False,
+        "reason": "accepted",
+        "used_anchor_pair_count": used,
+        "residual_median": residual if math.isfinite(residual) else None,
+        "rotation_abs_degrees": rotation_abs,
+        "anchor_coverage_ratio": coverage if math.isfinite(coverage) else None,
+        "anchor_occupied_quadrants": quadrants,
+        "transform_kind": transform_kind,
+        "guarded_alignment": bool(cfg.label_free_guarded_alignment),
+        "min_anchor_count": int(cfg.label_free_min_anchor_count),
+        "min_similarity_anchor_count": int(cfg.label_free_min_similarity_anchor_count),
+        "max_rotation_degrees": float(cfg.label_free_max_rotation_degrees),
+        "high_rotation_min_anchor_count": int(
+            cfg.label_free_high_rotation_min_anchor_count
+        ),
+        "high_rotation_residual_limit_um": float(
+            cfg.label_free_high_rotation_residual_limit_um
+        ),
+        "min_anchor_coverage": float(cfg.label_free_min_anchor_coverage),
+        "min_anchor_quadrants": int(cfg.label_free_min_anchor_quadrants),
+        "near_180_rotation_degrees": float(cfg.label_free_near_180_rotation_degrees),
+    }
+
+    def reject(reason: str) -> tuple[bool, dict[str, Any]]:
+        guard["reason"] = reason
+        return False, guard
+
+    if summary.get("registration_backend") != "label-free-group":
+        return reject("not_label_free_group")
+    if not bool(summary.get("hard_alignment_accepted")):
+        return reject("label_free_candidate_not_accepted")
+    if not math.isfinite(residual):
+        return reject("missing_label_free_residual")
+    if residual > float(cfg.label_free_group_residual_limit_um):
+        return reject("label_free_residual_above_limit")
+    if used < int(cfg.label_free_min_anchor_count):
+        return reject("too_few_label_free_anchors")
+    if not bool(cfg.label_free_guarded_alignment):
+        guard["accepted"] = True
+        return True, guard
+
+    if used < 4 and transform_kind != "translation":
+        return reject("too_few_anchors_for_similarity_transform")
+    if used < int(cfg.label_free_min_similarity_anchor_count) and transform_kind != "translation":
+        return reject("too_few_anchors_for_unconstrained_similarity")
+    if rotation_abs >= float(cfg.label_free_near_180_rotation_degrees):
+        return reject("near_180_rotation_rejected")
+
+    if rotation_abs > float(cfg.label_free_max_rotation_degrees):
+        if used < int(cfg.label_free_high_rotation_min_anchor_count):
+            return reject("rotation_exceeds_prior_without_enough_anchors")
+        if residual > float(cfg.label_free_high_rotation_residual_limit_um):
+            return reject("rotation_exceeds_prior_without_low_residual")
+        if not math.isfinite(coverage) or coverage < float(cfg.label_free_min_anchor_coverage):
+            return reject("rotation_exceeds_prior_without_anchor_coverage")
+        if quadrants < int(cfg.label_free_min_anchor_quadrants):
+            return reject("rotation_exceeds_prior_without_spatial_spread")
+
+    guard["accepted"] = True
+    return True, guard
+
+
 def _label_free_group_candidate_ok(
     summary: Mapping[str, Any],
     cfg: ThreeDStackReconstructionConfig,
 ) -> bool:
-    if summary.get("registration_backend") != "label-free-group":
-        return False
-    if not bool(summary.get("hard_alignment_accepted")):
-        return False
-    try:
-        used = int(summary.get("label_free_used_anchor_pair_count") or 0)
-    except (TypeError, ValueError):
-        used = 0
-    try:
-        residual = float(summary.get("label_free_residual_median"))
-    except (TypeError, ValueError):
-        residual = math.inf
-    return (
-        used >= int(cfg.label_free_min_anchor_count)
-        and math.isfinite(residual)
-        and residual <= float(cfg.label_free_group_residual_limit_um)
-    )
+    ok, _ = _label_free_group_candidate_guard(summary, cfg)
+    return ok
 
 
 def _resolve_soft_alignment_mode(
@@ -2752,9 +2914,13 @@ def _hard_candidate_iou(summary: Mapping[str, Any], backend: str) -> Any:
 
 
 def _hard_candidate_label_free_residual(summary: Mapping[str, Any]) -> Any:
+    return _hard_candidate_label_free_field(summary, "label_free_residual_median")
+
+
+def _hard_candidate_label_free_field(summary: Mapping[str, Any], key: str) -> Any:
     for candidate in summary.get("hard_alignment_candidates") or ():
         if isinstance(candidate, Mapping) and candidate.get("backend") == "label-free-group":
-            return candidate.get("label_free_residual_median")
+            return candidate.get(key)
     return None
 
 
@@ -2779,6 +2945,30 @@ def _pairwise_row(
         "hard_candidate_label_free_group_residual_median": _hard_candidate_label_free_residual(
             hard_summary
         ),
+        "hard_candidate_label_free_rotation_degrees": _hard_candidate_label_free_field(
+            hard_summary, "rotation_degrees"
+        ),
+        "hard_candidate_label_free_fixed_group": _hard_candidate_label_free_field(
+            hard_summary, "label_free_fixed_group"
+        ),
+        "hard_candidate_label_free_moving_group": _hard_candidate_label_free_field(
+            hard_summary, "label_free_moving_group"
+        ),
+        "hard_candidate_label_free_used_anchor_pair_count": _hard_candidate_label_free_field(
+            hard_summary, "label_free_used_anchor_pair_count"
+        ),
+        "hard_candidate_label_free_anchor_coverage_ratio": _hard_candidate_label_free_field(
+            hard_summary, "label_free_anchor_coverage_ratio"
+        ),
+        "hard_candidate_label_free_anchor_occupied_quadrants": _hard_candidate_label_free_field(
+            hard_summary, "label_free_anchor_occupied_quadrants"
+        ),
+        "hard_candidate_label_free_guarded_candidate_accepted": _hard_candidate_label_free_field(
+            hard_summary, "label_free_guarded_candidate_accepted"
+        ),
+        "hard_candidate_label_free_guarded_rejection_reason": _hard_candidate_label_free_field(
+            hard_summary, "label_free_guarded_rejection_reason"
+        ),
         "hard_tournament_rotation_difference_degrees": (
             hard_summary.get("hard_alignment_tournament") or {}
         ).get("rotation_difference_degrees"),
@@ -2793,6 +2983,24 @@ def _pairwise_row(
             "label_free_used_anchor_pair_count"
         ),
         "label_free_residual_median": hard_summary.get("label_free_residual_median"),
+        "label_free_partial_anchor_count": hard_summary.get(
+            "label_free_partial_anchor_count"
+        ),
+        "label_free_anchor_coverage_ratio": hard_summary.get(
+            "label_free_anchor_coverage_ratio"
+        ),
+        "label_free_anchor_occupied_quadrants": hard_summary.get(
+            "label_free_anchor_occupied_quadrants"
+        ),
+        "label_free_guarded_candidate_accepted": hard_summary.get(
+            "label_free_guarded_candidate_accepted"
+        ),
+        "label_free_guarded_rejection_reason": hard_summary.get(
+            "label_free_guarded_rejection_reason"
+        ),
+        "label_free_guarded_rotation_abs_degrees": hard_summary.get(
+            "label_free_guarded_rotation_abs_degrees"
+        ),
         "semantic_soft_allowed": hard_summary.get("semantic_soft_allowed"),
         "semantic_soft_skipped_reason": hard_summary.get("semantic_soft_skipped_reason"),
         "soft_alignment_mode_requested": hard_summary.get("soft_alignment_mode_requested"),
@@ -2882,6 +3090,124 @@ def _pairwise_row(
                 }
             )
     return row
+
+
+def _write_guarded_alignment_audit(
+    pairwise_rows: Sequence[Mapping[str, Any]],
+    out_dir: Path,
+) -> tuple[Path, Path]:
+    audit_csv = out_dir / "pairwise_guarded_alignment_audit.csv"
+    audit_html = out_dir / "pairwise_guarded_alignment_audit.html"
+    columns = [
+        "moving_order",
+        "moving_sample_id",
+        "registration_backend",
+        "selected_hard_seed_backend",
+        "label_free_fixed_group",
+        "label_free_moving_group",
+        "label_free_used_anchor_pair_count",
+        "label_free_partial_anchor_count",
+        "label_free_residual_median",
+        "label_free_anchor_coverage_ratio",
+        "label_free_anchor_occupied_quadrants",
+        "hard_transform_rotation_degrees",
+        "label_free_guarded_rotation_abs_degrees",
+        "hard_transform_translate_x",
+        "hard_transform_translate_y",
+        "label_free_guarded_candidate_accepted",
+        "label_free_guarded_rejection_reason",
+        "semantic_soft_allowed",
+        "semantic_soft_skipped_reason",
+        "active_soft_alignment_mode",
+        "soft_accepted",
+        "anchor_only_accepted",
+    ]
+    def audit_value(row: Mapping[str, Any], column: str) -> Any:
+        candidate_map = {
+            "label_free_fixed_group": "hard_candidate_label_free_fixed_group",
+            "label_free_moving_group": "hard_candidate_label_free_moving_group",
+            "label_free_used_anchor_pair_count": (
+                "hard_candidate_label_free_used_anchor_pair_count"
+            ),
+            "label_free_residual_median": (
+                "hard_candidate_label_free_group_residual_median"
+            ),
+            "label_free_anchor_coverage_ratio": (
+                "hard_candidate_label_free_anchor_coverage_ratio"
+            ),
+            "label_free_anchor_occupied_quadrants": (
+                "hard_candidate_label_free_anchor_occupied_quadrants"
+            ),
+            "hard_transform_rotation_degrees": (
+                "hard_candidate_label_free_rotation_degrees"
+            ),
+            "label_free_guarded_candidate_accepted": (
+                "hard_candidate_label_free_guarded_candidate_accepted"
+            ),
+            "label_free_guarded_rejection_reason": (
+                "hard_candidate_label_free_guarded_rejection_reason"
+            ),
+        }
+        value = row.get(column)
+        if value is None and column in candidate_map:
+            return row.get(candidate_map[column])
+        return value
+
+    rows = [
+        {column: audit_value(row, column) for column in columns}
+        for row in pairwise_rows
+    ]
+    pd.DataFrame(rows, columns=columns).to_csv(audit_csv, index=False)
+
+    header = "".join(f"<th>{html.escape(column)}</th>" for column in columns)
+    html_rows = []
+    for row in rows:
+        selected = row.get("selected_hard_seed_backend")
+        accepted = row.get("label_free_guarded_candidate_accepted")
+        reason = row.get("label_free_guarded_rejection_reason") or ""
+        row_class = "fallback"
+        if selected == "label-free-group" and accepted is True:
+            row_class = "accepted"
+        elif "rotation" in str(reason) or "too_few" in str(reason):
+            row_class = "rejected"
+        cells = "".join(
+            f"<td>{html.escape('' if row.get(column) is None else str(row.get(column)))}</td>"
+            for column in columns
+        )
+        html_rows.append(f"<tr class=\"{row_class}\">{cells}</tr>")
+
+    audit_html.write_text(
+        f"""<!doctype html>
+<html>
+<head>
+  <meta charset=\"utf-8\">
+  <title>HistoSeg guarded pairwise alignment audit</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }}
+    table {{ border-collapse: collapse; font-size: 12px; width: 100%; }}
+    th, td {{ border: 1px solid #d1d5db; padding: 4px 6px; text-align: left; }}
+    th {{ position: sticky; top: 0; background: #f3f4f6; }}
+    tr.accepted {{ background: #ecfdf5; }}
+    tr.fallback {{ background: #fffbeb; }}
+    tr.rejected {{ background: #fef2f2; }}
+    .note {{ max-width: 900px; line-height: 1.4; }}
+  </style>
+</head>
+<body>
+  <h1>Guarded Pairwise Alignment Audit</h1>
+  <p class=\"note\">Label-free group candidates are accepted only when anchor count,
+  residual, rotation, and anchor-spread guards pass. Rejected candidates fall back to
+  the safer hard seed and preserve slice-local contour labels.</p>
+  <table>
+    <thead><tr>{header}</tr></thead>
+    <tbody>{''.join(html_rows)}</tbody>
+  </table>
+</body>
+</html>
+""",
+        encoding="utf-8",
+    )
+    return audit_csv, audit_html
 
 
 def _import_trimesh():

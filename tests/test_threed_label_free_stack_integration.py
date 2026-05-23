@@ -8,6 +8,7 @@ from shapely.geometry import Polygon, mapping
 from histoseg.threed import ThreeDStackReconstructionConfig
 from histoseg.threed.multislice import (
     _SliceInput,
+    _label_free_group_candidate_guard,
     _pairwise_row,
     _run_hard_alignment_backend,
     _resolve_soft_alignment_mode,
@@ -84,6 +85,75 @@ def test_auto_backend_falls_back_when_label_free_has_too_few_anchors(tmp_path):
     assert summary["selected_hard_seed_backend"] == "contour-tps"
     assert summary["label_free_fixed_group"] is None
     assert summary["label_free_moving_group"] is None
+    assert summary["label_free_guarded_candidate_accepted"] is False
+
+
+def test_guard_rejects_two_anchor_similarity_rotation(tmp_path):
+    ok, guard = _label_free_group_candidate_guard(
+        _label_free_summary_for_guard(anchor_count=2, rotation_degrees=32.0),
+        _stack_cfg(tmp_path, label_free_min_anchor_count=2),
+    )
+
+    assert ok is False
+    assert guard["reason"] == "too_few_anchors_for_similarity_transform"
+
+
+def test_guard_rejects_low_anchor_unconstrained_similarity(tmp_path):
+    ok, guard = _label_free_group_candidate_guard(
+        _label_free_summary_for_guard(anchor_count=5, rotation_degrees=3.0),
+        _stack_cfg(tmp_path, label_free_min_anchor_count=4),
+    )
+
+    assert ok is False
+    assert guard["reason"] == "too_few_anchors_for_unconstrained_similarity"
+
+
+def test_guard_rejects_high_rotation_without_strong_evidence(tmp_path):
+    ok, guard = _label_free_group_candidate_guard(
+        _label_free_summary_for_guard(
+            anchor_count=7,
+            rotation_degrees=48.0,
+            residual_median=20.0,
+            coverage=0.6,
+            quadrants=4,
+        ),
+        _stack_cfg(tmp_path, label_free_min_anchor_count=4),
+    )
+
+    assert ok is False
+    assert guard["reason"] == "rotation_exceeds_prior_without_enough_anchors"
+
+
+def test_guard_accepts_strong_low_rotation_label_free_candidate(tmp_path):
+    ok, guard = _label_free_group_candidate_guard(
+        _label_free_summary_for_guard(
+            anchor_count=8,
+            rotation_degrees=6.0,
+            residual_median=35.0,
+            coverage=0.3,
+            quadrants=3,
+        ),
+        _stack_cfg(tmp_path, label_free_min_anchor_count=4),
+    )
+
+    assert ok is True
+    assert guard["accepted"] is True
+
+
+def test_guard_rejects_near_180_rotation(tmp_path):
+    ok, guard = _label_free_group_candidate_guard(
+        _label_free_summary_for_guard(
+            anchor_count=12,
+            rotation_degrees=178.0,
+            residual_median=10.0,
+            coverage=0.8,
+            quadrants=4,
+        ),
+        _stack_cfg(tmp_path, label_free_min_anchor_count=4),
+    )
+
+    assert ok is False
+    assert guard["reason"] == "near_180_rotation_rejected"
 
 
 def test_forced_label_free_backend_exposes_hard_summary_schema(tmp_path):
@@ -285,6 +355,31 @@ def _stack_cfg(tmp_path, **overrides):
     }
     values.update(overrides)
     return ThreeDStackReconstructionConfig(**values)
+
+
+def _label_free_summary_for_guard(
+    *,
+    anchor_count: int,
+    rotation_degrees: float,
+    residual_median: float = 25.0,
+    coverage: float = 0.25,
+    quadrants: int = 3,
+):
+    return {
+        "registration_backend": "label-free-group",
+        "hard_alignment_accepted": True,
+        "transform": {
+            "kind": "similarity",
+            "rotation_degrees": rotation_degrees,
+            "scale": 1.0,
+            "translate_x": 100.0,
+            "translate_y": -50.0,
+        },
+        "label_free_used_anchor_pair_count": anchor_count,
+        "label_free_residual_median": residual_median,
+        "label_free_anchor_coverage_ratio": coverage,
+        "label_free_anchor_occupied_quadrants": quadrants,
+    }
 
 
 def _write_geojson(path, geometries, labels) -> None:

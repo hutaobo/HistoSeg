@@ -540,6 +540,18 @@ def main(argv: Sequence[str] | None = None) -> None:
     stack.add_argument("--label-free-group-residual-limit-um", type=float, default=900.0)
     stack.add_argument("--label-free-group-min-component-area-um2", type=float, default=5000.0)
     stack.add_argument(
+        "--no-label-free-guarded-alignment",
+        action="store_true",
+        help="Disable conservative label-free group transform acceptance guards.",
+    )
+    stack.add_argument("--label-free-min-similarity-anchor-count", type=int, default=6)
+    stack.add_argument("--label-free-max-rotation-degrees", type=float, default=15.0)
+    stack.add_argument("--label-free-high-rotation-min-anchor-count", type=int, default=8)
+    stack.add_argument("--label-free-high-rotation-residual-limit-um", type=float, default=120.0)
+    stack.add_argument("--label-free-min-anchor-coverage", type=float, default=0.05)
+    stack.add_argument("--label-free-min-anchor-quadrants", type=int, default=2)
+    stack.add_argument("--label-free-near-180-rotation-degrees", type=float, default=150.0)
+    stack.add_argument(
         "--sampling-distance-um",
         type=float,
         default=50.0,
@@ -1598,6 +1610,22 @@ def main(argv: Sequence[str] | None = None) -> None:
                 label_free_group_min_descriptor_score=args.label_free_group_min_descriptor_score,
                 label_free_group_residual_limit_um=args.label_free_group_residual_limit_um,
                 label_free_group_min_component_area_um2=args.label_free_group_min_component_area_um2,
+                label_free_guarded_alignment=not args.no_label_free_guarded_alignment,
+                label_free_min_similarity_anchor_count=(
+                    args.label_free_min_similarity_anchor_count
+                ),
+                label_free_max_rotation_degrees=args.label_free_max_rotation_degrees,
+                label_free_high_rotation_min_anchor_count=(
+                    args.label_free_high_rotation_min_anchor_count
+                ),
+                label_free_high_rotation_residual_limit_um=(
+                    args.label_free_high_rotation_residual_limit_um
+                ),
+                label_free_min_anchor_coverage=args.label_free_min_anchor_coverage,
+                label_free_min_anchor_quadrants=args.label_free_min_anchor_quadrants,
+                label_free_near_180_rotation_degrees=(
+                    args.label_free_near_180_rotation_degrees
+                ),
                 global_drift_correction=args.global_drift_correction,
                 run_soft_alignment=not args.no_soft,
                 soft_alignment_mode=(
