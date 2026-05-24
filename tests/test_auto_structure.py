@@ -10,6 +10,7 @@ import pandas as pd
 from shapely.geometry import Polygon, mapping
 
 from histoseg.contour import AutoStructureDiscoveryConfig, discover_auto_structures, resolve_xenium_output_folder
+from histoseg.contour.auto_structure import _leaf_balanced_labels
 from histoseg.threed import LabelFreeBeforeAfterFigureConfig, render_label_free_before_after_panel
 
 
@@ -79,7 +80,7 @@ def test_auto_structure_leaf_balanced_prevents_giant_root_groups(tmp_path):
             out_dir=tmp_path / "leaf_balanced",
             cluster_count="leaf-balanced",
             max_leaf_clusters_per_structure=5,
-            min_leaf_clusters_per_structure=2,
+            min_leaf_clusters_per_structure=1,
             min_structure_cell_fraction=0.0,
             use_cophenetic=False,
         )
@@ -88,10 +89,32 @@ def test_auto_structure_leaf_balanced_prevents_giant_root_groups(tmp_path):
     table = pd.read_csv(result.cluster_structure_csv)
     leaves_per_structure = table.groupby("structure_name")["cluster"].nunique()
     assert leaves_per_structure.max() <= 5
-    assert leaves_per_structure.min() >= 2
     assert len(leaves_per_structure) >= 3
     summary = json.loads(result.summary_json.read_text(encoding="utf-8"))
     assert summary["cluster_count_mode"] == "leaf_balanced"
+    assert summary["extended_leaf_clusters_per_structure"] == 10
+    assert summary["extended_leaf_merge_distance_threshold"] == 0.25
+
+
+def test_auto_structure_leaf_balanced_extends_tight_red_branches():
+    labels = [str(i) for i in range(1, 9)]
+    values = np.full((8, 8), 0.9, dtype=float)
+    values[:6, :6] = 0.12
+    np.fill_diagonal(values, 0.0)
+    matrix = pd.DataFrame(values, index=labels, columns=labels)
+
+    assigned = _leaf_balanced_labels(
+        matrix,
+        linkage_method="average",
+        max_leaf_count=5,
+        min_leaf_count=1,
+        extended_max_leaf_count=10,
+        extended_merge_distance_threshold=0.25,
+    )
+
+    table = pd.DataFrame({"cluster": labels, "structure": assigned})
+    group_sizes = sorted(table.groupby("structure")["cluster"].nunique().tolist(), reverse=True)
+    assert group_sizes[0] == 6
 
 
 def test_auto_structure_ignores_unassigned_cluster_labels(tmp_path):

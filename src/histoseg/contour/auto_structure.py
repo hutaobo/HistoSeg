@@ -55,7 +55,9 @@ class AutoStructureDiscoveryConfig:
     min_structure_count: int = 3
     max_structure_count: int = 8
     max_leaf_clusters_per_structure: int = 5
-    min_leaf_clusters_per_structure: int = 2
+    min_leaf_clusters_per_structure: int = 1
+    extended_leaf_clusters_per_structure: int = 10
+    extended_leaf_merge_distance_threshold: float = 0.25
     min_structure_cell_fraction: float = 0.01
     linkage_method: str = "average"
     use_cophenetic: bool = True
@@ -142,8 +144,8 @@ def discover_auto_structures(cfg: AutoStructureDiscoveryConfig) -> AutoStructure
     if merged["cluster"].nunique() < 2:
         raise ValueError("Auto-structure discovery requires at least two matched GraphClust clusters.")
 
-    distance_matrix = _compute_spatial_distance_matrix(merged, x_col=x_col, y_col=y_col)
-    clustering_matrix = distance_matrix
+    distance_matrix = _compute_spatial_distance_matrix(merged, x_col=x_col, y_col=y_col, symmetrize=False)
+    clustering_matrix = _symmetrize_distance_matrix(distance_matrix)
     cophenetic_matrix: pd.DataFrame | None = None
     if cfg.use_cophenetic:
         cophenetic_matrix = _compute_cophenetic_matrix(distance_matrix, method=cfg.linkage_method)
@@ -185,6 +187,8 @@ def discover_auto_structures(cfg: AutoStructureDiscoveryConfig) -> AutoStructure
         "cluster_count_mode": selected.get("cluster_count_mode", cfg.cluster_count),
         "max_leaf_clusters_per_structure": int(cfg.max_leaf_clusters_per_structure),
         "min_leaf_clusters_per_structure": int(cfg.min_leaf_clusters_per_structure),
+        "extended_leaf_clusters_per_structure": int(cfg.extended_leaf_clusters_per_structure),
+        "extended_leaf_merge_distance_threshold": float(cfg.extended_leaf_merge_distance_threshold),
         "selection_score": selected,
         "candidate_scores": selected.get("candidate_scores", []),
         "id_col_used": id_col_used,
@@ -232,7 +236,7 @@ def _resolve_inputs(cfg: AutoStructureDiscoveryConfig) -> tuple[Path, Path, Path
     return Path(cfg.clusters_csv).expanduser().resolve(), Path(cfg.cells_parquet).expanduser().resolve(), None
 
 
-def _compute_spatial_distance_matrix(merged: pd.DataFrame, *, x_col: str, y_col: str) -> pd.DataFrame:
+def _compute_spatial_distance_matrix(merged: pd.DataFrame, *, x_col: str, y_col: str, symmetrize: bool = True) -> pd.DataFrame:
     try:
         from sfplot import compute_searcher_findee_distance_matrix_from_df
 
@@ -252,6 +256,19 @@ def _compute_spatial_distance_matrix(merged: pd.DataFrame, *, x_col: str, y_col:
     matrix.columns = [_normalize_cluster_label(value) for value in matrix.columns]
     labels = sorted(set(matrix.index).intersection(matrix.columns), key=_cluster_sort_key)
     matrix = matrix.loc[labels, labels].apply(pd.to_numeric, errors="coerce")
+    if symmetrize:
+        return _symmetrize_distance_matrix(matrix)
+    values = matrix.to_numpy(dtype=float)
+    np.fill_diagonal(values, 0.0)
+    finite = values[np.isfinite(values)]
+    fill = float(np.max(finite)) if finite.size else 1.0
+    values[~np.isfinite(values)] = fill
+    values = np.maximum(values, 0.0)
+    return pd.DataFrame(values, index=labels, columns=labels)
+
+
+def _symmetrize_distance_matrix(matrix: pd.DataFrame) -> pd.DataFrame:
+    labels = list(matrix.index)
     values = matrix.to_numpy(dtype=float)
     values = (values + values.T) / 2.0
     np.fill_diagonal(values, 0.0)
@@ -264,15 +281,31 @@ def _compute_spatial_distance_matrix(merged: pd.DataFrame, *, x_col: str, y_col:
 
 def _compute_cophenetic_matrix(distance_matrix: pd.DataFrame, *, method: str) -> pd.DataFrame | None:
     try:
-        values = distance_matrix.to_numpy(dtype=float)
-        condensed = squareform(values, checks=False)
-        tree = linkage(condensed, method=method)
-        _corr, condensed_cophenetic = cophenet(tree, condensed)
-        coph = squareform(condensed_cophenetic)
-        np.fill_diagonal(coph, 0.0)
-        return pd.DataFrame(coph, index=distance_matrix.index, columns=distance_matrix.columns)
+        from sfplot import compute_cophenetic_from_distance_matrix
+
+        row_coph, _col_coph = compute_cophenetic_from_distance_matrix(
+            distance_matrix,
+            method=method,
+            show_corr=False,
+        )
+        row_coph = pd.DataFrame(row_coph).reindex(index=distance_matrix.index, columns=distance_matrix.columns)
+        return row_coph.apply(pd.to_numeric, errors="coerce")
     except Exception:
-        return None
+        try:
+            values = distance_matrix.to_numpy(dtype=float)
+            tree = linkage(values, method=method)
+            _corr, condensed_cophenetic = cophenet(tree, pdist(values))
+            coph = squareform(condensed_cophenetic)
+            np.fill_diagonal(coph, 0.0)
+            finite = coph[np.isfinite(coph)]
+            if finite.size:
+                cmin = float(np.min(finite))
+                cmax = float(np.max(finite))
+                if cmax > cmin:
+                    coph = (coph - cmin) / (cmax - cmin)
+            return pd.DataFrame(coph, index=distance_matrix.index, columns=distance_matrix.columns)
+        except Exception:
+            return None
 
 
 def _select_structure_count(
@@ -289,6 +322,8 @@ def _select_structure_count(
             linkage_method=cfg.linkage_method,
             max_leaf_count=cfg.max_leaf_clusters_per_structure,
             min_leaf_count=cfg.min_leaf_clusters_per_structure,
+            extended_max_leaf_count=cfg.extended_leaf_clusters_per_structure,
+            extended_merge_distance_threshold=cfg.extended_leaf_merge_distance_threshold,
         )
         score = _score_labels(distance_matrix, labels, cluster_counts, cfg.min_structure_cell_fraction)
         structure_count = int(len(set(labels.tolist())))
@@ -303,6 +338,8 @@ def _select_structure_count(
                     "cluster_count_mode": "leaf_balanced",
                     "max_leaf_clusters_per_structure": int(cfg.max_leaf_clusters_per_structure),
                     "min_leaf_clusters_per_structure": int(cfg.min_leaf_clusters_per_structure),
+                    "extended_leaf_clusters_per_structure": int(cfg.extended_leaf_clusters_per_structure),
+                    "extended_leaf_merge_distance_threshold": float(cfg.extended_leaf_merge_distance_threshold),
                     **score,
                 }
             ],
@@ -337,13 +374,17 @@ def _leaf_balanced_labels(
     linkage_method: str,
     max_leaf_count: int,
     min_leaf_count: int,
+    extended_max_leaf_count: int | None = None,
+    extended_merge_distance_threshold: float | None = None,
 ) -> np.ndarray:
     """Group nearby leaf clusters without allowing root-level giant structures.
 
     This mode follows the StructureMap tree from leaves upward.  A merge is kept
     only when the resulting structure would contain no more than
-    ``max_leaf_count`` original graph clusters.  The final structure groups are
-    therefore local tree branches instead of a coarse global tree cut.
+    ``max_leaf_count`` original graph clusters. If a larger local branch remains
+    tightly connected in the normalized StructureMap, merging can continue up
+    to ``extended_max_leaf_count``. The final structure groups are therefore
+    local tree branches instead of a coarse global tree cut.
     """
 
     n_clusters = len(distance_matrix)
@@ -354,6 +395,12 @@ def _leaf_balanced_labels(
 
     max_leaf_count = max(1, int(max_leaf_count))
     min_leaf_count = max(1, int(min_leaf_count))
+    if extended_max_leaf_count is None:
+        extended_max_leaf_count = max_leaf_count
+    extended_max_leaf_count = max(max_leaf_count, int(extended_max_leaf_count))
+    if extended_merge_distance_threshold is None:
+        extended_merge_distance_threshold = -math.inf
+    extended_merge_distance_threshold = float(extended_merge_distance_threshold)
     if n_clusters <= max_leaf_count:
         # Keep very small clusterings split enough to preserve contour contrast.
         if n_clusters <= 2:
@@ -381,7 +428,13 @@ def _leaf_balanced_labels(
         combined: set[int] = set()
         for gid in child_group_ids:
             combined.update(active_groups[gid])
-        if len(combined) <= max_leaf_count:
+        internal_max = _group_internal_max_distance(values, combined)
+        can_merge_base = len(combined) <= max_leaf_count
+        can_merge_extended = (
+            len(combined) <= extended_max_leaf_count
+            and internal_max <= extended_merge_distance_threshold
+        )
+        if can_merge_base or can_merge_extended:
             for gid in child_group_ids:
                 active_groups.pop(gid, None)
             active_groups[next_group_id] = combined
@@ -440,6 +493,19 @@ def _merge_small_leaf_groups(
             changed = True
             break
     return groups
+
+
+def _group_internal_max_distance(values: np.ndarray, group: set[int]) -> float:
+    if len(group) <= 1:
+        return 0.0
+    idx = sorted(group)
+    sub = values[np.ix_(idx, idx)]
+    mask = ~np.eye(len(idx), dtype=bool)
+    off_diag = sub[mask]
+    finite = off_diag[np.isfinite(off_diag)]
+    if not finite.size:
+        return math.inf
+    return float(np.max(finite))
 
 
 def _sort_leaf_groups(groups: list[set[int]], cluster_ids: Sequence[str]) -> list[set[int]]:

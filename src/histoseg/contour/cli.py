@@ -89,13 +89,34 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--max-leaf-clusters-per-structure",
         type=int,
         default=5,
-        help="For --cluster-count leaf-balanced, maximum original cluster leaves per structure.",
+        help=(
+            "For --cluster-count leaf-balanced, normal maximum original cluster "
+            "leaves per structure before tight-branch extension is considered."
+        ),
     )
     auto.add_argument(
         "--min-leaf-clusters-per-structure",
         type=int,
-        default=2,
-        help="For --cluster-count leaf-balanced, merge tiny leaf groups when possible.",
+        default=1,
+        help="For --cluster-count leaf-balanced, merge tiny leaf groups when possible. Default keeps singleton leaves.",
+    )
+    auto.add_argument(
+        "--extended-leaf-clusters-per-structure",
+        type=int,
+        default=10,
+        help=(
+            "For --cluster-count leaf-balanced, allow a tight StructureMap branch "
+            "to grow up to this many graphclust leaves."
+        ),
+    )
+    auto.add_argument(
+        "--extended-leaf-merge-distance-threshold",
+        type=float,
+        default=0.25,
+        help=(
+            "Maximum normalized StructureMap distance inside a branch for extending "
+            "beyond --max-leaf-clusters-per-structure."
+        ),
     )
     auto.add_argument(
         "--min-structure-cell-fraction",
@@ -253,6 +274,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 max_structure_count=args.max_structure_count,
                 max_leaf_clusters_per_structure=args.max_leaf_clusters_per_structure,
                 min_leaf_clusters_per_structure=args.min_leaf_clusters_per_structure,
+                extended_leaf_clusters_per_structure=args.extended_leaf_clusters_per_structure,
+                extended_leaf_merge_distance_threshold=args.extended_leaf_merge_distance_threshold,
                 min_structure_cell_fraction=args.min_structure_cell_fraction,
                 linkage_method=args.linkage_method,
                 use_cophenetic=not args.no_cophenetic,
