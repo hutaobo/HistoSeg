@@ -9,6 +9,7 @@ import shutil
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Iterable, Mapping, Sequence, Union
 
 import matplotlib
@@ -128,6 +129,17 @@ class ThreeDStackReconstructionConfig:
     anchor_only_rbf_smoothing: float = 1e-4
     anchor_only_jacobian_grid_size: int = 50
     anchor_only_max_negative_jacobian_ratio: float = 0.001
+    iterative_contour_refinement: bool = True
+    iterative_contour_refinement_rounds: int = 1
+    iterative_contour_min_pair_count: int = 3
+    iterative_contour_min_anchor_count: int = 30
+    iterative_contour_min_pair_score: float = 0.52
+    iterative_contour_min_overlap: float = 0.12
+    iterative_contour_centroid_search_radius_um: float = 350.0
+    iterative_contour_accepted_centroid_radius_um: float = 260.0
+    iterative_contour_max_anchor_distance_um: float = 180.0
+    iterative_contour_residual_limit_um: float = 220.0
+    iterative_contour_max_negative_jacobian_ratio: float = 0.002
     sampling_distance_um: float = 50.0
     max_landmark_distance_um: float = 180.0
     landmarks_per_structure: int | None = 260
@@ -457,6 +469,19 @@ def run_3d_stack_reconstruction(
                         soft_result.summary_json.read_text(encoding="utf-8")
                     )
                     soft_accepted = bool(soft_summary.get("accepted", False))
+                    if soft_accepted and cfg.iterative_contour_refinement:
+                        (
+                            soft_result,
+                            soft_summary,
+                            soft_accepted,
+                        ) = _run_iterative_contour_refinement_if_enabled(
+                            cfg=cfg,
+                            fixed_geojson=fixed_path,
+                            current_soft_result=soft_result,
+                            current_soft_summary=soft_summary,
+                            pair_dir=pair_dir,
+                            round_count=cfg.iterative_contour_refinement_rounds,
+                        )
                     hard_summary = {
                         **hard_summary,
                         "soft_alignment_runtime_seconds": (
@@ -2003,6 +2028,26 @@ def _validate_stack_config(cfg: ThreeDStackReconstructionConfig) -> None:
         raise ValueError("label_free_min_anchor_quadrants must be between 0 and 4.")
     if not (0.0 <= cfg.label_free_near_180_rotation_degrees <= 180.0):
         raise ValueError("label_free_near_180_rotation_degrees must be in [0, 180].")
+    if cfg.iterative_contour_refinement_rounds < 0:
+        raise ValueError("iterative_contour_refinement_rounds must be non-negative.")
+    if cfg.iterative_contour_min_pair_count < 1:
+        raise ValueError("iterative_contour_min_pair_count must be at least 1.")
+    if cfg.iterative_contour_min_anchor_count < 1:
+        raise ValueError("iterative_contour_min_anchor_count must be at least 1.")
+    if not (0.0 <= cfg.iterative_contour_min_pair_score <= 1.0):
+        raise ValueError("iterative_contour_min_pair_score must be in [0, 1].")
+    if not (0.0 <= cfg.iterative_contour_min_overlap <= 1.0):
+        raise ValueError("iterative_contour_min_overlap must be in [0, 1].")
+    if cfg.iterative_contour_centroid_search_radius_um <= 0:
+        raise ValueError("iterative_contour_centroid_search_radius_um must be positive.")
+    if cfg.iterative_contour_accepted_centroid_radius_um <= 0:
+        raise ValueError("iterative_contour_accepted_centroid_radius_um must be positive.")
+    if cfg.iterative_contour_max_anchor_distance_um <= 0:
+        raise ValueError("iterative_contour_max_anchor_distance_um must be positive.")
+    if cfg.iterative_contour_residual_limit_um <= 0:
+        raise ValueError("iterative_contour_residual_limit_um must be positive.")
+    if not (0.0 <= cfg.iterative_contour_max_negative_jacobian_ratio <= 1.0):
+        raise ValueError("iterative_contour_max_negative_jacobian_ratio must be in [0, 1].")
     if cfg.local_z_orientation not in {"off", "auto"}:
         raise ValueError("local_z_orientation must be 'off' or 'auto'.")
     if cfg.orientation_spatial_unit not in {"auto", "global", "contour"}:
@@ -3050,6 +3095,183 @@ def _hard_candidate_label_free_field(summary: Mapping[str, Any], key: str) -> An
     return None
 
 
+def _run_iterative_contour_refinement_if_enabled(
+    *,
+    cfg: ThreeDStackReconstructionConfig,
+    fixed_geojson: Path,
+    current_soft_result: Any,
+    current_soft_summary: Mapping[str, Any],
+    pair_dir: Path,
+    round_count: int,
+) -> tuple[Any, dict[str, Any], bool]:
+    from .label_free_alignment import (  # Local import avoids a module cycle.
+        IterativeContourRefinementConfig,
+        run_iterative_contour_refinement,
+    )
+
+    rounds = max(int(round_count), 0)
+    if rounds <= 0:
+        return current_soft_result, dict(current_soft_summary), bool(
+            current_soft_summary.get("accepted", False)
+        )
+
+    active_result = current_soft_result
+    active_summary = dict(current_soft_summary)
+    chain_paths = [str(active_result.summary_json)]
+    refinements: list[dict[str, Any]] = []
+    accepted_any = False
+
+    for round_index in range(1, rounds + 1):
+        refinement = run_iterative_contour_refinement(
+            IterativeContourRefinementConfig(
+                fixed_geojson=fixed_geojson,
+                moving_aligned_geojson=active_result.soft_aligned_geojson,
+                out_dir=pair_dir / f"iterative_contour_refinement_round{round_index}",
+                group_property=cfg.group_property,
+                centroid_search_radius_um=cfg.iterative_contour_centroid_search_radius_um,
+                accepted_centroid_radius_um=(
+                    cfg.iterative_contour_accepted_centroid_radius_um
+                ),
+                min_overlap=cfg.iterative_contour_min_overlap,
+                min_pair_score=cfg.iterative_contour_min_pair_score,
+                max_anchor_distance_um=cfg.iterative_contour_max_anchor_distance_um,
+                min_pair_count=cfg.iterative_contour_min_pair_count,
+                min_anchor_count=cfg.iterative_contour_min_anchor_count,
+                residual_limit_um=cfg.iterative_contour_residual_limit_um,
+                rbf_neighbors=cfg.rbf_neighbors,
+                rbf_smoothing=max(float(cfg.anchor_only_rbf_smoothing), 2e-4),
+                jacobian_grid_size=max(int(cfg.anchor_only_jacobian_grid_size), 45),
+                max_negative_jacobian_ratio=(
+                    cfg.iterative_contour_max_negative_jacobian_ratio
+                ),
+                save_preview_png=cfg.save_alignment_preview_png,
+                overwrite=cfg.overwrite,
+                dpi=cfg.dpi,
+            )
+        )
+        refinement_summary = json.loads(
+            refinement.summary_json.read_text(encoding="utf-8")
+        )
+        refinements.append(refinement_summary)
+        if not bool(refinement_summary.get("accepted", False)):
+            break
+        accepted_any = True
+        active_result = SimpleNamespace(
+            soft_aligned_geojson=refinement.refined_geojson,
+            summary_json=refinement.summary_json,
+        )
+        active_summary = _combine_anchor_only_and_iterative_soft_summary(
+            base_summary=current_soft_summary,
+            refinement_summaries=refinements,
+            output_geojson=refinement.refined_geojson,
+            chain_paths=[*chain_paths, str(refinement.summary_json)],
+            out_dir=pair_dir / "anchor_only_iterative_soft_tps",
+        )
+        active_result = SimpleNamespace(
+            soft_aligned_geojson=refinement.refined_geojson,
+            summary_json=Path(active_summary["outputs"]["combined_summary_json"]),
+        )
+        chain_paths = list(active_summary["outputs"]["tps_chain"])
+
+    if not refinements:
+        return current_soft_result, dict(current_soft_summary), bool(
+            current_soft_summary.get("accepted", False)
+        )
+    if not accepted_any:
+        active_summary = _combine_anchor_only_and_iterative_soft_summary(
+            base_summary=current_soft_summary,
+            refinement_summaries=refinements,
+            output_geojson=Path(current_soft_summary["outputs"]["soft_geojson"]),
+            chain_paths=chain_paths,
+            out_dir=pair_dir / "anchor_only_iterative_soft_tps",
+        )
+        active_result = SimpleNamespace(
+            soft_aligned_geojson=Path(current_soft_summary["outputs"]["soft_geojson"]),
+            summary_json=Path(active_summary["outputs"]["combined_summary_json"]),
+        )
+    return active_result, active_summary, bool(active_summary.get("accepted", False))
+
+
+def _combine_anchor_only_and_iterative_soft_summary(
+    *,
+    base_summary: Mapping[str, Any],
+    refinement_summaries: Sequence[Mapping[str, Any]],
+    output_geojson: Path,
+    chain_paths: Sequence[str],
+    out_dir: Path,
+) -> dict[str, Any]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    combined_path = out_dir / "anchor_only_iterative_tps_summary.json"
+    combined = copy.deepcopy(dict(base_summary))
+    combined["method"] = {
+        "name": "anchor_only_residual_tps_with_iterative_contour_refinement",
+        "base_method": base_summary.get("method"),
+        "rbf_kernel": (
+            base_summary.get("config", {}).get("rbf_kernel")
+            if isinstance(base_summary.get("config"), Mapping)
+            else "thin_plate_spline"
+        ),
+        "rbf_neighbors": (
+            base_summary.get("config", {}).get("rbf_neighbors")
+            if isinstance(base_summary.get("config"), Mapping)
+            else 96
+        ),
+        "rbf_smoothing": (
+            base_summary.get("config", {}).get("rbf_smoothing")
+            if isinstance(base_summary.get("config"), Mapping)
+            else 1e-4
+        ),
+    }
+    accepted_refinements = [
+        summary for summary in refinement_summaries if bool(summary.get("accepted", False))
+    ]
+    latest = accepted_refinements[-1] if accepted_refinements else None
+    combined["accepted"] = bool(base_summary.get("accepted", False))
+    combined["iterative_contour_refinement"] = {
+        "attempted": True,
+        "round_count": int(len(refinement_summaries)),
+        "accepted_round_count": int(len(accepted_refinements)),
+        "accepted": bool(latest is not None),
+        "latest_reason": refinement_summaries[-1].get("reason")
+        if refinement_summaries
+        else None,
+        "rounds": list(refinement_summaries),
+    }
+    if latest is not None:
+        combined["outputs"]["soft_geojson"] = str(output_geojson)
+        combined["qc"]["union_iou_soft_after"] = latest["qc"][
+            "union_iou_after_refinement"
+        ]
+        combined["qc"]["delta_union_iou_soft"] = (
+            float(combined["qc"]["union_iou_soft_after"])
+            - float(combined["qc"]["union_iou_hard_before_soft"])
+        )
+        combined["qc"]["geometry_status_counts"] = latest["qc"].get(
+            "geometry_status_counts", combined["qc"].get("geometry_status_counts")
+        )
+        combined["qc"]["topology_check"] = latest["qc"].get(
+            "topology_check", combined["qc"].get("topology_check")
+        )
+        combined["qc"]["jacobian_check"] = latest["qc"].get(
+            "jacobian_check", combined["qc"].get("jacobian_check")
+        )
+        combined["qc"]["post_warp_residual_um"] = latest["qc"].get(
+            "post_warp_residual_um", combined["qc"].get("post_warp_residual_um")
+        )
+    combined.setdefault("outputs", {})
+    combined["outputs"]["combined_summary_json"] = str(combined_path)
+    combined["outputs"]["tps_chain"] = list(chain_paths)
+    combined["outputs"]["iterative_refinement_summary_json"] = (
+        str(Path(refinement_summaries[-1]["outputs"]["out_dir"]) / "iterative_contour_refinement_summary.json")
+        if refinement_summaries
+        else None
+    )
+    combined_path.write_text(
+        json.dumps(combined, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    return combined
+
+
 def _pairwise_row(
     slice_input: _SliceInput,
     hard_summary: Mapping[str, Any],
@@ -3164,6 +3386,16 @@ def _pairwise_row(
         "anchor_only_negative_jacobian_ratio": None,
         "anchor_only_min_jacobian_ratio": None,
         "anchor_only_fallback_reason": None,
+        "iterative_refinement_attempted": None,
+        "iterative_refinement_accepted": None,
+        "iterative_refinement_round_count": None,
+        "iterative_refinement_accepted_round_count": None,
+        "iterative_refinement_pair_count": None,
+        "iterative_refinement_anchor_count": None,
+        "iterative_refinement_delta_iou": None,
+        "iterative_refinement_negative_jacobian_ratio": None,
+        "iterative_refinement_min_jacobian_ratio": None,
+        "iterative_refinement_fallback_reason": None,
     }
     if soft_summary is not None and soft_result is not None:
         topology = soft_summary["qc"].get("topology_check", {})
@@ -3187,7 +3419,21 @@ def _pairwise_row(
                 "soft_summary_json": str(soft_result.summary_json),
             }
         )
-        if soft_summary.get("method") == "anchor_only_residual_tps":
+        method_value = soft_summary.get("method")
+        method_name = (
+            method_value.get("name")
+            if isinstance(method_value, Mapping)
+            else method_value
+        )
+        base_method_name = (
+            method_value.get("base_method")
+            if isinstance(method_value, Mapping)
+            else None
+        )
+        if (
+            method_name == "anchor_only_residual_tps"
+            or base_method_name == "anchor_only_residual_tps"
+        ):
             input_residual = soft_summary.get("landmarks", {}).get("input_residual_um") or {}
             post_residual = soft_summary.get("qc", {}).get("post_warp_residual_um") or {}
             jacobian = soft_summary.get("qc", {}).get("jacobian_check") or {}
@@ -3212,6 +3458,58 @@ def _pairwise_row(
                         None
                         if bool(soft_summary.get("accepted", False))
                         else soft_summary.get("reason")
+                    ),
+                }
+            )
+        iterative = soft_summary.get("iterative_contour_refinement") or {}
+        if iterative:
+            accepted_rounds = [
+                summary
+                for summary in iterative.get("rounds", [])
+                if isinstance(summary, Mapping) and bool(summary.get("accepted", False))
+            ]
+            latest = accepted_rounds[-1] if accepted_rounds else None
+            latest_any = (
+                iterative.get("rounds", [])[-1]
+                if iterative.get("rounds")
+                and isinstance(iterative.get("rounds", [])[-1], Mapping)
+                else {}
+            )
+            qc = latest.get("qc", {}) if isinstance(latest, Mapping) else {}
+            jacobian = qc.get("jacobian_check") or {}
+            pairs = latest.get("pairs", {}) if isinstance(latest, Mapping) else {}
+            landmarks = latest.get("landmarks", {}) if isinstance(latest, Mapping) else {}
+            row.update(
+                {
+                    "iterative_refinement_attempted": bool(
+                        iterative.get("attempted", False)
+                    ),
+                    "iterative_refinement_accepted": bool(
+                        iterative.get("accepted", False)
+                    ),
+                    "iterative_refinement_round_count": iterative.get("round_count"),
+                    "iterative_refinement_accepted_round_count": iterative.get(
+                        "accepted_round_count"
+                    ),
+                    "iterative_refinement_pair_count": pairs.get(
+                        "accepted_pair_count"
+                    ),
+                    "iterative_refinement_anchor_count": landmarks.get(
+                        "anchor_landmark_count"
+                    ),
+                    "iterative_refinement_delta_iou": qc.get(
+                        "delta_union_iou_refinement"
+                    ),
+                    "iterative_refinement_negative_jacobian_ratio": jacobian.get(
+                        "negative_jacobian_ratio"
+                    ),
+                    "iterative_refinement_min_jacobian_ratio": jacobian.get(
+                        "min_jacobian_ratio"
+                    ),
+                    "iterative_refinement_fallback_reason": (
+                        None
+                        if bool(iterative.get("accepted", False))
+                        else latest_any.get("reason") or iterative.get("latest_reason")
                     ),
                 }
             )

@@ -140,12 +140,23 @@ class TpsModel:
 
 
 @dataclass(frozen=True)
+class CompositeTpsModel:
+    models: tuple[TpsModel, ...]
+
+    def warp(self, xy: np.ndarray, *, chunk_size: int) -> np.ndarray:
+        result = np.asarray(xy, dtype=float)
+        for model in self.models:
+            result = model.warp(result, chunk_size=chunk_size)
+        return result
+
+
+@dataclass(frozen=True)
 class SliceCellTransform:
     sample_id: str
     order: int
     z_um: float
     hard: SimilarityTransform | None = None
-    tps: TpsModel | None = None
+    tps: TpsModel | CompositeTpsModel | None = None
 
 
 def run_cell_cloud_projection(cfg: CellCloudProjectionConfig) -> CellCloudProjectionResult:
@@ -886,8 +897,23 @@ def _cell_cloud_dataframe_from_cache(
     return cell_cloud_dataframe_from_coordinates(obs, coords, slice_order, cfg)
 
 
-def _load_tps_model(summary_path: Path) -> TpsModel:
+def _load_tps_model(summary_path: Path) -> TpsModel | CompositeTpsModel:
     summary = _load_json(summary_path)
+    chain = summary.get("outputs", {}).get("tps_chain")
+    if isinstance(chain, list) and chain:
+        models: list[TpsModel] = []
+        for value in chain:
+            chain_path = _resolve_existing_path(value, base=summary_path.parent)
+            if chain_path is None:
+                raise FileNotFoundError(
+                    f"Could not resolve TPS chain summary {value!r} from {summary_path}"
+                )
+            model = _load_tps_model(chain_path)
+            if isinstance(model, CompositeTpsModel):
+                models.extend(model.models)
+            else:
+                models.append(model)
+        return CompositeTpsModel(tuple(models))
     landmarks_path = _resolve_existing_path(
         summary.get("outputs", {}).get("landmarks_csv"),
         base=summary_path.parent,

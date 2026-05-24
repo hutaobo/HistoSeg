@@ -182,6 +182,46 @@ def test_tps_model_loads_sibling_landmarks_when_summary_path_is_not_portable(tmp
     np.testing.assert_allclose(warped, [[6.0, 7.0]], atol=1e-3)
 
 
+def test_composite_tps_chain_applies_soft_transforms_in_order(tmp_path):
+    import histoseg.threed.cell_cloud as cell_cloud
+
+    soft_dir = tmp_path / "stack" / "pairwise_alignments" / "001_to_002_s2"
+    first_dir = soft_dir / "anchor_only_soft_tps"
+    second_dir = soft_dir / "iterative_contour_refinement_round1" / "iterative_contour_tps"
+    combo_dir = soft_dir / "anchor_only_iterative_soft_tps"
+    first_dir.mkdir(parents=True)
+    second_dir.mkdir(parents=True)
+    combo_dir.mkdir(parents=True)
+
+    _write_tps_summary_and_landmarks(
+        first_dir / "anchor_only_tps_summary.json",
+        first_dir / "anchor_only_tps_landmarks.csv",
+        dx=3.0,
+        dy=0.0,
+    )
+    _write_tps_summary_and_landmarks(
+        second_dir / "anchor_only_tps_summary.json",
+        second_dir / "anchor_only_tps_landmarks.csv",
+        dx=0.0,
+        dy=-2.0,
+    )
+    combo = {
+        "outputs": {
+            "tps_chain": [
+                str(first_dir / "anchor_only_tps_summary.json"),
+                str(second_dir / "anchor_only_tps_summary.json"),
+            ]
+        }
+    }
+    combo_path = combo_dir / "anchor_only_iterative_tps_summary.json"
+    combo_path.write_text(json.dumps(combo), encoding="utf-8")
+
+    model = cell_cloud._load_tps_model(combo_path)
+    warped = model.warp(np.array([[5.0, 5.0]]), chunk_size=10)
+
+    np.testing.assert_allclose(warped, [[8.0, 3.0]], atol=1e-3)
+
+
 def test_write_cell_cloud_cache_uses_histoseg_keys_without_touching_spatial(tmp_path):
     adata = _MiniAnnData(
         pd.DataFrame(
@@ -516,3 +556,33 @@ def _write_minimal_stack(root: Path) -> Path:
         encoding="utf-8",
     )
     return stack_root
+
+
+def _write_tps_summary_and_landmarks(
+    summary_path: Path,
+    landmarks_path: Path,
+    *,
+    dx: float,
+    dy: float,
+) -> None:
+    summary = {
+        "method": {
+            "rbf_kernel": "thin_plate_spline",
+            "rbf_smoothing": 1e-4,
+            "rbf_neighbors": None,
+        },
+        "outputs": {
+            "landmarks_csv": str(landmarks_path),
+        },
+    }
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    src_x = [0.0, 10.0, 0.0, 10.0]
+    src_y = [0.0, 0.0, 10.0, 10.0]
+    pd.DataFrame(
+        {
+            "src_x": src_x,
+            "src_y": src_y,
+            "dst_x": [x + dx for x in src_x],
+            "dst_y": [y + dy for y in src_y],
+        }
+    ).to_csv(landmarks_path, index=False)

@@ -143,6 +143,67 @@ class AnchorOnlyResidualTPSResult:
 
 
 @dataclass(frozen=True)
+class IterativeContourRefinementConfig:
+    """Configuration for post-soft contour-level refinement.
+
+    The input moving GeoJSON should already be hard aligned and, usually,
+    anchor-only soft aligned. The refinement searches for additional local
+    contour correspondences in this nearly aligned coordinate frame, then fits
+    one conservative residual TPS pass from those correspondences.
+    """
+
+    fixed_geojson: PathLike
+    moving_aligned_geojson: PathLike
+    out_dir: PathLike
+    group_property: str = "structure"
+    min_component_area_um2: float = 1500.0
+    centroid_search_radius_um: float = 350.0
+    accepted_centroid_radius_um: float = 260.0
+    area_ratio_min: float = 0.25
+    area_ratio_max: float = 4.0
+    relaxed_area_ratio_min: float = 0.55
+    relaxed_area_ratio_max: float = 1.8
+    min_overlap: float = 0.12
+    relaxed_centroid_radius_um: float = 90.0
+    min_pair_score: float = 0.52
+    boundary_sample_spacing_um: float = 65.0
+    fixed_boundary_sample_spacing_um: float = 45.0
+    max_moving_boundary_points_per_pair: int = 70
+    max_fixed_boundary_points_per_pair: int = 140
+    max_anchor_distance_um: float = 180.0
+    max_anchors_per_pair: int = 80
+    max_total_anchors: int = 1800
+    min_pair_count: int = 3
+    min_anchor_count: int = 30
+    residual_limit_um: float = 220.0
+    min_delta_union_iou: float = 0.0
+    bbox_padding_fraction: float = 0.08
+    identity_padding_count: int = 32
+    rbf_kernel: str = "thin_plate_spline"
+    rbf_neighbors: int | None = 96
+    rbf_smoothing: float = 2e-4
+    jacobian_grid_size: int = 45
+    max_negative_jacobian_ratio: float = 0.002
+    save_preview_png: bool = True
+    dpi: int = 180
+    overwrite: bool = False
+
+
+@dataclass
+class IterativeContourRefinementResult:
+    """Artifacts produced by one contour-level refinement pass."""
+
+    out_dir: Path
+    refined_geojson: Path
+    candidate_pairs_csv: Path
+    mutual_pairs_csv: Path
+    accepted_pairs_csv: Path
+    landmarks_csv: Path
+    summary_json: Path
+    tps_result: AnchorOnlyResidualTPSResult | None = None
+
+
+@dataclass(frozen=True)
 class _PointTransform:
     kind: str
     similarity: _SimilarityTransform | None = None
@@ -679,6 +740,257 @@ def run_anchor_only_residual_tps(
     )
 
 
+def run_iterative_contour_refinement(
+    cfg: IterativeContourRefinementConfig,
+) -> IterativeContourRefinementResult:
+    """Run one conservative contour-correspondence refinement pass.
+
+    This is intended after a reliable hard/anchor-only soft seed. It does not
+    infer semantic identity. It only uses post-alignment local overlap, centroid
+    proximity, and area compatibility to discover additional contour pairs that
+    are safe enough to act as residual TPS landmarks.
+    """
+
+    _validate_iterative_contour_refinement_config(cfg)
+    out_dir = Path(cfg.out_dir).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    candidate_pairs_csv = out_dir / "iterative_contour_candidate_pairs.csv"
+    mutual_pairs_csv = out_dir / "iterative_contour_mutual_pairs.csv"
+    accepted_pairs_csv = out_dir / "iterative_contour_accepted_pairs.csv"
+    landmarks_csv = out_dir / "iterative_contour_landmarks.csv"
+    refined_geojson = out_dir / "iterative_refined_contours.geojson"
+    summary_json = out_dir / "iterative_contour_refinement_summary.json"
+
+    if (
+        refined_geojson.exists()
+        and candidate_pairs_csv.exists()
+        and mutual_pairs_csv.exists()
+        and accepted_pairs_csv.exists()
+        and landmarks_csv.exists()
+        and summary_json.exists()
+        and not cfg.overwrite
+    ):
+        return IterativeContourRefinementResult(
+            out_dir=out_dir,
+            refined_geojson=refined_geojson,
+            candidate_pairs_csv=candidate_pairs_csv,
+            mutual_pairs_csv=mutual_pairs_csv,
+            accepted_pairs_csv=accepted_pairs_csv,
+            landmarks_csv=landmarks_csv,
+            summary_json=summary_json,
+            tps_result=None,
+        )
+
+    fixed_payload = _read_geojson(Path(cfg.fixed_geojson).expanduser())
+    moving_payload = _read_geojson(Path(cfg.moving_aligned_geojson).expanduser())
+    record_cfg = LabelFreeContourAlignmentConfig(
+        fixed_geojson=cfg.fixed_geojson,
+        moving_geojson=cfg.moving_aligned_geojson,
+        out_dir=out_dir,
+        min_component_area_um2=0.0,
+    )
+    fixed_records = _records_from_geojson_label_free(fixed_payload, record_cfg, role="fixed")
+    moving_records = _records_from_geojson_label_free(
+        moving_payload, record_cfg, role="moving_aligned"
+    )
+    fixed_union = unary_union([record.geometry for record in fixed_records])
+    moving_union = unary_union([record.geometry for record in moving_records])
+
+    candidates, mutual_pairs, accepted_pairs = _iterative_contour_pair_tables(
+        fixed_records,
+        moving_records,
+        cfg,
+    )
+    candidates.to_csv(candidate_pairs_csv, index=False)
+    mutual_pairs.to_csv(mutual_pairs_csv, index=False)
+    accepted_pairs.to_csv(accepted_pairs_csv, index=False)
+
+    landmarks = _iterative_contour_landmarks(
+        fixed_records,
+        moving_records,
+        accepted_pairs,
+        cfg,
+    )
+    if landmarks.empty:
+        landmarks = _empty_anchor_only_landmarks()
+    landmarks.to_csv(landmarks_csv, index=False)
+
+    failure_reasons: list[str] = []
+    if len(accepted_pairs) < int(cfg.min_pair_count):
+        failure_reasons.append("too_few_iterative_contour_pairs")
+    used_anchor_count = int(
+        _coerce_bool_series(landmarks.get("used_for_transform", pd.Series(dtype=bool))).sum()
+    )
+    if used_anchor_count < int(cfg.min_anchor_count):
+        failure_reasons.append("too_few_iterative_contour_anchors")
+
+    tps_result: AnchorOnlyResidualTPSResult | None = None
+    tps_summary: dict[str, Any] | None = None
+    accepted = False
+    if not failure_reasons:
+        tps_result = run_anchor_only_residual_tps(
+            AnchorOnlyResidualTPSConfig(
+                fixed_geojson=cfg.fixed_geojson,
+                moving_hard_aligned_geojson=cfg.moving_aligned_geojson,
+                anchor_landmarks_csv=landmarks_csv,
+                out_dir=out_dir / "iterative_contour_tps",
+                group_property=cfg.group_property,
+                min_anchor_count=cfg.min_anchor_count,
+                residual_limit_um=cfg.residual_limit_um,
+                bbox_padding_fraction=cfg.bbox_padding_fraction,
+                identity_padding_count=cfg.identity_padding_count,
+                rbf_kernel=cfg.rbf_kernel,
+                rbf_neighbors=cfg.rbf_neighbors,
+                rbf_smoothing=cfg.rbf_smoothing,
+                jacobian_grid_size=cfg.jacobian_grid_size,
+                max_negative_jacobian_ratio=cfg.max_negative_jacobian_ratio,
+                save_preview_png=cfg.save_preview_png,
+                dpi=cfg.dpi,
+                overwrite=cfg.overwrite,
+            )
+        )
+        tps_summary = json.loads(tps_result.summary_json.read_text(encoding="utf-8"))
+        delta_iou = float(tps_summary.get("qc", {}).get("delta_union_iou_soft", math.nan))
+        if not bool(tps_summary.get("accepted", False)):
+            failure_reasons.append(
+                str(tps_summary.get("reason") or "iterative_contour_tps_rejected")
+            )
+        if not math.isfinite(delta_iou) or delta_iou < float(cfg.min_delta_union_iou):
+            failure_reasons.append("iterative_contour_delta_iou_below_limit")
+        accepted = not failure_reasons
+
+    if accepted and tps_result is not None:
+        refined_payload = _read_geojson(tps_result.soft_aligned_geojson)
+        refined_records = _records_from_geojson_label_free(
+            refined_payload, record_cfg, role="iterative_refined"
+        )
+        refined_geojson.write_text(
+            json.dumps(refined_payload, ensure_ascii=False), encoding="utf-8"
+        )
+    else:
+        refined_records = moving_records
+        refined_geojson.write_text(
+            json.dumps(moving_payload, ensure_ascii=False), encoding="utf-8"
+        )
+
+    refined_union = unary_union([record.geometry for record in refined_records])
+    summary = {
+        "fixed_geojson": str(Path(cfg.fixed_geojson)),
+        "moving_aligned_geojson": str(Path(cfg.moving_aligned_geojson)),
+        "output_geojson": str(refined_geojson),
+        "method": {
+            "name": "iterative_contour_refinement",
+            "rbf_kernel": cfg.rbf_kernel,
+            "rbf_neighbors": cfg.rbf_neighbors,
+            "rbf_smoothing": float(cfg.rbf_smoothing),
+        },
+        "objective_note": (
+            "After an initial alignment, HistoSeg finds additional nearby contour "
+            "pairs by overlap, centroid distance, and area compatibility, then fits "
+            "one residual TPS pass from those contour-level correspondences."
+        ),
+        "attempted": bool(len(accepted_pairs) >= int(cfg.min_pair_count)),
+        "accepted": bool(accepted),
+        "reason": (
+            "accepted_iterative_contour_refinement"
+            if accepted
+            else ";".join(dict.fromkeys(failure_reasons)) if failure_reasons else "rejected"
+        ),
+        "config": {
+            "min_component_area_um2": float(cfg.min_component_area_um2),
+            "centroid_search_radius_um": float(cfg.centroid_search_radius_um),
+            "accepted_centroid_radius_um": float(cfg.accepted_centroid_radius_um),
+            "min_overlap": float(cfg.min_overlap),
+            "min_pair_score": float(cfg.min_pair_score),
+            "max_anchor_distance_um": float(cfg.max_anchor_distance_um),
+            "max_anchors_per_pair": int(cfg.max_anchors_per_pair),
+            "max_total_anchors": int(cfg.max_total_anchors),
+            "min_pair_count": int(cfg.min_pair_count),
+            "min_anchor_count": int(cfg.min_anchor_count),
+            "residual_limit_um": float(cfg.residual_limit_um),
+            "min_delta_union_iou": float(cfg.min_delta_union_iou),
+            "bbox_padding_fraction": float(cfg.bbox_padding_fraction),
+            "identity_padding_count": int(cfg.identity_padding_count),
+            "jacobian_grid_size": int(cfg.jacobian_grid_size),
+            "max_negative_jacobian_ratio": float(cfg.max_negative_jacobian_ratio),
+        },
+        "pairs": {
+            "candidate_pair_count": int(len(candidates)),
+            "mutual_pair_count": int(len(mutual_pairs)),
+            "accepted_pair_count": int(len(accepted_pairs)),
+        },
+        "landmarks": {
+            "boundary_landmark_count": int(used_anchor_count),
+            "anchor_landmark_count": int(used_anchor_count),
+            "identity_padding_count": int(
+                (landmarks.get("landmark_kind", pd.Series(dtype=str)) == "identity_padding").sum()
+            ),
+            "total_landmark_count": int(len(landmarks)),
+            "used_for_tps_count": int(used_anchor_count),
+            "input_residual_um": _distribution_summary_or_nan(
+                landmarks.loc[
+                    _coerce_bool_series(
+                        landmarks.get("used_for_transform", pd.Series(dtype=bool))
+                    ),
+                    "input_residual_um",
+                ].to_numpy(dtype=float)
+                if "input_residual_um" in landmarks.columns
+                else np.array([], dtype=float)
+            ),
+        },
+        "qc": {
+            "fixed_feature_count": int(len(fixed_records)),
+            "moving_feature_count": int(len(moving_records)),
+            "refined_feature_count": int(len(refined_records)),
+            "union_iou_before_refinement": _iou(fixed_union, moving_union),
+            "union_iou_after_refinement": _iou(fixed_union, refined_union),
+            "delta_union_iou_refinement": _iou(fixed_union, refined_union)
+            - _iou(fixed_union, moving_union),
+            "geometry_status_counts": (
+                (tps_summary or {}).get("qc", {}).get("geometry_status_counts")
+                if tps_summary is not None
+                else {"unchanged": int(len(moving_records))}
+            ),
+            "topology_check": (
+                (tps_summary or {}).get("qc", {}).get("topology_check")
+                if tps_summary is not None
+                else {"enabled": False, "valid": True, "reason": "not_attempted"}
+            ),
+            "jacobian_check": (
+                (tps_summary or {}).get("qc", {}).get("jacobian_check")
+                if tps_summary is not None
+                else {"enabled": False, "valid": True, "reason": "not_attempted"}
+            ),
+            "post_warp_residual_um": (
+                (tps_summary or {}).get("qc", {}).get("post_warp_residual_um")
+                if tps_summary is not None
+                else _distribution_summary_or_nan(np.array([], dtype=float))
+            ),
+        },
+        "outputs": {
+            "out_dir": str(out_dir),
+            "refined_geojson": str(refined_geojson),
+            "candidate_pairs_csv": str(candidate_pairs_csv),
+            "mutual_pairs_csv": str(mutual_pairs_csv),
+            "accepted_pairs_csv": str(accepted_pairs_csv),
+            "landmarks_csv": str(landmarks_csv),
+            "tps_summary_json": str(tps_result.summary_json) if tps_result else None,
+        },
+    }
+    summary_json.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    return IterativeContourRefinementResult(
+        out_dir=out_dir,
+        refined_geojson=refined_geojson,
+        candidate_pairs_csv=candidate_pairs_csv,
+        mutual_pairs_csv=mutual_pairs_csv,
+        accepted_pairs_csv=accepted_pairs_csv,
+        landmarks_csv=landmarks_csv,
+        summary_json=summary_json,
+        tps_result=tps_result,
+    )
+
+
 def _validate_anchor_only_residual_tps_config(cfg: AnchorOnlyResidualTPSConfig) -> None:
     if cfg.min_anchor_count < 1:
         raise ValueError("min_anchor_count must be at least 1.")
@@ -696,6 +1008,345 @@ def _validate_anchor_only_residual_tps_config(cfg: AnchorOnlyResidualTPSConfig) 
         raise ValueError("jacobian_grid_size must be at least 2.")
     if not (0.0 <= cfg.max_negative_jacobian_ratio <= 1.0):
         raise ValueError("max_negative_jacobian_ratio must be in [0, 1].")
+
+
+def _validate_iterative_contour_refinement_config(
+    cfg: IterativeContourRefinementConfig,
+) -> None:
+    if cfg.min_component_area_um2 < 0:
+        raise ValueError("min_component_area_um2 must be non-negative.")
+    if cfg.centroid_search_radius_um <= 0:
+        raise ValueError("centroid_search_radius_um must be positive.")
+    if cfg.accepted_centroid_radius_um <= 0:
+        raise ValueError("accepted_centroid_radius_um must be positive.")
+    if cfg.area_ratio_min <= 0 or cfg.area_ratio_max <= cfg.area_ratio_min:
+        raise ValueError("area_ratio_min/max must be positive and increasing.")
+    if (
+        cfg.relaxed_area_ratio_min <= 0
+        or cfg.relaxed_area_ratio_max <= cfg.relaxed_area_ratio_min
+    ):
+        raise ValueError("relaxed_area_ratio_min/max must be positive and increasing.")
+    if not (0.0 <= cfg.min_overlap <= 1.0):
+        raise ValueError("min_overlap must be in [0, 1].")
+    if not (0.0 <= cfg.min_pair_score <= 1.0):
+        raise ValueError("min_pair_score must be in [0, 1].")
+    if cfg.boundary_sample_spacing_um <= 0 or cfg.fixed_boundary_sample_spacing_um <= 0:
+        raise ValueError("boundary sample spacing must be positive.")
+    if cfg.max_moving_boundary_points_per_pair < 1:
+        raise ValueError("max_moving_boundary_points_per_pair must be at least 1.")
+    if cfg.max_fixed_boundary_points_per_pair < 1:
+        raise ValueError("max_fixed_boundary_points_per_pair must be at least 1.")
+    if cfg.max_anchor_distance_um <= 0:
+        raise ValueError("max_anchor_distance_um must be positive.")
+    if cfg.max_anchors_per_pair < 1:
+        raise ValueError("max_anchors_per_pair must be at least 1.")
+    if cfg.max_total_anchors < 1:
+        raise ValueError("max_total_anchors must be at least 1.")
+    if cfg.min_pair_count < 1:
+        raise ValueError("min_pair_count must be at least 1.")
+    if cfg.min_anchor_count < 1:
+        raise ValueError("min_anchor_count must be at least 1.")
+    if cfg.residual_limit_um <= 0:
+        raise ValueError("residual_limit_um must be positive.")
+    if cfg.identity_padding_count < 4:
+        raise ValueError("identity_padding_count must be at least 4.")
+    if cfg.rbf_neighbors is not None and cfg.rbf_neighbors < 3:
+        raise ValueError("rbf_neighbors must be at least 3 when provided.")
+    if cfg.rbf_smoothing < 0:
+        raise ValueError("rbf_smoothing must be non-negative.")
+    if cfg.jacobian_grid_size < 2:
+        raise ValueError("jacobian_grid_size must be at least 2.")
+    if not (0.0 <= cfg.max_negative_jacobian_ratio <= 1.0):
+        raise ValueError("max_negative_jacobian_ratio must be in [0, 1].")
+
+
+def _iterative_contour_pair_tables(
+    fixed_records: list[_FeatureRecord],
+    moving_records: list[_FeatureRecord],
+    cfg: IterativeContourRefinementConfig,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    fixed_table = _iterative_contour_record_table(
+        fixed_records, min_area_um2=cfg.min_component_area_um2
+    )
+    moving_table = _iterative_contour_record_table(
+        moving_records, min_area_um2=cfg.min_component_area_um2
+    )
+    columns = [
+        "fixed_feature_index",
+        "moving_feature_index",
+        "fixed_label",
+        "moving_label",
+        "fixed_area",
+        "moving_area",
+        "area_ratio",
+        "centroid_distance_um",
+        "overlap_coefficient",
+        "iou",
+        "position_score",
+        "area_score",
+        "total_score",
+        "is_mutual_best",
+        "accepted",
+        "acceptance_reason",
+    ]
+    if fixed_table.empty or moving_table.empty:
+        empty = pd.DataFrame(columns=columns)
+        return empty, empty.copy(), empty.copy()
+
+    moving_tree = cKDTree(moving_table[["centroid_x", "centroid_y"]].to_numpy(dtype=float))
+    candidate_rows: list[dict[str, Any]] = []
+    for _, fixed in fixed_table.iterrows():
+        fixed_xy = np.array([float(fixed["centroid_x"]), float(fixed["centroid_y"])])
+        moving_indexes = moving_tree.query_ball_point(
+            fixed_xy, r=float(cfg.centroid_search_radius_um)
+        )
+        for moving_idx in moving_indexes:
+            moving = moving_table.iloc[int(moving_idx)]
+            fixed_area = float(fixed["area"])
+            moving_area = float(moving["area"])
+            if fixed_area <= 0 or moving_area <= 0:
+                continue
+            area_ratio = moving_area / fixed_area
+            if area_ratio < cfg.area_ratio_min or area_ratio > cfg.area_ratio_max:
+                continue
+            fixed_geom = fixed_records[int(fixed["feature_index"])].geometry
+            moving_geom = moving_records[int(moving["feature_index"])].geometry
+            intersection_area = float(fixed_geom.intersection(moving_geom).area)
+            union_area = float(fixed_geom.union(moving_geom).area)
+            overlap = intersection_area / max(min(fixed_area, moving_area), 1e-12)
+            iou = intersection_area / max(union_area, 1e-12)
+            distance = float(
+                math.hypot(
+                    float(fixed["centroid_x"]) - float(moving["centroid_x"]),
+                    float(fixed["centroid_y"]) - float(moving["centroid_y"]),
+                )
+            )
+            position_score = math.exp(-distance / 180.0)
+            area_score = max(
+                0.0,
+                1.0
+                - abs(math.log(max(area_ratio, 1e-12)))
+                / max(math.log(float(cfg.area_ratio_max)), 1e-12),
+            )
+            total_score = (
+                0.38 * position_score
+                + 0.32 * overlap
+                + 0.20 * area_score
+                + 0.10 * iou
+            )
+            candidate_rows.append(
+                {
+                    "fixed_feature_index": int(fixed["feature_index"]),
+                    "moving_feature_index": int(moving["feature_index"]),
+                    "fixed_label": str(fixed["label"]),
+                    "moving_label": str(moving["label"]),
+                    "fixed_area": fixed_area,
+                    "moving_area": moving_area,
+                    "area_ratio": float(area_ratio),
+                    "centroid_distance_um": distance,
+                    "overlap_coefficient": float(overlap),
+                    "iou": float(iou),
+                    "position_score": float(position_score),
+                    "area_score": float(area_score),
+                    "total_score": float(total_score),
+                    "is_mutual_best": False,
+                    "accepted": False,
+                    "acceptance_reason": "",
+                }
+            )
+
+    if not candidate_rows:
+        empty = pd.DataFrame(columns=columns)
+        return empty, empty.copy(), empty.copy()
+    candidates = pd.DataFrame(candidate_rows, columns=columns)
+    fixed_best = (
+        candidates.sort_values("total_score", ascending=False)
+        .drop_duplicates("fixed_feature_index")
+        .set_index("fixed_feature_index")["moving_feature_index"]
+        .to_dict()
+    )
+    moving_best = (
+        candidates.sort_values("total_score", ascending=False)
+        .drop_duplicates("moving_feature_index")
+        .set_index("moving_feature_index")["fixed_feature_index"]
+        .to_dict()
+    )
+    is_mutual = []
+    accepted = []
+    reasons = []
+    for _, row in candidates.iterrows():
+        fixed_idx = int(row["fixed_feature_index"])
+        moving_idx = int(row["moving_feature_index"])
+        mutual = fixed_best.get(fixed_idx) == moving_idx and moving_best.get(moving_idx) == fixed_idx
+        is_mutual.append(bool(mutual))
+        strict_overlap = float(row["overlap_coefficient"]) >= float(cfg.min_overlap)
+        relaxed_close = (
+            float(row["centroid_distance_um"]) <= float(cfg.relaxed_centroid_radius_um)
+            and cfg.relaxed_area_ratio_min
+            <= float(row["area_ratio"])
+            <= cfg.relaxed_area_ratio_max
+        )
+        keep = (
+            mutual
+            and float(row["total_score"]) >= float(cfg.min_pair_score)
+            and float(row["centroid_distance_um"]) <= float(cfg.accepted_centroid_radius_um)
+            and (strict_overlap or relaxed_close)
+        )
+        accepted.append(bool(keep))
+        if keep:
+            reasons.append("mutual_high_score_local_overlap")
+        elif not mutual:
+            reasons.append("not_mutual_best")
+        elif float(row["total_score"]) < float(cfg.min_pair_score):
+            reasons.append("score_below_threshold")
+        elif float(row["centroid_distance_um"]) > float(cfg.accepted_centroid_radius_um):
+            reasons.append("centroid_distance_above_threshold")
+        else:
+            reasons.append("insufficient_overlap")
+    candidates["is_mutual_best"] = is_mutual
+    candidates["accepted"] = accepted
+    candidates["acceptance_reason"] = reasons
+    mutual_pairs = candidates.loc[candidates["is_mutual_best"].astype(bool)].copy()
+    accepted_pairs = candidates.loc[candidates["accepted"].astype(bool)].copy()
+    return (
+        candidates.sort_values("total_score", ascending=False).reset_index(drop=True),
+        mutual_pairs.sort_values("total_score", ascending=False).reset_index(drop=True),
+        accepted_pairs.sort_values("total_score", ascending=False).reset_index(drop=True),
+    )
+
+
+def _iterative_contour_record_table(
+    records: list[_FeatureRecord],
+    *,
+    min_area_um2: float,
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for index, record in enumerate(records):
+        area = float(record.geometry.area)
+        if area < float(min_area_um2):
+            continue
+        centroid = record.geometry.centroid
+        rows.append(
+            {
+                "feature_index": int(index),
+                "label": _original_label(record.feature),
+                "area": area,
+                "centroid_x": float(centroid.x),
+                "centroid_y": float(centroid.y),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _iterative_contour_landmarks(
+    fixed_records: list[_FeatureRecord],
+    moving_records: list[_FeatureRecord],
+    accepted_pairs: pd.DataFrame,
+    cfg: IterativeContourRefinementConfig,
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    if accepted_pairs.empty:
+        return _empty_anchor_only_landmarks()
+    for _, pair in accepted_pairs.iterrows():
+        fixed_index = int(pair["fixed_feature_index"])
+        moving_index = int(pair["moving_feature_index"])
+        fixed_record = fixed_records[fixed_index]
+        moving_record = moving_records[moving_index]
+        fixed_points = _sample_geometry_boundary_by_spacing(
+            fixed_record.geometry,
+            spacing_um=cfg.fixed_boundary_sample_spacing_um,
+            max_points=cfg.max_fixed_boundary_points_per_pair,
+        )
+        moving_points = _sample_geometry_boundary_by_spacing(
+            moving_record.geometry,
+            spacing_um=cfg.boundary_sample_spacing_um,
+            max_points=cfg.max_moving_boundary_points_per_pair,
+        )
+        if len(fixed_points) == 0 or len(moving_points) == 0:
+            continue
+        tree = cKDTree(fixed_points)
+        distances, indexes = tree.query(moving_points, k=1)
+        pair_rows: list[dict[str, Any]] = []
+        for src, distance, fixed_point_index in zip(moving_points, distances, indexes):
+            if not math.isfinite(float(distance)) or float(distance) > cfg.max_anchor_distance_um:
+                continue
+            dst = fixed_points[int(fixed_point_index)]
+            dx = float(dst[0] - src[0])
+            dy = float(dst[1] - src[1])
+            pair_rows.append(
+                {
+                    "kind": "matched_anchor",
+                    "landmark_kind": "matched_anchor",
+                    "used_for_tps": True,
+                    "used_for_transform": True,
+                    "accepted_for_tps": True,
+                    "source": "iterative_contour_refinement",
+                    "fixed_node_id": f"fixed:{fixed_index}",
+                    "moving_node_id": f"moving:{moving_index}",
+                    "fixed_feature_index": fixed_index,
+                    "moving_feature_index": moving_index,
+                    "fixed_status": "accepted_iterative_contour_pair",
+                    "moving_status": "accepted_iterative_contour_pair",
+                    "fixed_label": str(pair.get("fixed_label", "")),
+                    "moving_label": str(pair.get("moving_label", "")),
+                    "src_x": float(src[0]),
+                    "src_y": float(src[1]),
+                    "dst_x": float(dst[0]),
+                    "dst_y": float(dst[1]),
+                    "aligned_moving_centroid_x": float(src[0]),
+                    "aligned_moving_centroid_y": float(src[1]),
+                    "fixed_centroid_x": float(dst[0]),
+                    "fixed_centroid_y": float(dst[1]),
+                    "dx": dx,
+                    "dy": dy,
+                    "input_residual_um": float(distance),
+                    "source_distance_um": float(distance),
+                    "match_cost_um": float(distance),
+                    "total_score": float(pair.get("total_score", math.nan)),
+                    "pair_overlap_coefficient": float(
+                        pair.get("overlap_coefficient", math.nan)
+                    ),
+                    "pair_iou": float(pair.get("iou", math.nan)),
+                    "pair_centroid_distance_um": float(
+                        pair.get("centroid_distance_um", math.nan)
+                    ),
+                }
+            )
+        if len(pair_rows) > int(cfg.max_anchors_per_pair):
+            order = np.linspace(
+                0, len(pair_rows) - 1, int(cfg.max_anchors_per_pair), dtype=int
+            )
+            pair_rows = [pair_rows[int(i)] for i in order]
+        rows.extend(pair_rows)
+    if not rows:
+        return _empty_anchor_only_landmarks()
+    if len(rows) > int(cfg.max_total_anchors):
+        order = np.linspace(0, len(rows) - 1, int(cfg.max_total_anchors), dtype=int)
+        rows = [rows[int(i)] for i in order]
+    return pd.DataFrame(rows)
+
+
+def _sample_geometry_boundary_by_spacing(
+    geom: Any,
+    *,
+    spacing_um: float,
+    max_points: int,
+) -> np.ndarray:
+    points: list[tuple[float, float]] = []
+    for line in _iter_line_parts(geom.boundary):
+        length = float(line.length)
+        if length <= 0:
+            continue
+        distances = np.arange(0.0, length, float(spacing_um))
+        if len(distances) == 0:
+            distances = np.array([0.0])
+        for distance in distances:
+            point = line.interpolate(float(distance))
+            points.append((float(point.x), float(point.y)))
+    if len(points) > int(max_points):
+        order = np.linspace(0, len(points) - 1, int(max_points), dtype=int)
+        points = [points[int(i)] for i in order]
+    return np.asarray(points, dtype=float)
 
 
 def _anchor_only_tps_landmarks(

@@ -623,6 +623,24 @@ def main(argv: Sequence[str] | None = None) -> None:
     stack.add_argument("--anchor-only-jacobian-grid-size", type=int, default=50)
     stack.add_argument("--anchor-only-max-negative-jacobian-ratio", type=float, default=0.001)
     stack.add_argument(
+        "--no-iterative-contour-refinement",
+        action="store_true",
+        help=(
+            "Disable the default post-anchor contour refinement pass for label-free "
+            "anchor-only soft alignment."
+        ),
+    )
+    stack.add_argument("--iterative-contour-refinement-rounds", type=int, default=1)
+    stack.add_argument("--iterative-contour-min-pair-count", type=int, default=3)
+    stack.add_argument("--iterative-contour-min-anchor-count", type=int, default=30)
+    stack.add_argument("--iterative-contour-min-pair-score", type=float, default=0.52)
+    stack.add_argument("--iterative-contour-min-overlap", type=float, default=0.12)
+    stack.add_argument("--iterative-contour-centroid-search-radius-um", type=float, default=350.0)
+    stack.add_argument("--iterative-contour-accepted-centroid-radius-um", type=float, default=260.0)
+    stack.add_argument("--iterative-contour-max-anchor-distance-um", type=float, default=180.0)
+    stack.add_argument("--iterative-contour-residual-limit-um", type=float, default=220.0)
+    stack.add_argument("--iterative-contour-max-negative-jacobian-ratio", type=float, default=0.002)
+    stack.add_argument(
         "--save-slice-preview",
         action="store_true",
         help="Write the per-slice 2D contour preview PNGs.",
@@ -1637,6 +1655,29 @@ def main(argv: Sequence[str] | None = None) -> None:
                 anchor_only_jacobian_grid_size=args.anchor_only_jacobian_grid_size,
                 anchor_only_max_negative_jacobian_ratio=(
                     args.anchor_only_max_negative_jacobian_ratio
+                ),
+                iterative_contour_refinement=(
+                    not args.no_iterative_contour_refinement
+                ),
+                iterative_contour_refinement_rounds=(
+                    args.iterative_contour_refinement_rounds
+                ),
+                iterative_contour_min_pair_count=args.iterative_contour_min_pair_count,
+                iterative_contour_min_anchor_count=args.iterative_contour_min_anchor_count,
+                iterative_contour_min_pair_score=args.iterative_contour_min_pair_score,
+                iterative_contour_min_overlap=args.iterative_contour_min_overlap,
+                iterative_contour_centroid_search_radius_um=(
+                    args.iterative_contour_centroid_search_radius_um
+                ),
+                iterative_contour_accepted_centroid_radius_um=(
+                    args.iterative_contour_accepted_centroid_radius_um
+                ),
+                iterative_contour_max_anchor_distance_um=(
+                    args.iterative_contour_max_anchor_distance_um
+                ),
+                iterative_contour_residual_limit_um=args.iterative_contour_residual_limit_um,
+                iterative_contour_max_negative_jacobian_ratio=(
+                    args.iterative_contour_max_negative_jacobian_ratio
                 ),
                 sampling_distance_um=args.sampling_distance_um,
                 max_landmark_distance_um=args.max_landmark_distance_um,

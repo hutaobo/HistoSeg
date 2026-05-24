@@ -40,10 +40,13 @@ from .multislice import (
 from .label_free_alignment import (
     AnchorOnlyResidualTPSConfig,
     AnchorOnlyResidualTPSResult,
+    IterativeContourRefinementConfig,
+    IterativeContourRefinementResult,
     LabelFreeContourAlignmentConfig,
     LabelFreeContourAlignmentResult,
     align_contours_label_free,
     run_anchor_only_residual_tps,
+    run_iterative_contour_refinement,
 )
 from .label_free_figure import (
     LabelFreeBeforeAfterFigureConfig,
@@ -171,6 +174,8 @@ __all__ = [
     "GlandSurfaceAtlasResult",
     "AnchorOnlyResidualTPSConfig",
     "AnchorOnlyResidualTPSResult",
+    "IterativeContourRefinementConfig",
+    "IterativeContourRefinementResult",
     "LabelFreeContourAlignmentConfig",
     "LabelFreeContourAlignmentResult",
     "LabelFreeBeforeAfterFigureConfig",
@@ -220,6 +225,7 @@ __all__ = [
     "render_gland_surface_atlas",
     "run_3d_contour_reconstruction",
     "run_anchor_only_residual_tps",
+    "run_iterative_contour_refinement",
     "run_cell_cloud_projection",
     "run_gland_biology_mining",
     "run_gland_instance_detection",

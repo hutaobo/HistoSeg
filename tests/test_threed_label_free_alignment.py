@@ -11,9 +11,11 @@ from shapely.ops import unary_union
 
 from histoseg.threed import (
     AnchorOnlyResidualTPSConfig,
+    IterativeContourRefinementConfig,
     LabelFreeContourAlignmentConfig,
     align_contours_label_free,
     run_anchor_only_residual_tps,
+    run_iterative_contour_refinement,
 )
 from histoseg.threed.cli import main
 from histoseg.threed.label_free_alignment import _topology_similarity
@@ -258,6 +260,44 @@ def test_anchor_only_identity_padding_limits_far_passive_geometry_drift(tmp_path
     warped_passive = shape(payload["features"][1]["geometry"])
 
     assert abs(warped_passive.centroid.x - passive.centroid.x) < 6.0
+
+
+def test_iterative_contour_refinement_uses_post_alignment_contour_pairs(tmp_path):
+    fixed = tmp_path / "fixed.geojson"
+    moving = tmp_path / "moving.geojson"
+    fixed_geoms = _constellation_geometries()[:4]
+    moving_geoms = [affinity.translate(geom, xoff=10, yoff=-6) for geom in fixed_geoms]
+    _write_geojson(fixed, fixed_geoms, ["A", "B", "C", "D"])
+    _write_geojson(moving, moving_geoms, ["W", "X", "Y", "Z"])
+
+    result = run_iterative_contour_refinement(
+        IterativeContourRefinementConfig(
+            fixed_geojson=fixed,
+            moving_aligned_geojson=moving,
+            out_dir=tmp_path / "iterative",
+            min_component_area_um2=200.0,
+            min_pair_count=2,
+            min_anchor_count=8,
+            max_total_anchors=120,
+            residual_limit_um=80.0,
+            identity_padding_count=8,
+            jacobian_grid_size=20,
+            save_preview_png=False,
+            overwrite=True,
+        )
+    )
+    summary = json.loads(result.summary_json.read_text(encoding="utf-8"))
+    payload = json.loads(result.refined_geojson.read_text(encoding="utf-8"))
+    refined = unary_union([shape(feature["geometry"]) for feature in payload["features"]])
+
+    assert summary["accepted"] is True
+    assert summary["pairs"]["accepted_pair_count"] >= 2
+    assert summary["landmarks"]["anchor_landmark_count"] >= 8
+    assert _iou(unary_union(fixed_geoms), refined) > _iou(
+        unary_union(fixed_geoms), unary_union(moving_geoms)
+    )
+    assert result.accepted_pairs_csv.exists()
+    assert result.landmarks_csv.exists()
 
 
 def test_label_free_alignment_warns_when_internal_contours_are_not_homologous(tmp_path):
