@@ -15,7 +15,7 @@ below are tied to current manuscript artifacts.
 ## Figure 1 | HistoSeg reconstructs multi-slice Xenium tissue architecture as an auditable 3D analysis object
 
 **A,** Ordered multi-slice Xenium inputs are converted into per-slice
-multi-structure 2D semantic contour annotations. sfplot Search-and-Find /
+multi-structure 2D semantic contour annotations. Cell-GPS Search-and-Find /
 cophenetic StructureMap relationships can be used to define or audit structure
 groups, and HistoSeg converts the selected groups into continuous isoline or
 partition contours. Contours are stored as explicit GeoJSON-derived records,

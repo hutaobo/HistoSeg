@@ -22,7 +22,7 @@ transcriptomics tissue architecture
 Spatial transcriptomics is typically analyzed as a set of two-dimensional
 fields, even when tissue architecture is inherently three-dimensional.
 HistoSeg reconstructs ordered multi-slice Xenium data into auditable 3D tissue
-objects by combining sfplot-guided semantic contour definition,
+objects by combining Cell-GPS-guided semantic contour definition,
 topology-aware contour alignment, deterministic cell-cloud projection and
 physically sampled signed-distance fields (SDFs). StructureMap relationships
 support the selection of biologically meaningful structure groups; HistoSeg then
@@ -63,7 +63,7 @@ physical units that remain interpretable under anisotropic sampling.
 
 HistoSeg addresses this problem by treating 3D reconstruction as a set of
 explicit contracts, beginning with semantic contour definition. The upstream
-sfplot layer computes Search-and-Find relationships and cophenetic StructureMap
+Cell-GPS layer computes Search-and-Find relationships and cophenetic StructureMap
 summaries that help define or audit biologically meaningful structure groups.
 HistoSeg then consumes selected or curated groups and converts them into
 continuous isoline or multi-structure partition contours. These contours are
@@ -105,7 +105,7 @@ section-level visualization toward volumetric tissue architecture.
 HistoSeg was designed to convert ordered multi-slice Xenium outputs into a
 single 3D analytical object whose geometry, cell coordinates, and downstream
 gene-structure measurements remain traceable to explicit intermediate files
-(Fig. 1). The workflow begins with a semantic structure layer. sfplot
+(Fig. 1). The workflow begins with a semantic structure layer. Cell-GPS
 Search-and-Find / cophenetic StructureMap relationships can be used to identify
 or audit groups of spatial labels that behave as coherent tissue structures.
 HistoSeg consumes those selected or curated groups, converts them into

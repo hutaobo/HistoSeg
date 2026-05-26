@@ -12,12 +12,12 @@ is intentionally limited to algorithms present in the codebase.
 
 HistoSeg treats 3D reconstruction as a downstream operation on named semantic
 contours rather than on arbitrary polygons. The upstream semantic layer can be
-defined or audited with sfplot Search-and-Find and cophenetic StructureMap
+defined or audited with Cell-GPS Search-and-Find and cophenetic StructureMap
 analysis. In that layer, spatial cell labels are compared through directed
 Searcher-Findee relationships and cophenetic distance summaries, allowing a user
 to identify groups of clusters that behave as interpretable tissue structures.
 These relationships are used to select or curate structure groups; in the
-current implementation, sfplot StructureMap analysis is an upstream
+current implementation, Cell-GPS StructureMap analysis is an upstream
 relationship-mapping step rather than an implicit step inside each HistoSeg
 contour-generation call.
 
@@ -61,7 +61,7 @@ does not harmonize biological labels.
 This produces the end-to-end semantic geometry chain used by HistoSeg:
 
 $$
-\text{sfplot StructureMap relationships}
+\text{Cell-GPS StructureMap relationships}
 \rightarrow
 \text{curated structure groups}
 \rightarrow

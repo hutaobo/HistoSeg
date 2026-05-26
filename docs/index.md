@@ -21,7 +21,7 @@ history
   <p class="hs-tagline">StructureMap-guided semantic contours and 3D Xenium tissue reconstruction.</p>
   <p class="hs-lead">
     HistoSeg is a Python toolkit centered on same-sample, multi-slice Xenium
-    contour reconstruction. It turns sfplot Search-and-Find/StructureMap-guided
+    contour reconstruction. It turns Cell-GPS Search-and-Find/StructureMap-guided
     or curated structure groups into continuous semantic contours, then aligns
     neighboring contour slices, builds 3D contour stacks, exports PLY/OBJ
     meshes, and writes QC artifacts. <code>histoseg.contour</code> and

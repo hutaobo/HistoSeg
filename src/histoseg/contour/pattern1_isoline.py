@@ -482,7 +482,7 @@ def compute_segmentation_confidence_score_from_merged(
 
     Notes:
       - This function is intentionally *separate* from isoline generation so you can call it independently.
-      - It uses sfplot Search-and-Find utilities.
+      - It uses Cell-GPS Search-and-Find utilities.
 
     Returns:
       SegmentationConfidenceResult(score_mean, stats, blue_band_matrix?)
@@ -492,9 +492,13 @@ def compute_segmentation_confidence_score_from_merged(
     if missing:
         raise ValueError(f"merged_df missing required columns: {sorted(missing)}")
 
-    from sfplot import (
-        compute_searcher_findee_distance_matrix_from_df,
-        compute_cophenetic_from_distance_matrix,
+    from histoseg._cellgps import require_cellgps_attrs
+
+    cellgps = require_cellgps_attrs(
+        (
+            "compute_searcher_findee_distance_matrix_from_df",
+            "compute_cophenetic_from_distance_matrix",
+        )
     )
 
     df = merged_df.copy()
@@ -504,7 +508,7 @@ def compute_segmentation_confidence_score_from_merged(
     if df[celltype_col].nunique() < 2:
         raise ValueError("Need at least 2 clusters to compute cophenetic score.")
 
-    distance_matrix = compute_searcher_findee_distance_matrix_from_df(
+    distance_matrix = cellgps.compute_searcher_findee_distance_matrix_from_df(
         df,
         x_col=x_col,
         y_col=y_col,
@@ -515,7 +519,7 @@ def compute_segmentation_confidence_score_from_merged(
     if getattr(distance_matrix, "shape", (0, 0))[0] < 2:
         raise ValueError("distance_matrix too small; check cluster sizes.")
 
-    row_coph, col_coph = compute_cophenetic_from_distance_matrix(
+    row_coph, col_coph = cellgps.compute_cophenetic_from_distance_matrix(
         distance_matrix,
         method=linkage_method,
         show_corr=show_corr,

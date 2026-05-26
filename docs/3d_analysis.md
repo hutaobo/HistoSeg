@@ -7,7 +7,7 @@ meshes, and inspect QC artifacts before downstream analysis. The Python
 namespace is `histoseg.threed` because module names cannot begin with a digit.
 
 The 3D workflow starts from named semantic contours. In a typical HistoSeg run,
-sfplot Search-and-Find / StructureMap relationships or manual biological
+Cell-GPS Search-and-Find / StructureMap relationships or manual biological
 curation define candidate structure groups. HistoSeg then converts those groups
 into continuous 2D isoline or multi-structure partition contours, and the 3D
 stack reconstruction aligns these named contours across slices. The aligned

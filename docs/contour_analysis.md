@@ -9,7 +9,7 @@ Contour Analysis is the spatial or cell-coordinate workflow group exposed as
 `histoseg.contour`. Use it when the primary input is a table of cells with
 spatial coordinates and cluster assignments, and the goal is to generate
 review-ready semantic spatial structures rather than image-first segmentation
-masks. Structure groups can be curated directly or selected after sfplot
+masks. Structure groups can be curated directly or selected after Cell-GPS
 Search-and-Find / cophenetic StructureMap analysis.
 :::
 
@@ -34,7 +34,7 @@ Choose this workflow group when you want to:
 ## Semantic Contour Chain
 
 HistoSeg's contour workflow is designed to bridge relationship-level structure
-analysis and geometry-level reconstruction. sfplot can be used upstream to
+analysis and geometry-level reconstruction. Cell-GPS can be used upstream to
 compute Search-and-Find relationships and cophenetic StructureMap summaries
 between spatial labels. Those results help define or audit structure groups,
 while HistoSeg produces the final continuous contour geometry. HistoSeg consumes
@@ -43,7 +43,7 @@ boundaries from the observed cells or transcripts.
 
 The implemented chain is:
 
-1. Use sfplot Search-and-Find / StructureMap analysis, or expert curation, to
+1. Use Cell-GPS Search-and-Find / StructureMap analysis, or expert curation, to
    identify a structure group as a set of cluster labels.
 2. Use HistoSeg Pattern1, gene-isoline, or multi-structure workflows to turn
    that group into a continuous isoline or partition contour.

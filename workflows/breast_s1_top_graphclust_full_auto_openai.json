@@ -1,8 +1,8 @@
 {
   "case_name": "breast_s1_top_graphclust_full_auto",
   "study_context": "Human breast cancer Xenium biomarkers case. Run breast-specific OpenAI-driven cluster annotation from graph-based differential expression evidence, then propagate the generated labels through structure discovery, H&E overlay, and AI spatial pathology review. Treat this as pathology decision support, not an autonomous diagnosis.",
-  "base_pipeline_config": "..\\..\\sfplot\\segmentation_methods\\projects\\breast_s1_top_graphclust\\configs\\breast_s1_top_graphclust.json",
-  "output_root": "..\\..\\sfplot\\segmentation_methods\\projects\\breast_s1_top_graphclust\\outputs\\full_auto_openai",
+  "base_pipeline_config": "..\\..\\cellgps\\segmentation_methods\\projects\\breast_s1_top_graphclust\\configs\\breast_s1_top_graphclust.json",
+  "output_root": "..\\..\\cellgps\\segmentation_methods\\projects\\breast_s1_top_graphclust\\outputs\\full_auto_openai",
   "annotation_taxonomy": "breast",
   "differential_expression_csv": "Y:\\long\\10X_datasets\\Xenium\\Xenium_Breast_Cancer\\Human_Breast_Biomarkers_S1_Top_outs\\analysis\\diffexp\\gene_expression_graphclust\\differential_expression.csv",
   "projection_csv": "Y:\\long\\10X_datasets\\Xenium\\Xenium_Breast_Cancer\\Human_Breast_Biomarkers_S1_Top_outs\\analysis\\umap\\gene_expression_2_components\\projection.csv",

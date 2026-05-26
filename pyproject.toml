@@ -22,7 +22,7 @@ dependencies = [
     "matplotlib",
     "networkx",
     "openai>=1.0.0",
-    "cell-gps @ git+https://github.com/hutaobo/sfplot.git@master",
+    "Cell-GPS @ git+https://github.com/hutaobo/cellgps.git@main",
 ]
 
 [project.optional-dependencies]
@@ -60,7 +60,7 @@ serve = [
     "gradio>=5.24,<6.0",
 ]
 xenium-gui = [
-    "cell-gps[xenium,gui] @ git+https://github.com/hutaobo/sfplot.git@master",
+    "Cell-GPS[xenium,gui] @ git+https://github.com/hutaobo/cellgps.git@main",
 ]
 
 [project.scripts]

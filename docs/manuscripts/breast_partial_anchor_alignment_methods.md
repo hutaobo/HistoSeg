@@ -34,7 +34,7 @@ breast Rep2 layout where the user-facing folder contains
 2. **Automatically discover spatial structures.** GraphClust labels are treated
    as the initial fine labels. HistoSeg computes a cluster-to-cluster spatial
    distance matrix using the Search-and-Find relationship implemented through
-   `sfplot`. The matrix is converted to a cophenetic relationship matrix and
+   `Cell-GPS`. The matrix is converted to a cophenetic relationship matrix and
    hierarchically cut into a small number of coarse structures. When
    `cluster_count=auto`, HistoSeg evaluates several candidate cuts and selects
    the structure count that balances separation, within-structure compactness,

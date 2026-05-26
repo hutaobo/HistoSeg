@@ -1,7 +1,7 @@
-# src/sfplot/gui/__init__.py
+# src/histoseg/gui/__init__.py
 
 """
-sfplot.gui 子包，提供图形界面入口。
+HistoSeg GUI entry points.
 """
 
 from .gui_app import main

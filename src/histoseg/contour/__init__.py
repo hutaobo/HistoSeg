@@ -1,11 +1,21 @@
 """Contour Analysis public API."""
 
-from sfplot import (
-    compute_cophenetic_distances_from_df,
-    compute_cophenetic_from_distance_matrix,
-    compute_searcher_findee_distance_matrix_from_df,
-    plot_cophenetic_heatmap,
+from histoseg._cellgps import require_cellgps_attrs
+
+_cellgps = require_cellgps_attrs(
+    (
+        "compute_cophenetic_distances_from_df",
+        "compute_cophenetic_from_distance_matrix",
+        "compute_searcher_findee_distance_matrix_from_df",
+        "plot_cophenetic_heatmap",
+    )
 )
+compute_cophenetic_distances_from_df = _cellgps.compute_cophenetic_distances_from_df
+compute_cophenetic_from_distance_matrix = _cellgps.compute_cophenetic_from_distance_matrix
+compute_searcher_findee_distance_matrix_from_df = (
+    _cellgps.compute_searcher_findee_distance_matrix_from_df
+)
+plot_cophenetic_heatmap = _cellgps.plot_cophenetic_heatmap
 
 from .auto_structure import (
     AutoStructureDiscoveryConfig,

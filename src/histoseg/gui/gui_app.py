@@ -3,7 +3,6 @@ import queue
 import sys
 import threading
 import traceback
-from importlib import import_module
 from pathlib import Path
 from typing import Any, Callable
 import tkinter as tk
@@ -11,6 +10,8 @@ from tkinter import END, filedialog, messagebox, ttk
 
 import pandas as pd
 from PIL import Image, ImageTk
+
+from histoseg._cellgps import CELLGPS_INSTALL_HINT, require_cellgps_attrs
 
 SearcherApi = tuple[
     Callable[[pd.DataFrame], tuple[pd.DataFrame, pd.DataFrame]],
@@ -76,7 +77,13 @@ class MainApp(tk.Tk):
 
     def _get_searcher_api(self) -> SearcherApi:
         if self._searcher_api is None:
-            module = import_module("sfplot")
+            module = require_cellgps_attrs(
+                (
+                    "compute_cophenetic_distances_from_df",
+                    "compute_cophenetic_distances_from_adata",
+                    "plot_cophenetic_heatmap",
+                )
+            )
             self._searcher_api = (
                 module.compute_cophenetic_distances_from_df,
                 module.compute_cophenetic_distances_from_adata,
@@ -86,7 +93,7 @@ class MainApp(tk.Tk):
 
     def _get_xenium_loader(self) -> Callable[[str, bool], Any]:
         if self._xenium_loader is None:
-            module = import_module("sfplot")
+            module = require_cellgps_attrs(("load_xenium_data",))
             self._xenium_loader = module.load_xenium_data
         return self._xenium_loader
 
@@ -94,9 +101,10 @@ class MainApp(tk.Tk):
     def _format_xenium_dependency_error() -> str:
         return (
             traceback.format_exc()
-            + "\n\nThe Xenium GUI tab requires sfplot with Xenium dependencies. "
-            + "Install HistoSeg with the xenium-gui extra, or install sfplot[xenium,gui] "
-            + "from https://github.com/hutaobo/sfplot."
+            + "\n\nThe Xenium GUI tab requires Cell-GPS with Xenium dependencies. "
+            + "Install HistoSeg with the xenium-gui extra, or install Cell-GPS[xenium,gui] "
+            + "from https://github.com/hutaobo/cellgps. "
+            + CELLGPS_INSTALL_HINT
         )
 
     def _build_csv_tab(self) -> None:

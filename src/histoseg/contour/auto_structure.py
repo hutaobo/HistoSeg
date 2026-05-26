@@ -13,6 +13,8 @@ from scipy.spatial.distance import pdist, squareform
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics import silhouette_score
 
+from histoseg._cellgps import require_cellgps_attrs
+
 from .pattern1_isoline import _normalize_cluster_label, align_clusters_with_cells
 
 PathLike = Union[str, Path]
@@ -238,9 +240,8 @@ def _resolve_inputs(cfg: AutoStructureDiscoveryConfig) -> tuple[Path, Path, Path
 
 def _compute_spatial_distance_matrix(merged: pd.DataFrame, *, x_col: str, y_col: str, symmetrize: bool = True) -> pd.DataFrame:
     try:
-        from sfplot import compute_searcher_findee_distance_matrix_from_df
-
-        raw = compute_searcher_findee_distance_matrix_from_df(
+        cellgps = require_cellgps_attrs(("compute_searcher_findee_distance_matrix_from_df",))
+        raw = cellgps.compute_searcher_findee_distance_matrix_from_df(
             merged[[x_col, y_col, "cluster"]].copy(),
             x_col=x_col,
             y_col=y_col,
@@ -281,9 +282,8 @@ def _symmetrize_distance_matrix(matrix: pd.DataFrame) -> pd.DataFrame:
 
 def _compute_cophenetic_matrix(distance_matrix: pd.DataFrame, *, method: str) -> pd.DataFrame | None:
     try:
-        from sfplot import compute_cophenetic_from_distance_matrix
-
-        row_coph, _col_coph = compute_cophenetic_from_distance_matrix(
+        cellgps = require_cellgps_attrs(("compute_cophenetic_from_distance_matrix",))
+        row_coph, _col_coph = cellgps.compute_cophenetic_from_distance_matrix(
             distance_matrix,
             method=method,
             show_corr=False,
