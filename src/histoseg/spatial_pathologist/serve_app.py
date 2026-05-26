@@ -2335,17 +2335,30 @@ CUSTOM_CSS = """
   --shadow-strong: 0 24px 70px rgba(0, 0, 0, 0.38);
 }
 
+html,
 body {
+  min-height: 100%;
   background:
     radial-gradient(circle at top left, rgba(110, 240, 212, 0.10), transparent 28%),
     radial-gradient(circle at top right, rgba(122, 184, 255, 0.12), transparent 32%),
     linear-gradient(180deg, #050d16 0%, #08111d 100%) !important;
 }
 
+body,
+gradio-app {
+  color: var(--text-main) !important;
+}
+
 .gradio-container {
+  width: min(100%, 1480px) !important;
   max-width: 1480px !important;
+  min-height: 100vh !important;
+  margin: 0 auto !important;
   color: var(--text-main);
-  background: transparent !important;
+  background:
+    radial-gradient(circle at top left, rgba(110, 240, 212, 0.10), transparent 28%),
+    radial-gradient(circle at top right, rgba(122, 184, 255, 0.12), transparent 32%),
+    linear-gradient(180deg, #050d16 0%, #08111d 100%) !important;
   font-family: "Aptos", "Bahnschrift", "Segoe UI Variable", "Segoe UI", sans-serif;
 }
 
@@ -2387,6 +2400,17 @@ body {
   color: #f9fcff !important;
 }
 
+.gradio-container code {
+  background: rgba(122, 184, 255, 0.12) !important;
+  border: 1px solid rgba(122, 184, 255, 0.14) !important;
+  border-radius: 5px !important;
+  color: #eaf3ff !important;
+  overflow-wrap: anywhere !important;
+  padding: 1px 5px !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+}
+
 .gradio-container input,
 .gradio-container textarea,
 .gradio-container select {
@@ -2405,19 +2429,67 @@ body {
   box-shadow: 0 0 0 1px rgba(110, 240, 212, 0.45);
 }
 
-.gradio-container table {
+.gradio-container .label-wrap,
+.gradio-container .label-wrap > span,
+.gradio-container [data-testid="block-label"],
+.gradio-container .block-label {
+  background: #0f1b29 !important;
+  border: 1px solid #29435d !important;
+  border-radius: 8px !important;
+  color: #eaf3ff !important;
+}
+
+.gradio-container .label-wrap svg,
+.gradio-container [data-testid="block-label"] svg,
+.gradio-container .block-label svg {
+  color: #90a6bf !important;
+  fill: none !important;
+  stroke: currentColor !important;
+}
+
+.gradio-container .file-preview,
+.gradio-container .file-preview * ,
+.gradio-container .upload-container,
+.gradio-container .upload-container * ,
+.gradio-container [data-testid="file"],
+.gradio-container [data-testid="file"] * {
+  color: #b7c7d8 !important;
+}
+
+.gradio-container .file-preview,
+.gradio-container .upload-container,
+.gradio-container [data-testid="file"] {
+  background: #101b2b !important;
+  border-color: #29435d !important;
+}
+
+.gradio-container .image-container,
+.gradio-container .empty,
+.gradio-container .empty * {
+  background: #101b2b !important;
+  color: #9db1c9 !important;
+}
+
+.gradio-container table,
+.gradio-container .table-wrap,
+.gradio-container .dataframe,
+.gradio-container [role="grid"] {
   background: #0c1726 !important;
   color: var(--text-main) !important;
 }
 
-.gradio-container th {
+.gradio-container th,
+.gradio-container [role="columnheader"] {
   background: #101d2d !important;
   color: var(--text-main) !important;
+  border-color: #284059 !important;
 }
 
-.gradio-container td {
+.gradio-container td,
+.gradio-container [role="gridcell"] {
   background: #0c1726 !important;
   color: #e6eef8 !important;
+  border-color: #22384d !important;
 }
 
 .gradio-container .gr-button {
@@ -2507,6 +2579,7 @@ body {
   background: var(--panel-bg-strong);
   border: 1px solid var(--panel-border);
   border-radius: 22px;
+  overflow: hidden;
   padding: 18px;
   min-height: 172px;
 }
@@ -2554,6 +2627,7 @@ body {
   color: #d9e7f6;
   line-height: 1.62;
   margin-bottom: 14px;
+  overflow: hidden;
 }
 
 #left-rail,
@@ -2598,9 +2672,26 @@ body {
 """
 
 
+GLOBAL_HEAD = """
+<style>
+  html,
+  body,
+  gradio-app {
+    min-height: 100%;
+    background:
+      radial-gradient(circle at top left, rgba(110, 240, 212, 0.10), transparent 28%),
+      radial-gradient(circle at top right, rgba(122, 184, 255, 0.12), transparent 32%),
+      linear-gradient(180deg, #050d16 0%, #08111d 100%) !important;
+  }
+</style>
+"""
+
+
 with gr.Blocks(
     title=APP_NAME,
     css=CUSTOM_CSS,
+    head=GLOBAL_HEAD,
+    fill_width=True,
     theme=gr.themes.Base(primary_hue="cyan", secondary_hue="blue", neutral_hue="slate"),
 ) as demo:
     ensure_workdirs()
