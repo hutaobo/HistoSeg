@@ -33,6 +33,7 @@ history
     <a href="usage.html">Quickstart</a>
     <a href="installation.html">Installation</a>
     <a href="contour_analysis.html">Contour guide</a>
+    <a href="ai_driven_spatial_pathologist_serve_app.html">Serve app</a>
     <a href="he_analysis.html">H&amp;E guide</a>
     <a href="https://github.com/hutaobo/HistoSeg">GitHub</a>
     <a href="https://pypi.org/project/histoseg/">PyPI</a>
@@ -141,6 +142,14 @@ landmarks are found without manual annotation.
 
 Extract Pattern1 isolines, build StructureMap-guided named structure partitions,
 and export Xenium-ready review layers.
+:::
+
+:::{grid-item-card} AI Driven Spatial Pathologist Serve App
+:link: ai_driven_spatial_pathologist_serve_app
+:link-type: doc
+
+Run the Gradio web workflow for dendrogram-guided multi-structure contour
+selection from Xenium cell-coordinate and cluster tables.
 :::
 
 :::{grid-item-card} H&E Analysis

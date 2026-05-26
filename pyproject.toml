@@ -56,6 +56,9 @@ docs = [
     "myst-parser",
     "sphinx-rtd-theme",
 ]
+serve = [
+    "gradio>=5.24,<6.0",
+]
 xenium-gui = [
     "cell-gps[xenium,gui] @ git+https://github.com/hutaobo/sfplot.git@master",
 ]
@@ -64,6 +67,7 @@ xenium-gui = [
 histoseg-gui = "histoseg.gui.gui_app:main"
 histoseg-ai-pathologist = "histoseg.spatial_pathologist.cli:main"
 histoseg-ai-pathologist-full-auto = "histoseg.spatial_pathologist.full_auto_cli:main"
+histoseg-ai-driven-spatial-pathologist-serve = "histoseg.spatial_pathologist.serve_app:main"
 histoseg-he = "histoseg.he.cli:main"
 histoseg-contour = "histoseg.contour.cli:main"
 histoseg-3d = "histoseg.threed.cli:main"

@@ -36,3 +36,21 @@ ENV PYVISTA_OFF_SCREEN=true
 
 ENTRYPOINT ["histoseg-3d"]
 CMD ["--help"]
+
+FROM base AS serve
+
+ENV PORT=7860 \
+    HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/.cache \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    MPLBACKEND=Agg \
+    APP_DATA_DIR=/home/username/app/project-vol \
+    GRADIO_TEMP_DIR=/tmp/gradio
+
+RUN python -m pip install -U pip \
+    && python -m pip install -e ".[serve]" \
+    && mkdir -p /home/username/app/project-vol /tmp/.cache /tmp/matplotlib /tmp/gradio
+
+EXPOSE 7860
+
+ENTRYPOINT ["histoseg-ai-driven-spatial-pathologist-serve"]

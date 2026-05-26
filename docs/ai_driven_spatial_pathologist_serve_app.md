@@ -18,6 +18,29 @@ artifacts.
 <span>Outputs: preview PNGs, contour arrays, partition tables, and Xenium Explorer exports</span>
 :::
 
+## Source Code And Deployment
+
+The Serve app is part of this repository. The Gradio source lives at
+`src/histoseg/spatial_pathologist/serve_app.py`, and the package exposes it as
+the `histoseg-ai-driven-spatial-pathologist-serve` command.
+
+For local development:
+
+```bash
+pip install -e ".[serve]"
+histoseg-ai-driven-spatial-pathologist-serve
+```
+
+For container deployment:
+
+```bash
+docker build --target serve -t histoseg-ai-driven-spatial-pathologist-serve .
+docker run --rm -p 7860:7860 histoseg-ai-driven-spatial-pathologist-serve
+```
+
+The GitHub Actions workflow `.github/workflows/docker-image-ghcr.yml` builds
+and publishes the Serve image from HistoSeg's `serve` Docker target.
+
 ## What The App Does
 
 The Serve app wraps the multi-structure contour workflow in an interactive

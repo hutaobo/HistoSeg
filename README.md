@@ -6,6 +6,7 @@
   <a href="https://pypi.org/project/histoseg/"><img alt="PyPI" src="https://img.shields.io/pypi/v/histoseg.svg"></a>
   <a href="https://histoseg.readthedocs.io/en/latest/"><img alt="Docs" src="https://readthedocs.org/projects/histoseg/badge/?version=latest"></a>
   <a href="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml"><img alt="Publish to PyPI" src="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/hutaobo/HistoSeg/actions/workflows/docker-image-ghcr.yml"><img alt="Serve Docker image" src="https://github.com/hutaobo/HistoSeg/actions/workflows/docker-image-ghcr.yml/badge.svg?branch=main"></a>
   <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/License-PolyForm--Noncommercial%201.0.0-blue.svg"></a>
 </p>
 
@@ -28,6 +29,7 @@ analysis groups:
 - **3D Reconstruction** (`histoseg.threed`) for same-sample, multi-slice Xenium contour alignment, 3D contour stacks, mesh export, and QC visualization.
 - **2D Contour Analysis** (`histoseg.contour`) for StructureMap-guided semantic contour extraction from spatial/cell-coordinate data, including Pattern1 isolines and multi-structure Xenium exports.
 - **H&E Analysis** (`histoseg.he`) for image-based H&E tissue segmentation, neutral tissue partitioning, and aligned-image change detection.
+- **AI Driven Spatial Pathologist Serve app** (`histoseg.spatial_pathologist.serve_app`) for the browser-based SciLifeLab Serve workflow around dendrogram-guided multi-structure contour selection.
 
 Full documentation: [histoseg.readthedocs.io](https://histoseg.readthedocs.io)
 
@@ -57,6 +59,13 @@ For reproducible static 3D figure rendering and local documentation builds:
 pip install -U "histoseg[threed,viz,docs]"
 ```
 
+For the browser-based AI Driven Spatial Pathologist Serve app:
+
+```bash
+pip install -U "histoseg[serve]"
+histoseg-ai-driven-spatial-pathologist-serve
+```
+
 For development:
 
 ```bash
@@ -74,10 +83,12 @@ conda env create -f environment-viz.yml
 
 docker build --target core -t histoseg:core .
 docker build --target viz -t histoseg:viz .
+docker build --target serve -t histoseg-ai-driven-spatial-pathologist-serve .
 ```
 
 The `core` Docker target is for CPU/headless 3D analysis. The `viz` target adds
-Mesa/Xvfb and PyVista for static documentation or paper figure rendering.
+Mesa/Xvfb and PyVista for static documentation or paper figure rendering. The
+`serve` target runs the Gradio web app used by the SciLifeLab Serve deployment.
 
 For local Hugging Face MedSAM-backed HE segmentation only:
 

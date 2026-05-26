@@ -39,6 +39,17 @@ the Polyp 24-gene hero images:
 
     pip install -U "histoseg[threed,viz,docs]"
 
+Serve App Extra
+---------------
+
+The AI Driven Spatial Pathologist web app is included in this repository and
+uses Gradio:
+
+.. code-block:: console
+
+    pip install -U "histoseg[serve]"
+    histoseg-ai-driven-spatial-pathologist-serve
+
 Optional H&E Extra
 ------------------
 
@@ -85,18 +96,20 @@ reproducing static tutorial figures.
 Docker Targets
 --------------
 
-The Dockerfile exposes separate production and visualization targets:
+The Dockerfile exposes production, visualization, and Serve app targets:
 
 .. code-block:: console
 
     docker build --target core -t histoseg:core .
     docker build --target viz -t histoseg:viz .
+    docker build --target serve -t histoseg-ai-driven-spatial-pathologist-serve .
 
 ``core`` installs ``histoseg[threed]`` for headless 3D analysis. ``viz`` adds
 Mesa/Xvfb system libraries and ``histoseg[viz,docs]`` so PyVista can render
-static figures without a desktop display. The Docker context ignores local
-large data products such as ``data/``, ``output/``, ``tmp/``, ``*.h5ad``, and
-``*.parquet``.
+static figures without a desktop display. ``serve`` installs
+``histoseg[serve]`` and starts the Gradio app on port ``7860``. The Docker
+context ignores local large data products such as ``data/``, ``output/``,
+``tmp/``, ``*.h5ad``, and ``*.parquet``.
 
 Feature Groups
 --------------
@@ -112,3 +125,7 @@ Feature Groups
 ``histoseg.he``
     H&E image workflows for tissue foreground extraction, neutral component
     partitioning, and aligned-image change detection.
+
+``histoseg.spatial_pathologist.serve_app``
+    Browser-based dendrogram-guided multi-structure contour selection and
+    Xenium Explorer export workflow.

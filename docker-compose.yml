@@ -22,3 +22,19 @@ services:
       PYVISTA_OFF_SCREEN: "true"
     entrypoint: ["histoseg-3d"]
     command: ["--help"]
+
+  histoseg-serve:
+    build:
+      context: .
+      target: serve
+    image: histoseg:serve
+    ports:
+      - "7860:7860"
+    environment:
+      PORT: "7860"
+      APP_DATA_DIR: "/home/username/app/project-vol"
+    volumes:
+      - histoseg-serve-data:/home/username/app/project-vol
+
+volumes:
+  histoseg-serve-data:
