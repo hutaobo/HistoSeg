@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/histoseg/"><img alt="PyPI" src="https://img.shields.io/pypi/v/histoseg.svg"></a>
+  <a href="https://anaconda.org/conda-forge/histoseg"><img alt="Conda" src="https://img.shields.io/conda/vn/conda-forge/histoseg.svg"></a>
   <a href="https://histoseg.readthedocs.io/en/latest/"><img alt="Docs" src="https://readthedocs.org/projects/histoseg/badge/?version=latest"></a>
   <a href="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml"><img alt="Publish to PyPI" src="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml/badge.svg?branch=main"></a>
   <a href="https://github.com/hutaobo/HistoSeg/actions/workflows/docker-image-ghcr.yml"><img alt="Serve Docker image" src="https://github.com/hutaobo/HistoSeg/actions/workflows/docker-image-ghcr.yml/badge.svg?branch=main"></a>
@@ -45,6 +46,12 @@ Use **HE Analysis** when your input is an H&E image such as PNG, JPG, TIFF, or G
 
 ```bash
 pip install -U histoseg
+```
+
+Or install from conda-forge:
+
+```bash
+conda install -c conda-forge histoseg
 ```
 
 For flagship 3D Xenium stack reconstruction, install the pyXenium-backed 3D extra:
