@@ -6,7 +6,7 @@
   <a href="https://pypi.org/project/histoseg/"><img alt="PyPI" src="https://img.shields.io/pypi/v/histoseg.svg"></a>
   <a href="https://anaconda.org/conda-forge/histoseg"><img alt="Conda" src="https://img.shields.io/conda/vn/conda-forge/histoseg.svg"></a>
   <a href="https://histoseg.readthedocs.io/en/latest/"><img alt="Docs" src="https://readthedocs.org/projects/histoseg/badge/?version=latest"></a>
-  <a href="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml"><img alt="Publish to PyPI" src="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml"><img alt="Publish to PyPI" src="https://github.com/hutaobo/HistoSeg/actions/workflows/publish.yml/badge.svg?event=release"></a>
   <a href="https://github.com/hutaobo/HistoSeg/actions/workflows/docker-image-ghcr.yml"><img alt="Serve Docker image" src="https://github.com/hutaobo/HistoSeg/actions/workflows/docker-image-ghcr.yml/badge.svg?branch=main"></a>
   <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/License-PolyForm--Noncommercial%201.0.0-blue.svg"></a>
 </p>
