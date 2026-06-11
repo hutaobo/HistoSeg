@@ -1,0 +1,66 @@
+{
+  "method": "contour_tear_closure",
+  "method_family": "contour_guided_local_translation_no_tps",
+  "description": "Same-group reciprocal contour correspondences estimate local translations for tear-like moving-slice gaps. Unmatched fixed contours are reported as possible missing tissue and are not synthesized.",
+  "config": {
+    "fixed_geojson": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\aligned_celltype_contours_um\\B1_2_celltype_contours_um.geojson",
+    "moving_aligned_geojson": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\contour_aware_seam_closure_no_tps\\B1_3_tvl1_base_celltype_contours.geojson",
+    "moving_cells_csv": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\histoseg_package_contour_tear_closure_demo\\B1_3_tvl1_base_cells_for_package_demo.csv",
+    "out_dir": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\histoseg_package_contour_tear_closure_demo\\from_tvl1_base_minmotion50",
+    "fixed_cells_csv": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\B1_2_GSM9509173\\cells.csv",
+    "group_property": "assigned_structure",
+    "moving_x_column": "x_tvl1_base_um",
+    "moving_y_column": "y_tvl1_base_um",
+    "fixed_x_column": "x_centroid",
+    "fixed_y_column": "y_centroid",
+    "cluster_column": "cluster",
+    "output_coordinate_prefix": "contour_tear_closure",
+    "centroid_search_radius_um": 650.0,
+    "area_ratio_min": 0.1,
+    "area_ratio_max": 10.0,
+    "min_pair_score": 0.0,
+    "min_motion_um": 50.0,
+    "tear_motion_threshold_um": 50.0,
+    "influence_radius_um": 650.0,
+    "max_neighbors": 12,
+    "max_displacement_um": 160.0,
+    "save_preview_png": true,
+    "overwrite": true,
+    "dpi": 180
+  },
+  "inputs": {
+    "fixed_geojson": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\aligned_celltype_contours_um\\B1_2_celltype_contours_um.geojson",
+    "moving_aligned_geojson": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\contour_aware_seam_closure_no_tps\\B1_3_tvl1_base_celltype_contours.geojson",
+    "moving_cells_csv": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\histoseg_package_contour_tear_closure_demo\\B1_3_tvl1_base_cells_for_package_demo.csv",
+    "fixed_cells_csv": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\B1_2_GSM9509173\\cells.csv"
+  },
+  "contours": {
+    "fixed_total": 3624,
+    "moving_total": 2969,
+    "reciprocal_correspondence_pairs": 1074,
+    "fixed_matched": 1074,
+    "moving_matched": 1074,
+    "fixed_unmatched_possible_missing": 2550,
+    "moving_unmatched_passive": 1895,
+    "tear_like_motion_pair_count": 868
+  },
+  "landmarks": {
+    "used_local_translation_anchor_count": 868,
+    "median_anchor_motion_um": 166.00207980253612,
+    "p90_anchor_motion_um": 382.5297902883168
+  },
+  "cells": {
+    "moving_cell_count": 108295,
+    "median_cell_displacement_um": 43.941983354547716,
+    "p90_cell_displacement_um": 73.06630226476264,
+    "moved_gt_10um_fraction": 0.9510134355233391
+  },
+  "outputs": {
+    "closed_cells_csv": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\histoseg_package_contour_tear_closure_demo\\from_tvl1_base_minmotion50\\moving_contour_tear_closed_cells.csv",
+    "closed_contours_geojson": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\histoseg_package_contour_tear_closure_demo\\from_tvl1_base_minmotion50\\moving_contour_tear_closed_contours.geojson",
+    "correspondence_csv": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\histoseg_package_contour_tear_closure_demo\\from_tvl1_base_minmotion50\\contour_tear_closure_correspondences.csv",
+    "landmarks_csv": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\histoseg_package_contour_tear_closure_demo\\from_tvl1_base_minmotion50\\contour_tear_closure_landmarks.csv",
+    "summary_json": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\histoseg_package_contour_tear_closure_demo\\from_tvl1_base_minmotion50\\contour_tear_closure_summary.json",
+    "review_png": "Y:\\long\\1000Xenium\\Breastcancercollection\\analysis\\B1_alignment_package\\histoseg_contour_tear_vs_missing_20260611\\histoseg_package_contour_tear_closure_demo\\from_tvl1_base_minmotion50\\contour_tear_closure_landmarks.png"
+  }
+}

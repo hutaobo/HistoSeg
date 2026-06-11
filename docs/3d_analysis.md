@@ -19,6 +19,9 @@ The flagship 3D surface currently has these public workflows:
 - Pairwise conservative TPS soft alignment for a fixed contour GeoJSON and a
   moving contour GeoJSON that has already been hard-aligned with a similarity
   transform.
+- Pairwise tear/missing-aware local closure for a hard-aligned moving section,
+  using contour correspondences to move observed torn tissue while reporting
+  unmatched regions as missing/passive rather than synthesizing them.
 - Same-sample Xenium contour stack reconstruction from multiple slice folders,
   using GitHub `pyXenium`/`XeniumSlide` for IO, unified Leiden labels from a
   merged AnnData when available, sequential hard+soft alignment, and 3D
@@ -134,6 +137,20 @@ Important outputs for each pair include:
 Use `--soft-alignment-mode semantic` only when the slice pair is expected to
 have homologous same-label boundaries. Use `--soft-alignment-mode none` or
 `--no-soft` for hard-only reconstruction.
+
+## Tear/Missing-Aware Local Closure
+
+Some neighboring sections contain real sectioning artifacts: tears, translated
+fragments, or tissue that is absent from one section. In those cases global TPS
+can over-pull the moving slice because it tries to explain a discontinuity as a
+smooth deformation. HistoSeg therefore exposes a contour-guided local
+translation step for pairwise section QC.
+
+The method is two-dimensional in the mathematical sense, but it lives in
+`histoseg.threed` because it is used in the same serial-section alignment path
+as the breast partial-anchor examples. See the {doc}`B1_2/B1_3 tear-aware
+breast alignment example <tear_aware_alignment>` for raw cell-point panels,
+final repaired cell coordinates, and contour landmark-link figures.
 
 ## Python API
 

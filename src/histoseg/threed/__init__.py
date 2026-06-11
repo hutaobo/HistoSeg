@@ -53,6 +53,11 @@ from .label_free_figure import (
     LabelFreeBeforeAfterFigureResult,
     render_label_free_before_after_panel,
 )
+from .tear_aware_alignment import (
+    ContourTearClosureConfig,
+    ContourTearClosureResult,
+    run_contour_tear_closure,
+)
 from .cell_cloud import (
     CELL_CLOUD_ALIGNED_XY_OBSM_KEY,
     CELL_CLOUD_OBS_SLICE_KEY,
@@ -154,6 +159,8 @@ __all__ = [
     "CellCloudRenderResult",
     "CodaImageRegistrationConfig",
     "CodaImageRegistrationResult",
+    "ContourTearClosureConfig",
+    "ContourTearClosureResult",
     "DEFAULT_EPITHELIAL_MARKERS",
     "DEFAULT_EPITHELIAL_STRUCTURES",
     "GeneStructureQuantificationConfig",
@@ -219,6 +226,7 @@ __all__ = [
     "reconstruct_3d_contour_meshes",
     "render_cell_cloud_html",
     "render_label_free_before_after_panel",
+    "run_contour_tear_closure",
     "render_gland_instance_atlas",
     "render_gland_position_atlas",
     "render_gland_qc_atlas",

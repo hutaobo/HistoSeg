@@ -1,0 +1,16 @@
+{
+  "asset_dir": "D:\\GitHub\\HistoSeg\\docs\\_static\\threed\\breast\\tear_aware_B1_2_B1_3_20260611",
+  "generated": [
+    "b1_raw_cell_points_side_by_side.png",
+    "b1_contour_tear_landmark_links_zoom_panel.png"
+  ],
+  "copied": [
+    "b1_final_repaired_cell_points_side_by_side.png",
+    "b1_final_repaired_cell_points_tear_zoom.png",
+    "b1_final_contour_correspondence_red_black_full.png",
+    "b1_final_contour_correspondence_red_black_tear_zoom.png",
+    "b1_package_contour_tear_landmarks_full.png",
+    "contour_tear_closure_summary.json",
+    "contour_tear_closure_landmarks.csv"
+  ]
+}

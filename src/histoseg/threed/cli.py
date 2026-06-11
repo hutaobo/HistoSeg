@@ -10,6 +10,7 @@ from . import (
     CODA_METHOD_REFERENCE_DOI,
     CellCloudProjectionConfig,
     CellCloudRenderConfig,
+    ContourTearClosureConfig,
     GeneStructureQuantificationConfig,
     GlandBiologyMiningConfig,
     GlandInstanceSegmentationConfig,
@@ -31,6 +32,7 @@ from . import (
     render_gland_qc_atlas,
     render_gland_position_atlas,
     align_contours_label_free,
+    run_contour_tear_closure,
     run_3d_contour_reconstruction,
     run_3d_stack_reconstruction,
     run_cell_cloud_projection,
@@ -413,6 +415,71 @@ def main(argv: Sequence[str] | None = None) -> None:
     label_free.add_argument("--dpi", type=int, default=180, help="Preview PNG resolution.")
     label_free.add_argument("--no-preview", action="store_true", help="Skip overlay PNGs.")
     label_free.add_argument("--overwrite", action="store_true", help="Overwrite existing outputs.")
+
+    tear_close = subparsers.add_parser(
+        "close-contour-tear",
+        help="Close tear-like moving-slice gaps using same-celltype contour correspondences.",
+    )
+    tear_close.add_argument("--fixed-geojson", required=True, help="Reference contour GeoJSON.")
+    tear_close.add_argument(
+        "--moving-aligned-geojson",
+        required=True,
+        help="Moving contour GeoJSON already aligned into the fixed coordinate system.",
+    )
+    tear_close.add_argument(
+        "--moving-cells-csv",
+        required=True,
+        help="Moving cell table already aligned into the fixed coordinate system.",
+    )
+    tear_close.add_argument(
+        "--fixed-cells-csv",
+        default=None,
+        help="Optional fixed cell table recorded in the summary for provenance.",
+    )
+    tear_close.add_argument("--out-dir", required=True, help="Output directory.")
+    tear_close.add_argument(
+        "--group-property",
+        default="assigned_structure",
+        help="GeoJSON feature property used for same-type contour matching.",
+    )
+    tear_close.add_argument(
+        "--moving-x-column",
+        default="x_aligned_um",
+        help="Moving cell x-coordinate column to warp.",
+    )
+    tear_close.add_argument(
+        "--moving-y-column",
+        default="y_aligned_um",
+        help="Moving cell y-coordinate column to warp.",
+    )
+    tear_close.add_argument(
+        "--fixed-x-column",
+        default="x_centroid",
+        help="Fixed cell x-coordinate column recorded for provenance.",
+    )
+    tear_close.add_argument(
+        "--fixed-y-column",
+        default="y_centroid",
+        help="Fixed cell y-coordinate column recorded for provenance.",
+    )
+    tear_close.add_argument("--cluster-column", default="cluster")
+    tear_close.add_argument(
+        "--output-coordinate-prefix",
+        default="contour_tear_closure",
+        help="Prefix for warped moving cell coordinate/displacement columns.",
+    )
+    tear_close.add_argument("--centroid-search-radius-um", type=float, default=650.0)
+    tear_close.add_argument("--area-ratio-min", type=float, default=0.10)
+    tear_close.add_argument("--area-ratio-max", type=float, default=10.0)
+    tear_close.add_argument("--min-pair-score", type=float, default=0.0)
+    tear_close.add_argument("--min-motion-um", type=float, default=0.0)
+    tear_close.add_argument("--tear-motion-threshold-um", type=float, default=25.0)
+    tear_close.add_argument("--influence-radius-um", type=float, default=650.0)
+    tear_close.add_argument("--max-neighbors", type=int, default=12)
+    tear_close.add_argument("--max-displacement-um", type=float, default=200.0)
+    tear_close.add_argument("--dpi", type=int, default=180)
+    tear_close.add_argument("--no-preview", action="store_true", help="Skip landmark review PNG.")
+    tear_close.add_argument("--overwrite", action="store_true", help="Overwrite existing outputs.")
 
     stack = subparsers.add_parser(
         "reconstruct-stack",
@@ -1241,6 +1308,36 @@ def main(argv: Sequence[str] | None = None) -> None:
                 group_min_descriptor_score=args.group_min_descriptor_score,
                 group_residual_limit_um=args.group_residual_limit_um,
                 group_min_component_area_um2=args.group_min_component_area_um2,
+                save_preview_png=not args.no_preview,
+                overwrite=args.overwrite,
+                dpi=args.dpi,
+            )
+        )
+        print(json.dumps(asdict(result), indent=2, ensure_ascii=False, default=str))
+    elif args.command == "close-contour-tear":
+        result = run_contour_tear_closure(
+            ContourTearClosureConfig(
+                fixed_geojson=args.fixed_geojson,
+                moving_aligned_geojson=args.moving_aligned_geojson,
+                moving_cells_csv=args.moving_cells_csv,
+                fixed_cells_csv=args.fixed_cells_csv,
+                out_dir=args.out_dir,
+                group_property=args.group_property,
+                moving_x_column=args.moving_x_column,
+                moving_y_column=args.moving_y_column,
+                fixed_x_column=args.fixed_x_column,
+                fixed_y_column=args.fixed_y_column,
+                cluster_column=args.cluster_column,
+                output_coordinate_prefix=args.output_coordinate_prefix,
+                centroid_search_radius_um=args.centroid_search_radius_um,
+                area_ratio_min=args.area_ratio_min,
+                area_ratio_max=args.area_ratio_max,
+                min_pair_score=args.min_pair_score,
+                min_motion_um=args.min_motion_um,
+                tear_motion_threshold_um=args.tear_motion_threshold_um,
+                influence_radius_um=args.influence_radius_um,
+                max_neighbors=args.max_neighbors,
+                max_displacement_um=args.max_displacement_um,
                 save_preview_png=not args.no_preview,
                 overwrite=args.overwrite,
                 dpi=args.dpi,

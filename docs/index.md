@@ -8,6 +8,7 @@ installation
 usage
 3d_analysis
 label_free_alignment
+tear_aware_alignment
 contour_analysis
 he_analysis
 workflows/index
@@ -134,6 +135,14 @@ meshes.
 
 Inspect a fully automatic two-slice breast contour alignment where local
 landmarks are found without manual annotation.
+:::
+
+:::{grid-item-card} Tear/Missing-Aware Breast Alignment
+:link: tear_aware_alignment
+:link-type: doc
+
+Follow a B1_2/B1_3 breast pair from raw cell points through Cell-GPS-guided
+contours to contour-guided tear closure.
 :::
 
 :::{grid-item-card} Contour Analysis
