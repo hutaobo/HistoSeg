@@ -14,14 +14,33 @@ import uuid
 
 def bootstrap_runtime_env() -> None:
     """Point caches to writable paths before importing HistoSeg/matplotlib."""
-    os.environ.setdefault("HOME", "/tmp")
-    os.environ.setdefault("XDG_CACHE_HOME", "/tmp/.cache")
-    os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
     os.environ.setdefault("MPLBACKEND", "Agg")
-    os.environ.setdefault("GRADIO_TEMP_DIR", "/tmp/gradio")
 
-    for key in ("HOME", "XDG_CACHE_HOME", "MPLCONFIGDIR", "GRADIO_TEMP_DIR"):
-        Path(os.environ[key]).mkdir(parents=True, exist_ok=True)
+    runtime_root = Path("/tmp") / "histoseg-serve" / str(os.getuid())
+    path_defaults = {
+        "HOME": "/tmp",
+        "XDG_CACHE_HOME": "/tmp/.cache",
+        "MPLCONFIGDIR": "/tmp/matplotlib",
+        "GRADIO_TEMP_DIR": "/tmp/gradio",
+    }
+    fallback_dirs = {
+        "HOME": runtime_root / "home",
+        "XDG_CACHE_HOME": runtime_root / "cache",
+        "MPLCONFIGDIR": runtime_root / "matplotlib",
+        "GRADIO_TEMP_DIR": runtime_root / "gradio",
+    }
+
+    for key, default_path in path_defaults.items():
+        candidate = Path(os.environ.get(key, default_path))
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            probe = candidate / ".write_test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+        except OSError:
+            fallback = fallback_dirs[key]
+            fallback.mkdir(parents=True, exist_ok=True)
+            os.environ[key] = str(fallback)
 
 
 bootstrap_runtime_env()
