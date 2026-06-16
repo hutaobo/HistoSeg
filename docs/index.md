@@ -153,7 +153,7 @@ Extract Pattern1 isolines, build StructureMap-guided named structure partitions,
 and export Xenium-ready review layers.
 :::
 
-:::{grid-item-card} AI Driven Spatial Pathologist Serve App
+:::{grid-item-card} Spatial Pathologist Serve App
 :link: ai_driven_spatial_pathologist_serve_app
 :link-type: doc
 

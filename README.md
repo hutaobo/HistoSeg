@@ -30,7 +30,7 @@ analysis groups:
 - **3D Reconstruction** (`histoseg.threed`) for same-sample, multi-slice Xenium contour alignment, 3D contour stacks, mesh export, and QC visualization.
 - **2D Contour Analysis** (`histoseg.contour`) for StructureMap-guided semantic contour extraction from spatial/cell-coordinate data, including Pattern1 isolines and multi-structure Xenium exports.
 - **H&E Analysis** (`histoseg.he`) for image-based H&E tissue segmentation, neutral tissue partitioning, and aligned-image change detection.
-- **AI Driven Spatial Pathologist Serve app** (`histoseg.spatial_pathologist.serve_app`) for the browser-based SciLifeLab Serve workflow around dendrogram-guided multi-structure contour selection.
+- **Spatial Pathologist Serve app** (`histoseg.spatial_pathologist.serve_app`) for the browser-based SciLifeLab Serve workflow around dendrogram-guided multi-structure contour selection.
 
 Full documentation: [histoseg.readthedocs.io](https://histoseg.readthedocs.io)
 
@@ -66,7 +66,7 @@ For reproducible static 3D figure rendering and local documentation builds:
 pip install -U "histoseg[threed,viz,docs]"
 ```
 
-For the browser-based AI Driven Spatial Pathologist Serve app:
+For the browser-based Spatial Pathologist Serve app:
 
 ```bash
 pip install -U "histoseg[serve]"

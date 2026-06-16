@@ -1,11 +1,11 @@
-# AI Driven Spatial Pathologist Serve App
+# Spatial Pathologist Serve App
 
 :::{div} hs-section-kicker
 Web app
 :::
 
 :::{div} hs-page-intro
-The [AI Driven Spatial Pathologist Serve app](https://ai-driven-spatial-pathologist.serve.scilifelab.se/)
+The [Spatial Pathologist Serve app](https://spatial-pathologist.serve.scilifelab.se/)
 is a browser-based entry point for dendrogram-guided `histoseg.contour`
 multi-structure contour analysis. It helps turn Xenium cluster assignments into
 larger, reviewable spatial structures before exporting HistoSeg-style contour

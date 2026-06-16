@@ -63,7 +63,7 @@ contours from those definitions.
 - Hugging Face dataset helper workflows for Xenium-style public datasets.
 
 For an interactive dendrogram-guided entry point, use the
-{doc}`AI Driven Spatial Pathologist Serve app <ai_driven_spatial_pathologist_serve_app>`.
+{doc}`Spatial Pathologist Serve app <ai_driven_spatial_pathologist_serve_app>`.
 The web app builds candidate structures from uploaded Xenium cluster tables,
 lets you select dendrogram branches, and then runs the multi-structure contour
 workflow with downloadable HistoSeg outputs.
